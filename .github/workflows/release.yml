@@ -2,53 +2,64 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
       - uses: actions/checkout@v5
+        if: ${{ steps.release.outputs.release_created }}
 
       - name: Setup Node.js
+        if: ${{ steps.release.outputs.release_created }}
         uses: actions/setup-node@v5
         with:
           node-version: "22"
 
       - name: Setup Bun
+        if: ${{ steps.release.outputs.release_created }}
         uses: oven-sh/setup-bun@v2
 
       - name: Run tests
+        if: ${{ steps.release.outputs.release_created }}
         run: |
           cd vscode && node --test
           cd .. && bun test plugin/hooks/group.test.ts
 
       - name: Build VSIX
+        if: ${{ steps.release.outputs.release_created }}
         id: build
         run: |
           python3 vscode/package.py
           VERSION=$(node -p "require('./vscode/package.json').version")
           echo "vsix=vscode/claude-deck-${VERSION}.vsix" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.build.outputs.vsix }}
-          generate_release_notes: true
+      - name: Upload VSIX to GitHub Release
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ steps.release.outputs.tag_name }}" "${{ steps.build.outputs.vsix }}" --clobber
 
       - name: Publish to VS Code Marketplace
-        if: env.VSCE_PAT != ''
+        if: ${{ steps.release.outputs.release_created && env.VSCE_PAT != '' }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx --yes @vscode/vsce publish --packagePath "${{ steps.build.outputs.vsix }}" -p "$VSCE_PAT"
 
       - name: Publish to Open VSX Registry
-        if: env.OVSX_PAT != ''
+        if: ${{ steps.release.outputs.release_created && env.OVSX_PAT != '' }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx --yes ovsx publish "${{ steps.build.outputs.vsix }}" -p "$OVSX_PAT"

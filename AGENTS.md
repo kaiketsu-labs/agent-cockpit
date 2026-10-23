@@ -44,6 +44,6 @@ bun test plugin/hooks/group.test.ts
 
 ## Releasing & Shipping
 
-- **Version bumps**: Keep versions synchronized across [`vscode/package.json`](vscode/package.json) and [`plugin/.claude-plugin/plugin.json`](plugin/.claude-plugin/plugin.json).
+- **Automated releases via Release Please**: Pushing Conventional Commits (`feat:`, `fix:`, etc.) to `main` causes [`.github/workflows/release.yml`](.github/workflows/release.yml) to open/update a Release PR that bumps [`vscode/package.json`](vscode/package.json), [`plugin/.claude-plugin/plugin.json`](plugin/.claude-plugin/plugin.json), [`README.md`](README.md), and `CHANGELOG.md` via [`release-please-config.json`](release-please-config.json). Merging that PR creates the GitHub Release, builds and attaches `claude-deck-<version>.vsix`, and publishes to VS Code Marketplace / Open VSX if tokens are configured.
 - **Plugin distribution**: Distributed directly from this GitHub repository via `.claude-plugin/marketplace.json` (`/plugin marketplace add kaiketsu-labs/claude-deck` and `/plugin install deck@claude-deck`).
 - **VS Code extension distribution**: Built into `vscode/claude-deck-<version>.vsix` via `python3 vscode/package.py` for GitHub Releases, VS Code Marketplace (`vsce publish --packagePath ...`), and Open VSX (`ovsx publish ...`).
