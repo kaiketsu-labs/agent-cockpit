@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { promptName, sessionName, ticketSuffix } from './group'
+import { extractTicket, promptName, sanitizeDetail, sessionName, ticketPattern, ticketSuffix } from './group'
 
 const RENAME_MS = 3_000
 const START_SKILL = 'start-task'
@@ -18,6 +18,7 @@ type SessionFile = {
   prompt?: string
   detail?: string
   lastTurnEndAt?: number
+  activeFiles?: string[]
 }
 
 const claudeDir = async ($: EngineInterface) => `${await $.env.get('HOME')}/.claude`
@@ -46,12 +47,35 @@ const save = async ($: EngineInterface, change: Partial<SessionFile>) => {
   await $.fs.write(await sessionFile($, sessionId), JSON.stringify(record, null, 2))
 }
 
+// Conflict guard: warns when two active sessions touch the same file within 30 minutes.
+const checkConflicts = async ($: EngineInterface, currentSessionId: string, filePath: string) => {
+  try {
+    const dir = `${await claudeDir($)}/deck/sessions`
+    const entries = await $.fs.list(dir).catch(() => [])
+    const fileName = filePath.split('/').pop() || filePath
+    for (const entry of entries) {
+      if (entry.kind === 'file' && entry.name.endsWith('.json') && !entry.name.startsWith(currentSessionId)) {
+        const content = await $.fs.read(`${dir}/${entry.name}`).catch(() => '')
+        if (!content) continue
+        const other = JSON.parse(content) as SessionFile
+        const isRecent = Date.now() - (other.lastTurnEndAt ?? other.startedAt) < 30 * 60_000
+        const hasFile = other.activeFiles?.some(f => f === filePath || f.endsWith(`/${fileName}`))
+        if (isRecent && hasFile) {
+          $.ui.log(`\n⚠️  [Claude Deck Conflict Guard] Warning: "${fileName}" was also edited recently in session "${other.name || other.sessionId.slice(0, 8)}"\n`)
+          break
+        }
+      }
+    }
+  } catch {}
+}
+
 // A -p run, a script's or a child of a background job's (it inherits CLAUDE_JOB_DIR), stays off the list.
 let isListed = false
 let kind: SessionFile['kind'] = 'interactive'
 let pendingName: string | undefined
 let isTurnRunning = false
 let appliedRename: string | undefined
+let projects: string[] = []
 let suffix = ticketSuffix()
 
 // A plugin's own $.command.run skips its command.run hooks, so the name is saved here.
@@ -72,8 +96,9 @@ const applyRenameRequest = async ($: EngineInterface) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    const projects = (await $.env.get('TICKET_PROJECTS')) ?? ''
-    suffix = ticketSuffix(projects.split(',').map(project => project.trim()).filter(Boolean))
+    const rawProjects = (await $.env.get('TICKET_PROJECTS')) ?? ''
+    projects = rawProjects.split(',').map(project => project.trim()).filter(Boolean)
+    suffix = ticketSuffix(projects)
     await $.tool.register({
       name: 'name_session',
       description: 'Renames this session to "<summary> (<ticket>)". The rename lands once the turn ends.',
@@ -81,8 +106,8 @@ export const register: Register = on => {
         type: 'object',
         properties: {
           summary: { type: 'string', description: 'A few words on what this session does' },
-          ticket: { type: 'string', description: 'Jira key, e.g. PROJ-1234' },
-          title: { type: 'string', description: "The ticket's Jira summary shortened to at most 6 words, shown beside the key in the Claude Deck sidebar" },
+          ticket: { type: 'string', description: 'Jira or issue key, e.g. PROJ-1234' },
+          title: { type: 'string', description: "The ticket summary shortened to at most 6 words, shown beside the key in the Claude Deck sidebar" },
         },
         required: ['summary', 'ticket'],
       },
@@ -96,7 +121,7 @@ export const register: Register = on => {
         properties: {
           titles: {
             type: 'object',
-            description: 'Jira key to its summary shortened to at most 6 words, e.g. {"PROJ-1234": "Add PDF endpoint"}',
+            description: 'Ticket key to its summary shortened to at most 6 words, e.g. {"PROJ-1234": "Add PDF endpoint"}',
             additionalProperties: { type: 'string' },
           },
         },
@@ -113,8 +138,28 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Auto-detect tickets in prompts: typing "fix nulls in PROJ-123" automatically binds and groups the session.
   on('prompt.submit', async ($, e, next) => {
-    if (!e.isMeta && (await storedRecord($))?.prompt === undefined) await save($, { prompt: promptName(e.text) }).catch(err => $.ui.log(`deck: ${err}`))
+    if (!e.isMeta) {
+      const record = await storedRecord($)
+      const pName = promptName(e.text)
+      const updates: Partial<SessionFile> = {}
+      if (record?.prompt === undefined) updates.prompt = pName
+
+      const ticket = extractTicket(e.text, projects)
+      if (ticket && (!record?.name || !record.name.match(suffix))) {
+        const cleanSummary = pName
+          .replace(ticketPattern(projects), '')
+          .replace(/\s+/g, ' ')
+          .replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '')
+          .trim() || 'Task'
+        const autoName = sessionName(cleanSummary, ticket, suffix)
+        updates.name = autoName
+        $.clock.after(0, () => void rename($, autoName).catch(() => {}))
+      }
+
+      if (Object.keys(updates).length > 0) await save($, updates).catch(err => $.ui.log(`deck: ${err}`))
+    }
     return next(e)
   })
 
@@ -147,20 +192,30 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // Capture active tool call so the sidebar shows what the session is currently doing.
+  // Capture active tool call so the sidebar shows live activity, with conflict guarding and secret sanitization.
   on('tool.call', async ($, e, next) => {
     const call = e as { tool?: string; params?: Record<string, unknown> }
     const tool = call.tool?.replace(/^mcp__[a-zA-Z0-9_-]+__/, '') ?? ''
     if (tool && tool !== 'name_session' && tool !== 'set_ticket_titles') {
       let detail = tool
       const params = call.params
+      let touchedFile: string | undefined
       if (tool === 'Bash' && typeof params?.command === 'string') {
-        detail = params.command.trim().split('\n')[0]?.slice(0, 48) || 'Bash'
+        detail = sanitizeDetail(params.command.trim().split('\n')[0]?.slice(0, 48) || 'Bash')
       } else if ((tool === 'Read' || tool === 'View' || tool === 'Edit') && (params?.file_path || params?.path)) {
-        const file = String(params.file_path || params.path).split('/').pop()
+        const fullPath = String(params.file_path || params.path)
+        touchedFile = fullPath
+        const file = fullPath.split('/').pop()
         detail = `${tool} ${file}`
       }
-      await save($, { detail }).catch(() => {})
+      const updates: Partial<SessionFile> = { detail }
+      if (touchedFile) {
+        const currentId = await $.session.id()
+        void checkConflicts($, currentId, touchedFile)
+        const prev = (await storedRecord($))?.activeFiles ?? []
+        updates.activeFiles = [touchedFile, ...prev.filter(f => f !== touchedFile)].slice(0, 10)
+      }
+      await save($, updates).catch(() => {})
     }
     return next(e)
   })

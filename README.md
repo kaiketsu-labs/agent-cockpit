@@ -33,6 +33,9 @@ Claude Deck is the overview: **one list, grouped by ticket, that tells you what 
 | | |
 |---|---|
 | 🗂️ **Grouped by ticket** | Sessions named `… (PROJ-123)` gather under their ticket; everything else sits below a divider. |
+| 🪄 **Auto-ticket detection** | Just mention a ticket in your prompt (`fix nulls in PROJ-142`); the mod automatically binds and groups the session. |
+| 🛡️ **Conflict guard** | The mod warns you immediately if two parallel sessions try to edit the same file within 30 minutes. |
+| 🔒 **Secret shielding** | Bearer tokens, passwords and API keys are automatically masked before saving to session files. |
 | 🚦 **Live status & activity** | Working, needs input, idle, failed, done, plus active command (`Bash: npm test`, `Read: …`). |
 | 🔔 **Needs-input alerts** | A notification with an **Open** button the moment a session waits for you, even with the sidebar closed. |
 | 📊 **Status bar widget** | `$(bell-dot) Claude (1 waiting)` shows running/waiting sessions in your VS Code footer; one click jumps in. |
