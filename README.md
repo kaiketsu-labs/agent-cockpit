@@ -117,13 +117,19 @@ or load it from a checkout with `CLAUDE_CODE_PLUGIN_DIRS=/path/to/claude-deck/pl
 
 **2. The VS Code extension**
 
+Download `claude-deck-0.1.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
+
+```bash
+code --install-extension claude-deck-0.1.0.vsix --force
+```
+
+Or build it from source (no npm needed — `package.py` zips the extension into a `.vsix`):
+
 ```bash
 git clone https://github.com/kaiketsu-labs/claude-deck
 cd claude-deck/vscode
 python3 package.py && code --install-extension claude-deck-0.1.0.vsix --force
 ```
-
-No npm needed: `package.py` zips the extension into a `.vsix`.
 
 **3. Open the deck** from the activity bar. That's it. Ticket status and PRs are optional, see below.
 

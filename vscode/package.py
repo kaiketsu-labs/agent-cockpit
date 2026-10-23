@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).parent
+REPO_ROOT = ROOT.parent
 FILES = ["package.json", "extension.js", "group.js", "media/icon.svg"]
 
 pkg = json.loads((ROOT / "package.json").read_text())
@@ -15,6 +16,8 @@ CONTENT_TYPES = """<?xml version="1.0" encoding="utf-8"?>
   <Default Extension=".json" ContentType="application/json"/>
   <Default Extension=".js" ContentType="application/javascript"/>
   <Default Extension=".svg" ContentType="image/svg+xml"/>
+  <Default Extension=".md" ContentType="text/markdown"/>
+  <Default Extension=".txt" ContentType="text/plain"/>
   <Default Extension=".vsixmanifest" ContentType="text/xml"/>
 </Types>
 """
@@ -28,6 +31,7 @@ MANIFEST = f"""<?xml version="1.0" encoding="utf-8"?>
     <Properties>
       <Property Id="Microsoft.VisualStudio.Code.Engine" Value="{pkg["engines"]["vscode"]}"/>
     </Properties>
+    <License>extension/LICENSE.txt</License>
   </Metadata>
   <Installation>
     <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
@@ -35,6 +39,8 @@ MANIFEST = f"""<?xml version="1.0" encoding="utf-8"?>
   <Dependencies/>
   <Assets>
     <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
+    <Asset Type="Microsoft.VisualStudio.Services.Content.Details" Path="extension/README.md" Addressable="true"/>
+    <Asset Type="Microsoft.VisualStudio.Services.Content.License" Path="extension/LICENSE.txt" Addressable="true"/>
   </Assets>
 </PackageManifest>
 """
@@ -45,4 +51,8 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as vsix:
     vsix.writestr("extension.vsixmanifest", MANIFEST)
     for name in FILES:
         vsix.write(ROOT / name, f"extension/{name}")
+    if (REPO_ROOT / "README.md").exists():
+        vsix.write(REPO_ROOT / "README.md", "extension/README.md")
+    if (REPO_ROOT / "LICENSE").exists():
+        vsix.write(REPO_ROOT / "LICENSE", "extension/LICENSE.txt")
 print(f"{out} ({ident})")

@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Run VS Code extension unit tests
+        working-directory: vscode
+        run: node --test
+
+      - name: Run plugin hook unit tests
+        run: bun test plugin/hooks/group.test.ts
+
+      - name: Package VSIX
+        working-directory: vscode
+        run: python3 package.py
