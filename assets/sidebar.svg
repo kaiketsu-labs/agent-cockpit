@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="430" viewBox="0 0 460 430" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <clipPath id="r"><rect width="460" height="430" rx="10"/></clipPath>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="460" height="430" fill="#1e1e1e"/>
+    <!-- activity bar -->
+    <rect width="48" height="430" fill="#2c2c2c"/>
+    <rect x="0" y="12" width="2" height="32" fill="#e8825a"/>
+    <g transform="translate(12 16)" fill="none" stroke="#e8825a" stroke-width="1.6" stroke-linejoin="round">
+      <rect x="6" y="2" width="16" height="20" rx="3" transform="rotate(12 14 12)"/>
+      <rect x="3" y="3" width="16" height="20" rx="3" fill="#2c2c2c"/>
+      <path d="M7 10l3 3-3 3M12 16h4" stroke-linecap="round"/>
+    </g>
+    <g fill="#858585">
+      <rect x="15" y="64" width="18" height="18" rx="3" opacity=".5"/>
+      <rect x="15" y="100" width="18" height="18" rx="3" opacity=".5"/>
+      <rect x="15" y="136" width="18" height="18" rx="3" opacity=".5"/>
+    </g>
+
+    <!-- sidebar -->
+    <rect x="48" width="412" height="430" fill="#252526"/>
+    <text x="64" y="26" fill="#bbbbbb" font-size="11" letter-spacing=".6">CLAUDE DECK</text>
+
+    <!-- Sessions header -->
+    <rect x="48" y="38" width="412" height="24" fill="#2a2a2b"/>
+    <text x="58" y="55" fill="#cccccc" font-size="11" font-weight="700">▾  SESSIONS</text>
+    <g fill="#c5c5c5" font-size="14">
+      <text x="352" y="56">+</text>
+      <text x="374" y="56">☰</text>
+      <text x="400" y="56">⌕</text>
+      <text x="424" y="56">⟳</text>
+    </g>
+
+    <!-- ticket PROJ-142 -->
+    <g transform="translate(0 70)">
+      <rect x="48" y="0" width="412" height="24" fill="#37373d"/>
+      <text x="60" y="17" fill="#c5c5c5">▾</text>
+      <circle cx="84" cy="12" r="6" fill="none" stroke="#3794ff" stroke-width="1.6"/>
+      <path d="M82 9l4 3-4 3z" fill="#3794ff"/>
+      <text x="98" y="17" fill="#e7e7e7" font-weight="600">PROJ-142</text>
+      <text x="166" y="17" fill="#9d9d9d">Add PDF export · 1 needs input · 1 working · 1 PR</text>
+    </g>
+    <!-- PR -->
+    <g transform="translate(0 94)">
+      <circle cx="104" cy="12" r="2.2" fill="none" stroke="#89d185" stroke-width="1.5"/>
+      <circle cx="104" cy="4.5" r="0" />
+      <path d="M100 6v12M108 9v9" stroke="#89d185" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <circle cx="100" cy="6" r="2" fill="#252526" stroke="#89d185" stroke-width="1.5"/>
+      <circle cx="100" cy="18" r="2" fill="#252526" stroke="#89d185" stroke-width="1.5"/>
+      <circle cx="108" cy="18" r="2" fill="#252526" stroke="#89d185" stroke-width="1.5"/>
+      <text x="118" y="17" fill="#cccccc">api#88</text>
+      <text x="168" y="17" fill="#9d9d9d">feat(PROJ-142): PDF export endpoint</text>
+    </g>
+    <!-- needs input -->
+    <g transform="translate(0 118)">
+      <path d="M98 16h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4z" fill="none" stroke="#cca700" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="110" cy="7" r="2.4" fill="#cca700"/>
+      <text x="118" y="17" fill="#cccccc">Review PR feedback</text>
+      <text x="252" y="17" fill="#9d9d9d">waiting for approval · cache 4:12</text>
+    </g>
+    <!-- working -->
+    <g transform="translate(0 142)">
+      <path d="M109 9a5 5 0 1 0 1 5" fill="none" stroke="#3794ff" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M107 6l3 3-3.5 1.5z" fill="#3794ff"/>
+      <text x="118" y="17" fill="#cccccc">Implement export endpoint</text>
+      <text x="292" y="17" fill="#9d9d9d">running tests</text>
+    </g>
+
+    <!-- ticket PROJ-157 -->
+    <g transform="translate(0 170)">
+      <text x="60" y="17" fill="#c5c5c5">▾</text>
+      <circle cx="84" cy="12" r="6" fill="none" stroke="#c5c5c5" stroke-width="1.4"/>
+      <text x="98" y="17" fill="#e7e7e7" font-weight="600">PROJ-157</text>
+      <text x="166" y="17" fill="#9d9d9d">Fix login timeout · 1 idle</text>
+    </g>
+    <g transform="translate(0 194)">
+      <rect x="99" y="7" width="3" height="10" fill="#c5c5c5"/>
+      <rect x="105" y="7" width="3" height="10" fill="#c5c5c5"/>
+      <text x="118" y="17" fill="#cccccc">Investigate session expiry</text>
+      <text x="290" y="17" fill="#9d9d9d">12m · cache 2:48</text>
+    </g>
+
+    <!-- rule -->
+    <line x1="64" y1="232" x2="444" y2="232" stroke="#3c3c3c"/>
+
+    <!-- loose sessions -->
+    <g transform="translate(0 240)">
+      <path d="M79 9a5 5 0 1 0 1 5" fill="none" stroke="#3794ff" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M77 6l3 3-3.5 1.5z" fill="#3794ff"/>
+      <text x="92" y="17" fill="#cccccc">Explore caching options</text>
+      <text x="252" y="17" fill="#9d9d9d">reading docs</text>
+    </g>
+    <g transform="translate(0 264)">
+      <path d="M78 13l3 3 6-7" fill="none" stroke="#7a7a7a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="92" y="17" fill="#8b8b8b">Update dependencies</text>
+      <text x="226" y="17" fill="#6f6f6f">3h</text>
+    </g>
+
+    <!-- History header -->
+    <rect x="48" y="300" width="412" height="24" fill="#2a2a2b"/>
+    <text x="58" y="317" fill="#cccccc" font-size="11" font-weight="700">▸  HISTORY</text>
+    <text x="134" y="317" fill="#8b8b8b" font-size="11">14 sessions</text>
+    <!-- Legend header -->
+    <rect x="48" y="326" width="412" height="24" fill="#2a2a2b"/>
+    <text x="58" y="343" fill="#cccccc" font-size="11" font-weight="700">▸  LEGEND</text>
+
+    <!-- notification toast -->
+    <g transform="translate(118 362)">
+      <rect width="330" height="56" rx="6" fill="#2d2d30" stroke="#454545"/>
+      <path d="M16 26h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4z" fill="none" stroke="#cca700" stroke-width="1.5" stroke-linejoin="round"/>
+      <text x="38" y="25" fill="#cccccc">PROJ-142 Review PR feedback needs input</text>
+      <rect x="258" y="32" width="58" height="18" rx="2" fill="#0e639c"/>
+      <text x="274" y="45" fill="#ffffff" font-size="12">Open</text>
+    </g>
+  </g>
+</svg>

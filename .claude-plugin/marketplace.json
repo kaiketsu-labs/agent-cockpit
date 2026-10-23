@@ -1,0 +1,13 @@
+{
+  "name": "claude-deck",
+  "owner": {
+    "name": "kaiketsu-labs"
+  },
+  "plugins": [
+    {
+      "name": "deck",
+      "source": "./plugin",
+      "description": "Records Claude Code sessions for the Claude Deck VS Code sidebar and adds a ticket workflow (start-task, finish-task, cleanup-worktrees)"
+    }
+  ]
+}
