@@ -1,7 +1,7 @@
 {
   "name": "claude-deck",
   "displayName": "Claude Deck",
-  "description": "Claude Code sessions grouped by Jira ticket, with ticket status and open PRs; click a session to attach in a terminal tab.",
+  "description": "Claude Code sessions grouped by ticket, with ticket status and open PRs; click a session to attach in a terminal tab.",
   "version": "0.1.0",
   "publisher": "kaiketsu-labs",
   "license": "MIT",
@@ -42,6 +42,43 @@
         }
       ]
     },
+    "configuration": {
+      "title": "Claude Deck",
+      "properties": {
+        "claudeDeck.tracker": {
+          "type": "string",
+          "enum": ["auto", "jira", "github", "command", "none"],
+          "default": "auto",
+          "description": "Issue tracker integration for ticket status and titles. 'auto' queries Jira for PROJ-123 keys (when JIRA_URL/JIRA_TOKEN are set) and GitHub Issues for #42 / owner/repo#42 keys (when gh is available), without showing error banners when unconfigured."
+        },
+        "claudeDeck.trackerCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Shell command used when claudeDeck.tracker is 'command'. Receives JSON array of ticket keys on stdin and must print a JSON object mapping keys to { status, category ('new'|'indeterminate'|'done'), summary, url }."
+        },
+        "claudeDeck.pullRequests": {
+          "type": "string",
+          "enum": ["auto", "github", "none"],
+          "default": "auto",
+          "description": "Pull request lookup mode. 'auto' queries GitHub via gh when available and stays silent when unconfigured; 'none' disables PR lookups."
+        },
+        "claudeDeck.ticketProjects": {
+          "type": "string",
+          "default": "",
+          "description": "Comma-separated project prefixes (e.g. 'PROJ,OPS') to restrict Jira-style ticket recognition. Falls back to TICKET_PROJECTS in settings.json."
+        },
+        "claudeDeck.ticketPattern": {
+          "type": "string",
+          "default": "",
+          "description": "Optional custom regular expression for matching ticket keys."
+        },
+        "claudeDeck.startCommand": {
+          "type": "string",
+          "default": "/start-task",
+          "description": "Slash command or prompt prefix passed to 'claude --bg' when starting a task from the sidebar."
+        }
+      }
+    },
     "commands": [
       {
         "command": "claudeDeck.refresh",
@@ -54,7 +91,7 @@
       },
       {
         "command": "claudeDeck.openJira",
-        "title": "Open in Jira",
+        "title": "Open ticket",
         "icon": "$(link-external)"
       },
       {

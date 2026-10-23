@@ -2,14 +2,35 @@
 
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { ticketPattern, firstTicket, withoutTicketSuffix, groupSessions, moveBefore, searchQueries, prsByTicket, isClosed, isHidden, ticketOf, mergeSessions, interactiveState, ancestorPids, cacheTtlMs, cacheLeft, clock } = require('./group')
+const {
+  ticketPattern,
+  firstTicket,
+  withoutTicketSuffix,
+  groupSessions,
+  moveBefore,
+  searchQueries,
+  prsByTicket,
+  isClosed,
+  isHidden,
+  ticketOf,
+  mergeSessions,
+  interactiveState,
+  ancestorPids,
+  cacheTtlMs,
+  cacheLeft,
+  clock,
+} = require('./group')
 
 const anyKey = ticketPattern()
 const proj = ticketPattern(['PROJ'])
 
-test('without projects any upper-case key counts', () => {
+test('without projects any upper-case Jira key or GitHub issue ref counts', () => {
   assert.equal(firstTicket([undefined, 'fix nulls (PROJ-57)', 'OPS-1'], anyKey), 'PROJ-57')
   assert.equal(firstTicket(['lower proj-57 is no key'], anyKey), undefined)
+  assert.equal(firstTicket(['fix login redirect #42'], anyKey), '#42')
+  assert.equal(firstTicket(['fix org/repo#19 in auth'], anyKey), 'org/repo#19')
+  assert.equal(withoutTicketSuffix('Fix login (#42)', anyKey), 'Fix login')
+  assert.equal(withoutTicketSuffix('Fix login (org/repo#19)', anyKey), 'Fix login')
 })
 
 test('with projects only their keys count, any case', () => {
@@ -55,13 +76,13 @@ test('PR searches batch six keys and match PRs to every key their title names', 
     'is:pr is:open in:title PROJ-1 OR PROJ-2 OR PROJ-3 OR PROJ-4 OR PROJ-5 OR PROJ-6',
     'is:pr is:open in:title PROJ-7',
   ])
-  const pr = { number: 9, title: 'feat(proj-1): x, PROJ-2, not PROJ-20', body: 'PROJ-3', html_url: 'u', repository_url: 'api/repos/org/api', draft: true }
-  const byTicket = prsByTicket([pr], ['PROJ-1', 'PROJ-2', 'PROJ-3'])
-  assert.deepEqual(Object.keys(byTicket), ['PROJ-1', 'PROJ-2'])
-  assert.deepEqual(byTicket['PROJ-1'][0], { repo: 'api', number: 9, title: 'feat(proj-1): x, PROJ-2, not PROJ-20', url: 'u', isDraft: true })
+  const pr = { number: 9, title: 'feat(proj-1): x, PROJ-2, not PROJ-20, fixes #42', body: 'PROJ-3', html_url: 'u', repository_url: 'api/repos/org/api', draft: true }
+  const byTicket = prsByTicket([pr], ['PROJ-1', 'PROJ-2', 'PROJ-3', '#42', '#4'])
+  assert.deepEqual(Object.keys(byTicket), ['PROJ-1', 'PROJ-2', '#42'])
+  assert.deepEqual(byTicket['PROJ-1'][0], { repo: 'api', number: 9, title: 'feat(proj-1): x, PROJ-2, not PROJ-20, fixes #42', url: 'u', isDraft: true })
 })
 
-test('only a ticket Jira calls done is closed', () => {
+test('only a ticket the tracker calls done is closed', () => {
   assert.equal(isClosed({ category: 'done' }), true)
   assert.equal(isClosed({ category: 'indeterminate' }), false)
   assert.equal(isClosed(undefined), false)
@@ -83,16 +104,18 @@ test('only a ticket suffix binds a session to a ticket', () => {
   assert.equal(ticketOf('Check nulls (proj-57)', proj), 'PROJ-57')
   assert.equal(ticketOf('compare with PROJ-1 approach', proj), undefined)
   assert.equal(ticketOf('Retry (OPS-1)', proj), undefined)
+  assert.equal(ticketOf('Fix login (#42)', anyKey), '#42')
+  assert.equal(ticketOf('Fix login (org/repo#42)', anyKey), 'org/repo#42')
 })
 
-test('sessions merge claude agents with the mod files, keep ended interactive ones, drop deleted bg ones', () => {
+test('sessions merge claude agents with the plugin files, keep ended interactive ones, drop deleted bg ones, and honor explicit file.ticket', () => {
   const agents = [
     { id: 'job1', sessionId: 's1', name: 'bg job (PROJ-1)', state: 'working', startedAt: 1 },
     { sessionId: 's2', pid: 42, name: 'my-project', status: 'waiting', startedAt: 2, cwd: '/repo' },
   ]
   const files = [
     { sessionId: 's1', kind: 'bg', cwd: '/repo', startedAt: 1, lastTurnEndAt: 10 },
-    { sessionId: 's2', kind: 'interactive', cwd: '/repo', startedAt: 2, prompt: 'fix the nulls' },
+    { sessionId: 's2', kind: 'interactive', cwd: '/repo', startedAt: 2, prompt: 'fix the nulls', ticket: 'proj-99' },
     { sessionId: 's3', kind: 'interactive', cwd: '/old', startedAt: 3, prompt: 'p', name: 'Old work (PROJ-2)', lastTurnEndAt: 30 },
     { sessionId: 's4', kind: 'bg', cwd: '/repo', startedAt: 4, name: 'deleted job' },
     { sessionId: 's5', kind: 'interactive', cwd: '/repo', startedAt: 5 },
@@ -102,7 +125,7 @@ test('sessions merge claude agents with the mod files, keep ended interactive on
     sessions.map(({ id, name, state, ticket, updatedAt }) => ({ id, name, state, ticket, updatedAt })),
     [
       { id: 'job1', name: 'bg job (PROJ-1)', state: 'working', ticket: 'PROJ-1', updatedAt: 10 },
-      { id: 's2', name: 'fix the nulls', state: 'blocked', ticket: undefined, updatedAt: 2 },
+      { id: 's2', name: 'fix the nulls', state: 'blocked', ticket: 'PROJ-99', updatedAt: 2 },
       { id: 's3', name: 'Old work (PROJ-2)', state: 'done', ticket: 'PROJ-2', updatedAt: 30 },
     ],
   )

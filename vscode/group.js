@@ -20,17 +20,33 @@ const ancestorPids = (pid, readStat) => {
   return pids
 }
 
-// Without projects any upper-case Jira-style key counts; TICKET_PROJECTS narrows it, any case.
-const ticketPattern = (projects = []) => {
-  const key = projects.length > 0 ? `(?:${projects.join('|')})-\\d+` : '[A-Z][A-Z0-9]+-\\d+'
-  const flags = projects.length > 0 ? 'i' : ''
-  return { key: new RegExp(`\\b${key}\\b`, flags), suffix: new RegExp(`\\s*\\((${key})\\)\\s*$`, flags) }
+const normalizeTicket = ticket => {
+  const trimmed = ticket.trim()
+  return trimmed.includes('#') ? trimmed : trimmed.toUpperCase()
+}
+
+// Supports Jira/Linear keys (PROJ-123) and GitHub/GitLab issue refs (#42, owner/repo#42);
+// TICKET_PROJECTS narrows Jira keys (any case), or customPattern overrides the regex.
+const ticketPattern = (projects = [], customPattern = '') => {
+  if (customPattern) {
+    return {
+      key: new RegExp(customPattern),
+      suffix: new RegExp(`\\s*\\((${customPattern})\\)\\s*$`),
+    }
+  }
+  if (projects.length > 0) {
+    const key = `(?:${projects.join('|')})-\\d+`
+    return { key: new RegExp(`\\b${key}\\b`, 'i'), suffix: new RegExp(`\\s*\\((${key})\\)\\s*$`, 'i') }
+  }
+  const key = '(?:\\b[A-Z][A-Z0-9]+-\\d+\\b|\\b[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+#\\d+\\b|(?<![A-Za-z0-9_.-])#\\d+\\b)'
+  const suffixKey = '(?:[A-Z][A-Z0-9]+-\\d+|(?:[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+)?#\\d+)'
+  return { key: new RegExp(key), suffix: new RegExp(`\\s*\\((${suffixKey})\\)\\s*$`) }
 }
 
 const firstTicket = (texts, pattern) => {
   for (const text of texts) {
     const match = text?.match(pattern.key)
-    if (match) return match[0].toUpperCase()
+    if (match) return normalizeTicket(match[0])
   }
   return undefined
 }
@@ -85,11 +101,18 @@ const searchQueries = (keys, size = 6) => {
   return queries
 }
 
+const escapeRegExp = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const keyInTitle = (title, key) => {
+  const escaped = escapeRegExp(key)
+  const bound = key.startsWith('#') ? `(?<![A-Za-z0-9_.-])${escaped}\\b` : `\\b${escaped}\\b`
+  return new RegExp(bound, 'i').test(title)
+}
+
 const prsByTicket = (items, keys) => {
   const byTicket = {}
   for (const item of items) {
-    const text = item.title.toUpperCase()
-    for (const key of keys.filter(key => new RegExp(`\\b${key}\\b`).test(text))) {
+    for (const key of keys.filter(key => keyInTitle(item.title, key))) {
       const pr = {
         repo: item.repository_url.split('/').pop(),
         number: item.number,
@@ -103,7 +126,7 @@ const prsByTicket = (items, keys) => {
   return byTicket
 }
 
-// Jira's status category: new, indeterminate or done. A ticket Jira didn't answer for stays active.
+// Tracker status category: new, indeterminate or done. A ticket the tracker didn't answer for stays active.
 const isClosed = issue => issue?.category === 'done'
 
 const HIDE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
@@ -114,42 +137,54 @@ const isHidden = (session, now, isTicketClosed, flag) => {
   return flag ?? (isTicketClosed || now - session.updatedAt > HIDE_AFTER_MS)
 }
 
-const ticketOf = (name, pattern) => name.match(pattern.suffix)?.[1].toUpperCase()
+const ticketOf = (name, pattern) => {
+  const match = name?.match(pattern.suffix)?.[1]
+  return match ? normalizeTicket(match) : undefined
+}
 
 // Live sessions come from claude agents, the rest from the files the claude-deck plugin writes for every session.
 // A bg session that left claude agents was deleted with claude rm; an interactive one ended and can be resumed.
 const mergeSessions = (agents, files, pattern) => {
   const fileOf = new Map(files.map(file => [file.sessionId, file]))
-  const withTicket = session => ({ ...session, ticket: ticketOf(session.name, pattern) })
+  const withTicket = (session, fileTicket) => ({
+    ...session,
+    ticket: ticketOf(session.name, pattern) ?? (fileTicket ? normalizeTicket(fileTicket) : undefined),
+  })
   const live = agents.map(agent => {
     const file = fileOf.get(agent.sessionId) ?? {}
     const isBg = agent.id !== undefined
-    return withTicket({
-      id: isBg ? agent.id : agent.sessionId,
-      sessionId: agent.sessionId,
-      pid: isBg ? undefined : agent.pid,
-      name: (isBg ? agent.name || file.name : file.name || file.prompt || agent.name) || agent.sessionId.slice(0, 8),
-      state: isBg ? agent.state : interactiveState(agent.status),
-      detail: file.detail,
-      updatedAt: file.lastTurnEndAt ?? agent.startedAt ?? 0,
-      lastWriteAt: file.lastTurnEndAt,
-      cwd: agent.cwd ?? file.cwd,
-      interactive: !isBg,
-    })
+    return withTicket(
+      {
+        id: isBg ? agent.id : agent.sessionId,
+        sessionId: agent.sessionId,
+        pid: isBg ? undefined : agent.pid,
+        name: (isBg ? file.name || agent.name : file.name || file.prompt || agent.name) || agent.sessionId.slice(0, 8),
+        state: isBg ? agent.state : interactiveState(agent.status),
+        detail: file.detail,
+        updatedAt: file.lastTurnEndAt ?? agent.startedAt ?? 0,
+        lastWriteAt: file.lastTurnEndAt,
+        cwd: agent.cwd ?? file.cwd,
+        interactive: !isBg,
+      },
+      file.ticket,
+    )
   })
   const liveIds = new Set(agents.map(agent => agent.sessionId))
   const ended = files
     .filter(file => file.kind === 'interactive' && !liveIds.has(file.sessionId) && (file.name || file.prompt))
     .map(file =>
-      withTicket({
-        id: file.sessionId,
-        sessionId: file.sessionId,
-        name: file.name || file.prompt,
-        state: 'done',
-        updatedAt: file.lastTurnEndAt ?? file.startedAt,
-        cwd: file.cwd,
-        ended: true,
-      }),
+      withTicket(
+        {
+          id: file.sessionId,
+          sessionId: file.sessionId,
+          name: file.name || file.prompt,
+          state: 'done',
+          updatedAt: file.lastTurnEndAt ?? file.startedAt,
+          cwd: file.cwd,
+          ended: true,
+        },
+        file.ticket,
+      ),
     )
   return [...live, ...ended]
 }
@@ -176,6 +211,7 @@ const age = ms => {
 
 module.exports = {
   STATUS,
+  normalizeTicket,
   ticketPattern,
   firstTicket,
   withoutTicketSuffix,
