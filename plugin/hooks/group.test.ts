@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, test } from 'bun:test'
 
 import { normalizeTicket, promptName, sessionName, ticketOf, ticketSuffix } from './group'
 
