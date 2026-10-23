@@ -4,7 +4,7 @@ const vscode = require('vscode')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const { execFile } = require('child_process')
+const { execFile, execFileSync } = require('child_process')
 const {
   STATUS,
   ticketPattern,
@@ -382,13 +382,40 @@ const isAttachTerminal = (terminal, session) => {
   return Array.isArray(args) && args.join(' ') === attachArgs(session).join(' ')
 }
 
-const readStat = pid => fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+// Cross-platform parent PID: ps on macOS/BSD, /proc on Linux.
+const getParentPid = pid => {
+  if (process.platform === 'darwin') {
+    try {
+      const out = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8' }).trim()
+      return Number(out) || 0
+    } catch {
+      return 0
+    }
+  }
+  if (process.platform === 'linux') {
+    try {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
+      return Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]) || 0
+    } catch {
+      return 0
+    }
+  }
+  return 0
+}
+
+const findAncestors = pid => {
+  const pids = []
+  for (let current = pid; current > 1 && pids.length < 32; current = getParentPid(current)) {
+    pids.push(current)
+  }
+  return pids
+}
 
 // claude attach takes background sessions only; an interactive one can just be shown where it runs.
 const focusInteractive = async session => {
   let ancestors = []
   try {
-    ancestors = ancestorPids(session.pid, readStat)
+    ancestors = findAncestors(session.pid)
   } catch {}
   for (const terminal of vscode.window.terminals) {
     if (ancestors.includes(await terminal.processId)) return terminal.show()
@@ -513,6 +540,34 @@ const activate = async context => {
   const showCount = () => (history.description = `${provider.hidden.reduce((sum, group) => sum + group.sessions.length, 0)} sessions`)
   context.subscriptions.push(history, provider.onDidChangeTreeData(showCount))
   context.subscriptions.push(vscode.window.createTreeView('claudeDeck.legend', { treeDataProvider: legendProvider }))
+  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10)
+  statusBar.command = 'claudeDeck.focus'
+  context.subscriptions.push(statusBar)
+
+  const updateStatusBar = () => {
+    const blocked = provider.sessions.filter(s => s.state === 'blocked' && !provider.isHidden(s))
+    const working = provider.sessions.filter(s => s.state === 'working' && !provider.isHidden(s))
+    const live = provider.sessions.filter(s => !provider.isHidden(s) && !s.ended)
+    if (blocked.length > 0) {
+      statusBar.text = `$(bell-dot) Claude (${blocked.length} waiting)`
+      statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground')
+      statusBar.tooltip = `${blocked.length} session${blocked.length > 1 ? 's' : ''} need input · click to open`
+      statusBar.show()
+    } else if (working.length > 0) {
+      statusBar.text = `$(sync~spin) Claude (${working.length} running)`
+      statusBar.backgroundColor = undefined
+      statusBar.tooltip = `${working.length} session${working.length > 1 ? 's' : ''} working · click to open deck`
+      statusBar.show()
+    } else if (live.length > 0) {
+      statusBar.text = `$(hubot) Claude (${live.length})`
+      statusBar.backgroundColor = undefined
+      statusBar.tooltip = `${live.length} Claude session${live.length > 1 ? 's' : ''} · click to open deck`
+      statusBar.show()
+    } else {
+      statusBar.hide()
+    }
+  }
+
   const notify = session => {
     const name = withoutTicketSuffix(session.name, provider.pattern)
     vscode.window
@@ -526,6 +581,7 @@ const activate = async context => {
       .then(blocked => {
         view.message = provider.message
         blocked.forEach(notify)
+        updateStatusBar()
       })
       .finally(() => (running = undefined)))
   // Sessions refresh while the view is hidden too, so a session needing input still notifies.
@@ -540,6 +596,11 @@ const activate = async context => {
     { dispose: () => clearInterval(timer) },
     { dispose: () => watcher.close() },
     view.onDidChangeVisibility(({ visible }) => visible && refresh()),
+    vscode.commands.registerCommand('claudeDeck.focus', () => {
+      const blocked = provider.sessions.find(s => s.state === 'blocked' && !provider.isHidden(s))
+      if (blocked) return attach(blocked, provider)
+      vscode.commands.executeCommand('claudeDeck.sessions.focus')
+    }),
     vscode.commands.registerCommand('claudeDeck.refresh', () => refresh(true)),
     vscode.commands.registerCommand('claudeDeck.attach', session => attach(session, provider)),
     vscode.commands.registerCommand('claudeDeck.openJira', openJira),

@@ -130,6 +130,7 @@ const mergeSessions = (agents, files, pattern) => {
       pid: isBg ? undefined : agent.pid,
       name: (isBg ? agent.name || file.name : file.name || file.prompt || agent.name) || agent.sessionId.slice(0, 8),
       state: isBg ? agent.state : interactiveState(agent.status),
+      detail: file.detail,
       updatedAt: file.lastTurnEndAt ?? agent.startedAt ?? 0,
       lastWriteAt: file.lastTurnEndAt,
       cwd: agent.cwd ?? file.cwd,

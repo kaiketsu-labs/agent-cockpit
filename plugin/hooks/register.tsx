@@ -16,6 +16,7 @@ type SessionFile = {
   startedAt: number
   name?: string
   prompt?: string
+  detail?: string
   lastTurnEndAt?: number
 }
 
@@ -146,12 +147,30 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Capture active tool call so the sidebar shows what the session is currently doing.
+  on('tool.call', async ($, e, next) => {
+    const call = e as { tool?: string; params?: Record<string, unknown> }
+    const tool = call.tool?.replace(/^mcp__[a-zA-Z0-9_-]+__/, '') ?? ''
+    if (tool && tool !== 'name_session' && tool !== 'set_ticket_titles') {
+      let detail = tool
+      const params = call.params
+      if (tool === 'Bash' && typeof params?.command === 'string') {
+        detail = params.command.trim().split('\n')[0]?.slice(0, 48) || 'Bash'
+      } else if ((tool === 'Read' || tool === 'View' || tool === 'Edit') && (params?.file_path || params?.path)) {
+        const file = String(params.file_path || params.path).split('/').pop()
+        detail = `${tool} ${file}`
+      }
+      await save($, { detail }).catch(() => {})
+    }
+    return next(e)
+  })
+
   // A command queued mid-turn blocks subagents and is dropped on interrupt, so the rename waits for the turn's end.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     isTurnRunning = false
-    // The sidebar counts the prompt cache's lifetime from here.
-    await save($, { lastTurnEndAt: Date.now() })
+    // The sidebar counts the prompt cache's lifetime from here; detail resets between turns.
+    await save($, { lastTurnEndAt: Date.now(), detail: undefined })
     const name = pendingName
     if (name === undefined) return next(e)
     pendingName = undefined

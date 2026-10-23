@@ -33,9 +33,10 @@ Claude Deck is the overview: **one list, grouped by ticket, that tells you what 
 | | |
 |---|---|
 | 🗂️ **Grouped by ticket** | Sessions named `… (PROJ-123)` gather under their ticket; everything else sits below a divider. |
-| 🚦 **Live status** | Working, needs input, idle, failed, done, straight from `claude agents`. |
+| 🚦 **Live status & activity** | Working, needs input, idle, failed, done, plus active command (`Bash: npm test`, `Read: …`). |
 | 🔔 **Needs-input alerts** | A notification with an **Open** button the moment a session waits for you, even with the sidebar closed. |
-| 🖱️ **One click to jump in** | Attaches a background job in an editor tab, focuses the terminal of an interactive one, or resumes an ended one. |
+| 📊 **Status bar widget** | `$(bell-dot) Claude (1 waiting)` shows running/waiting sessions in your VS Code footer; one click jumps in. |
+| 🖱️ **One click to jump in** | Attaches a background job in an editor tab, focuses the terminal of an interactive one (macOS & Linux), or resumes an ended one. |
 | ⏱️ **Prompt cache countdown** | `cache 4:12` shows how long until a session's prompt cache goes cold, so you know when replying is cheap. |
 | 🎫 **Ticket status & PRs** | Jira status and open GitHub PRs per ticket (optional). |
 | ✏️ **Rename from the sidebar** | Even for running sessions; the plugin applies it once the session is idle. |
@@ -148,7 +149,8 @@ Without Jira or `gh` everything else still works; tickets just show no status.
 
 - [ ] Pluggable trackers: GitHub Issues, Linear, plus a `command` adapter for anything else
 - [ ] Configurable start command and ticket pattern in VS Code settings
-- [ ] macOS / Windows: focus the terminal of interactive sessions (Linux only today)
+- [x] macOS: focus the terminal of interactive sessions (`ps -o ppid=`)
+- [ ] Windows: focus the terminal of interactive sessions
 - [ ] VS Code Marketplace & Open VSX release
 
 ## Files
