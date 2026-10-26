@@ -108,10 +108,11 @@ test('only a ticket suffix binds a session to a ticket', () => {
   assert.equal(ticketOf('Fix login (org/repo#42)', anyKey), 'org/repo#42')
 })
 
-test('sessions merge claude agents with the plugin files, keep ended interactive ones, drop deleted bg ones, and honor explicit file.ticket', () => {
+test('sessions merge claude agents with the plugin files, keep ended interactive ones, drop deleted bg ones, and honor explicit file.ticket or worktree path', () => {
   const agents = [
     { id: 'job1', sessionId: 's1', name: 'bg job (PROJ-1)', state: 'working', startedAt: 1 },
     { sessionId: 's2', pid: 42, name: 'my-project', status: 'waiting', startedAt: 2, cwd: '/repo' },
+    { sessionId: 's6', pid: 43, name: 'worktree-session', status: 'idle', startedAt: 6, cwd: '/repo/.claude/worktrees/PROJ-77-auth-fix' },
   ]
   const files = [
     { sessionId: 's1', kind: 'bg', cwd: '/repo', startedAt: 1, lastTurnEndAt: 10 },
@@ -126,10 +127,11 @@ test('sessions merge claude agents with the plugin files, keep ended interactive
     [
       { id: 'job1', name: 'bg job (PROJ-1)', state: 'working', ticket: 'PROJ-1', updatedAt: 10 },
       { id: 's2', name: 'fix the nulls', state: 'blocked', ticket: 'PROJ-99', updatedAt: 2 },
+      { id: 's6', name: 'worktree-session', state: 'idle', ticket: 'PROJ-77', updatedAt: 6 },
       { id: 's3', name: 'Old work (PROJ-2)', state: 'done', ticket: 'PROJ-2', updatedAt: 30 },
     ],
   )
-  assert.equal(sessions[2].ended, true)
+  assert.equal(sessions[3].ended, true)
   assert.equal(sessions[1].pid, 42)
 })
 

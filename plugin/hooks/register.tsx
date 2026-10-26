@@ -78,7 +78,8 @@ export const register: Register = on => {
     suffix = ticketSuffix(projects)
     await $.tool.register({
       name: 'name_session',
-      description: 'Names this session "<summary> (<ticket>)" and binds it to the ticket immediately in Claude Deck.',
+      description:
+        'Names this session "<summary> (<ticket>)" and binds it to the ticket immediately in Claude Deck. Call this proactively when starting work on a ticket or issue (e.g. PROJ-1234, #42, or owner/repo#42) so the session is grouped under its ticket in the sidebar.',
       inputSchema: {
         type: 'object',
         properties: {

@@ -142,13 +142,21 @@ const ticketOf = (name, pattern) => {
   return match ? normalizeTicket(match) : undefined
 }
 
+const worktreeTicket = (cwd, pattern) => {
+  const segment = cwd?.split('/.claude/worktrees/')[1]?.split('/')[0]
+  return segment ? firstTicket([segment], pattern) : undefined
+}
+
 // Live sessions come from claude agents, the rest from the files the claude-deck plugin writes for every session.
 // A bg session that left claude agents was deleted with claude rm; an interactive one ended and can be resumed.
 const mergeSessions = (agents, files, pattern) => {
   const fileOf = new Map(files.map(file => [file.sessionId, file]))
   const withTicket = (session, fileTicket) => ({
     ...session,
-    ticket: ticketOf(session.name, pattern) ?? (fileTicket ? normalizeTicket(fileTicket) : undefined),
+    ticket:
+      ticketOf(session.name, pattern) ??
+      (fileTicket ? normalizeTicket(fileTicket) : undefined) ??
+      worktreeTicket(session.cwd, pattern),
   })
   const live = agents.map(agent => {
     const file = fileOf.get(agent.sessionId) ?? {}
