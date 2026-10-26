@@ -10,6 +10,7 @@ const {
   ticketPattern,
   firstTicket,
   withoutTicketSuffix,
+  assignTicket,
   groupSessions,
   moveBefore,
   searchQueries,
@@ -386,7 +387,23 @@ class SessionsProvider {
   }
 
   // Dropped on a sibling, an item moves before it; dropped on its parent, it moves last.
+  // Dropped on a different ticket (or onto the rule / loose area), a session is reassigned to that ticket.
   async moveTo(dragged, target) {
+    if (dragged?.kind === 'session') {
+      const targetTicket =
+        target?.kind === 'ticket'
+          ? target.group.ticket
+          : target?.kind === 'session'
+            ? target.session.ticket
+            : target?.kind === 'rule'
+              ? undefined
+              : dragged.session.ticket
+      if ((targetTicket ?? undefined) !== (dragged.session.ticket ?? undefined)) {
+        const nextName = assignTicket(dragged.session.name, targetTicket, this.pattern)
+        await rename(dragged.session, nextName, this.pattern)
+        return
+      }
+    }
     const key = orderKey(dragged)
     if (!key || !dragged.siblings) return
     const before = target && target.parent === dragged.parent && orderKey(target)
@@ -606,7 +623,10 @@ const activate = async context => {
     handleDrag: (elements, dataTransfer) => dataTransfer.set(DRAG_MIME, new vscode.DataTransferItem(elements)),
     handleDrop: async (target, dataTransfer) => {
       const [dragged] = dataTransfer.get(DRAG_MIME)?.value ?? []
-      if (dragged) await provider.moveTo(dragged, target)
+      if (dragged) {
+        await provider.moveTo(dragged, target)
+        refresh()
+      }
     },
   }
   const view = vscode.window.createTreeView('claudeDeck.sessions', { treeDataProvider: provider, dragAndDropController })

@@ -6,6 +6,7 @@ const {
   ticketPattern,
   firstTicket,
   withoutTicketSuffix,
+  assignTicket,
   groupSessions,
   moveBefore,
   searchQueries,
@@ -36,6 +37,13 @@ test('without projects any upper-case Jira key or GitHub issue ref counts', () =
 test('with projects only their keys count, any case', () => {
   assert.equal(firstTicket(['OPS-1 then proj-57'], proj), 'PROJ-57')
   assert.equal(withoutTicketSuffix('Check nulls (PROJ-57)', proj), 'Check nulls')
+})
+
+test('assignTicket binds a session name to a new ticket or strips its ticket when unassigned', () => {
+  assert.equal(assignTicket('Explore auth flow', 'proj-42', proj), 'Explore auth flow (PROJ-42)')
+  assert.equal(assignTicket('Explore auth flow (PROJ-1)', 'PROJ-2', proj), 'Explore auth flow (PROJ-2)')
+  assert.equal(assignTicket('Explore auth flow (#10)', 'org/repo#12', anyKey), 'Explore auth flow (org/repo#12)')
+  assert.equal(assignTicket('Explore auth flow (PROJ-1)', undefined, anyKey), 'Explore auth flow')
 })
 
 test('groups sort tickets and sessions alphabetically, unticketed last, whatever their status', () => {

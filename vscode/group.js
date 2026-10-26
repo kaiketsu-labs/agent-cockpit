@@ -53,6 +53,12 @@ const firstTicket = (texts, pattern) => {
 
 const withoutTicketSuffix = (name, pattern) => name.replace(pattern.suffix, '')
 
+const assignTicket = (name, ticket, pattern) => {
+  const base = withoutTicketSuffix(name, pattern).trim()
+  const key = ticket ? normalizeTicket(ticket) : ''
+  return key ? `${base} (${key})` : base
+}
+
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare
 
 // Moved items keep the order they were dragged into; the rest follow alphabetically.
@@ -223,6 +229,7 @@ module.exports = {
   ticketPattern,
   firstTicket,
   withoutTicketSuffix,
+  assignTicket,
   sortByOrder,
   moveBefore,
   groupSessions,
