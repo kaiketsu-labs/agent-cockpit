@@ -17,8 +17,24 @@ export const ticketOf = (name: string, suffix: RegExp): string | undefined => {
   return match ? normalizeTicket(match) : undefined
 }
 
-export const sessionName = (summary: string, ticket: string, suffix: RegExp) =>
-  `${summary.replace(suffix, '').trim()} (${normalizeTicket(ticket)})`
+export const sessionName = (summary: string, ticket: string | undefined, suffix: RegExp) => {
+  const base = summary.replace(suffix, '').trim()
+  const key = ticket ? normalizeTicket(ticket) : ''
+  return key ? `${base} (${key})` : base
+}
 
-// The first prompt names a session until it gets a name of its own.
-export const promptName = (text: string) => text.trim().split('\n')[0]?.slice(0, 80) ?? ''
+// The first non-empty, non-command prompt line names a session until it gets a name of its own.
+export const promptName = (text: string): string => {
+  const line =
+    text
+      .split('\n')
+      .map(l => l.trim())
+      .find(Boolean) ?? ''
+  if (!line) return ''
+  // Strip a leading slash command if followed by arguments, or ignore bare slash commands like "/start-task"
+  if (line.startsWith('/')) {
+    const rest = line.replace(/^\/[a-zA-Z0-9_:-]+\s*/, '').trim()
+    return rest.slice(0, 80)
+  }
+  return line.slice(0, 80)
+}

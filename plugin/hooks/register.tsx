@@ -38,11 +38,18 @@ const storedRecord = async ($: EngineInterface) =>
     .catch(() => undefined)
 
 // Read before each write: the sidebar names ended sessions in the same file. The id moves on with /clear or /resume.
-const save = async ($: EngineInterface, change: Partial<SessionFile>) => {
-  if (!isListed) return
-  const sessionId = await $.session.id()
-  const record = { ...((await storedRecord($)) ?? { sessionId, kind, cwd: await $.session.cwd(), startedAt: Date.now() }), ...change }
-  await $.fs.write(await sessionFile($, sessionId), JSON.stringify(record, null, 2))
+// Serialized through saveQueue so concurrent tool calls cannot overwrite a name or ticket written at the same time.
+let saveQueue: Promise<unknown> = Promise.resolve()
+
+const save = ($: EngineInterface, change: Partial<SessionFile>) => {
+  if (!isListed) return Promise.resolve()
+  const next = saveQueue.then(async () => {
+    const sessionId = await $.session.id()
+    const record = { ...((await storedRecord($)) ?? { sessionId, kind, cwd: await $.session.cwd(), startedAt: Date.now() }), ...change }
+    await $.fs.write(await sessionFile($, sessionId), JSON.stringify(record, null, 2))
+  })
+  saveQueue = next.catch(() => {})
+  return next
 }
 
 // A -p run, a script's or a child of a background job's (it inherits CLAUDE_JOB_DIR), stays off the list.
@@ -79,15 +86,15 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'name_session',
       description:
-        'Names this session "<summary> (<ticket>)" and binds it to the ticket immediately in Claude Deck. Call this proactively when starting work on a ticket or issue (e.g. PROJ-1234, #42, or owner/repo#42) so the session is grouped under its ticket in the sidebar.',
+        'Names this session "<summary> (<ticket>)" (or "<summary>" when unticketed) and updates Claude Deck immediately. Call this proactively when starting work on a ticket or issue (e.g. PROJ-1234, #42, or owner/repo#42) so the session is grouped under its ticket in the sidebar.',
       inputSchema: {
         type: 'object',
         properties: {
           summary: { type: 'string', description: 'A few words on what this session does' },
-          ticket: { type: 'string', description: 'Ticket or issue key, e.g. PROJ-1234, #42, or owner/repo#42' },
+          ticket: { type: 'string', description: 'Optional ticket or issue key, e.g. PROJ-1234, #42, or owner/repo#42. Omit when there is no ticket.' },
           title: { type: 'string', description: 'The ticket summary shortened to at most 6 words, shown beside the key in the Claude Deck sidebar' },
         },
-        required: ['summary', 'ticket'],
+        required: ['summary'],
       },
       isDeferred: false,
     })
@@ -116,10 +123,11 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // The first prompt is a fallback display name until the session is named.
+  // The first non-empty prompt is a fallback display name until the session is named.
   on('prompt.submit', async ($, e, next) => {
-    if (!e.isMeta && (await storedRecord($))?.prompt === undefined) {
-      await save($, { prompt: promptName(e.text) }).catch(err => $.ui.log(`deck: ${err}`))
+    const fallback = promptName(e.text)
+    if (fallback && !(await storedRecord($))?.prompt) {
+      await save($, { prompt: fallback }).catch(err => $.ui.log(`deck: ${err}`))
     }
     return next(e)
   })
@@ -133,14 +141,18 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: NAME_TOOL }, async ($, e) => {
-    const { summary, ticket, title } = e as unknown as { summary: string; ticket: string; title?: string }
-    const key = normalizeTicket(ticket)
+    const { summary, ticket, title } = e as unknown as { summary: string; ticket?: string; title?: string }
+    const key = ticket?.trim() ? normalizeTicket(ticket) : undefined
     const name = sessionName(summary, key, suffix)
     pendingName = name
     await save($, { name, ticket: key })
-    if (title) await storeTitles($, { [key]: title })
+    if (key && title) await storeTitles($, { [key]: title })
 
-    return { result: `Named session "${name}" and bound to ${key}. Continue with the next step.` }
+    return {
+      result: key
+        ? `Named session "${name}" and bound to ${key}. Continue with the next step.`
+        : `Named session "${name}". Continue with the next step.`,
+    }
   })
 
   on('tool.call', { tool: TITLES_TOOL }, async ($, e) => {

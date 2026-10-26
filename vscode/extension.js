@@ -475,33 +475,39 @@ const isAttachTerminal = (terminal, session) => {
   return Array.isArray(args) && args.join(' ') === attachArgs(session).join(' ')
 }
 
-// Cross-platform parent PID: ps on macOS/BSD, /proc on Linux.
-const getParentPid = pid => {
+// Cross-platform parent PID lookup: single ps snapshot on macOS/BSD, /proc on Linux.
+const findAncestors = pid => {
   if (process.platform === 'darwin') {
     try {
-      const out = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf8' }).trim()
-      return Number(out) || 0
+      const out = execFileSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' })
+      const parentOf = new Map()
+      for (const line of out.split('\n')) {
+        const [p, pp] = line.trim().split(/\s+/).map(Number)
+        if (p && pp) parentOf.set(p, pp)
+      }
+      const pids = []
+      for (let current = pid; current > 1 && pids.length < 32; current = parentOf.get(current) ?? 0) {
+        pids.push(current)
+      }
+      return pids
     } catch {
-      return 0
+      return []
     }
   }
   if (process.platform === 'linux') {
-    try {
-      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8')
-      return Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]) || 0
-    } catch {
-      return 0
+    const pids = []
+    for (let current = pid; current > 1 && pids.length < 32; ) {
+      pids.push(current)
+      try {
+        const stat = fs.readFileSync(`/proc/${current}/stat`, 'utf8')
+        current = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]) || 0
+      } catch {
+        break
+      }
     }
+    return pids
   }
-  return 0
-}
-
-const findAncestors = pid => {
-  const pids = []
-  for (let current = pid; current > 1 && pids.length < 32; current = getParentPid(current)) {
-    pids.push(current)
-  }
-  return pids
+  return []
 }
 
 // claude attach takes background sessions only; an interactive one can just be shown where it runs.

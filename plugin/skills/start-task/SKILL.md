@@ -12,7 +12,7 @@ Bind the session to a ticket, name it, then work on the task as stated. The tick
 
 ## 1. Ticket
 
-Take the first ticket key (`[A-Z][A-Z0-9]+-\d+` for Jira/Linear, or `#\d+` / `owner/repo#\d+` for GitHub/GitLab; with `$TICKET_PROJECTS` set, such as `PROJ,OPS`, only those projects' keys, any case) from the arguments or the prompt. None: ask with AskUserQuestion, "Which ticket does this belong to?", options `No ticket` plus free text via Other. On `No ticket`, skip steps 2 and 3.
+Take the first ticket key (`[A-Z][A-Z0-9]+-\d+` for Jira/Linear, or `#\d+` / `owner/repo#\d+` for GitHub/GitLab; with `$TICKET_PROJECTS` set, such as `PROJ,OPS`, only those projects' keys, any case) from the arguments or the prompt. None: ask with AskUserQuestion, "Which ticket does this belong to?", options `No ticket` plus free text via Other. On `No ticket`, skip step 2 and go straight to step 3 (Name).
 
 ## 2. Fetch
 
@@ -25,13 +25,13 @@ Also check for open PRs if `gh` is available: `gh search prs <TICKET> --state op
 
 ## 3. Name
 
-Call `mcp__deck__name_session` right after the fetch, with:
+Call `mcp__deck__name_session` right after the fetch (or right after step 1 when `No ticket`), with:
 
 - `summary`: 3-6 English words on what this session does, written by you from the prompt's task, else from the ticket's content. Not the ticket summary verbatim.
-- `ticket`: the key (e.g. `PROJ-123`, `#42`, `owner/repo#42`).
-- `title`: the ticket's summary shortened to at most 6 words, in English. The Claude Deck sidebar shows it beside the key. Leave it out when the fetch failed.
+- `ticket`: the key (e.g. `PROJ-123`, `#42`, `owner/repo#42`). Omit when there is no ticket.
+- `title`: the ticket's summary shortened to at most 6 words, in English. The Claude Deck sidebar shows it beside the key. Leave it out when there is no ticket or the fetch failed.
 
-`mcp__deck__name_session` updates the Claude Deck sidebar immediately and schedules the CLI `/rename` for the end of the turn. **Do not end the turn after calling `name_session`** — continue directly with step 4 in the same turn. If the tool is missing (plugin not loaded), tell the user to run `/rename <summary> (<ticket>)` and go on.
+`mcp__deck__name_session` updates the Claude Deck sidebar immediately and schedules the CLI `/rename` for the end of the turn. **Do not end the turn after calling `name_session`** — continue directly with step 4 in the same turn. If the tool is missing (plugin not loaded), tell the user to run `/rename <summary> (<ticket>)` (or `/rename <summary>`) and go on.
 
 ## 4. Task
 
