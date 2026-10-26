@@ -9,8 +9,12 @@ set -euo pipefail
 
 root=$(realpath "${1:-$PWD}")
 
-live_dirs=$(jq -r 'select(.state == "working" or .state == "blocked") | .cwd, .worktreePath // empty' \
-  "$HOME"/.claude/jobs/*/state.json 2>/dev/null || true)
+live_dirs=$(
+  {
+    jq -r 'select(.state == "working" or .state == "blocked") | .cwd, .worktreePath // empty' "$HOME"/.claude/jobs/*/state.json 2>/dev/null
+    claude agents --json --all 2>/dev/null | jq -r '.[] | select(.state == "working" or .state == "blocked" or .status == "busy" or .status == "waiting" or .status == "idle") | .cwd // empty' 2>/dev/null
+  } || true
+)
 
 # True when the worktree's HEAD holds nothing the PR's head lacks: same commit, an ancestor, or the same tree.
 in_pr() {
