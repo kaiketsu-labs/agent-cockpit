@@ -79,7 +79,10 @@ const moveBefore = (order, siblings, moved, target) => {
   return [...order.filter(key => !rest.includes(key)), ...rest]
 }
 
-const groupSessions = (sessions, order = []) => {
+const groupSessions = (sessions, order = [], options = {}) => {
+  const opts = Array.isArray(order) ? options : order
+  const orderList = Array.isArray(order) ? order : []
+  const { unticketedSort } = opts
   const byTicket = new Map()
   for (const session of sessions) {
     const key = session.ticket ?? null
@@ -89,15 +92,19 @@ const groupSessions = (sessions, order = []) => {
     const counts = Object.entries(STATUS)
       .map(([state, { label }]) => ({ label, count: members.filter(s => s.state === state).length }))
       .filter(({ count }) => count > 0)
+    const sorted =
+      ticket === null && unticketedSort === 'age'
+        ? [...members].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || byName(a.name, b.name))
+        : sortByOrder(members, s => s.id, s => s.name, orderList)
     return {
       ticket,
-      sessions: sortByOrder(members, s => s.id, s => s.name, order),
+      sessions: sorted,
       counts,
       isActive: members.some(s => s.state !== 'done'),
     }
   })
   const ticketed = groups.filter(group => group.ticket !== null)
-  return [...sortByOrder(ticketed, g => g.ticket, g => g.ticket, order), ...groups.filter(group => group.ticket === null)]
+  return [...sortByOrder(ticketed, g => g.ticket, g => g.ticket, orderList), ...groups.filter(group => group.ticket === null)]
 }
 
 // GitHub search allows five OR operators, so six keys a query. Titles only: release PRs list every key in their body.

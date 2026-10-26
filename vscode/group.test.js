@@ -71,6 +71,28 @@ test('a manual order wins over the alphabet, unordered items follow alphabetical
   assert.deepEqual(groups[1].sessions.map(s => s.id), ['c', 'a', 'b'])
 })
 
+test('unticketed sessions can be ordered by age (most recent first) when requested', () => {
+  const sessions = [
+    { id: 's1', name: 'old session', updatedAt: 1000 },
+    { id: 's2', name: 'newest session', updatedAt: 5000 },
+    { id: 's3', name: 'middle session', updatedAt: 3000 },
+    { id: 's4', name: 'tied alpha', updatedAt: 2000 },
+    { id: 's5', name: 'tied beta', updatedAt: 2000 },
+    { id: 't1', name: 'ticket session', ticket: 'PROJ-1', updatedAt: 1000 },
+  ]
+  const groups = groupSessions(sessions, [], { unticketedSort: 'age' })
+  const unticketed = groups.find(g => g.ticket === null)
+  assert.deepEqual(unticketed.sessions.map(s => s.id), ['s2', 's3', 's4', 's5', 's1'])
+
+  // Also supports passing options as the second argument without explicit order
+  const optionsDirect = groupSessions(sessions, { unticketedSort: 'age' })
+  assert.deepEqual(optionsDirect.find(g => g.ticket === null).sessions.map(s => s.id), ['s2', 's3', 's4', 's5', 's1'])
+
+  // Default sort remains alphabetical
+  const defaultGroups = groupSessions(sessions)
+  assert.deepEqual(defaultGroups.find(g => g.ticket === null).sessions.map(s => s.id), ['s3', 's2', 's1', 's4', 's5'])
+})
+
 test('moving an item places it before its target, or last without one, and keeps other lists', () => {
   assert.deepEqual(moveBefore(['x'], ['a', 'b', 'c'], 'c', 'a'), ['x', 'c', 'a', 'b'])
   assert.deepEqual(moveBefore([], ['a', 'b', 'c'], 'a'), ['b', 'c', 'a'])

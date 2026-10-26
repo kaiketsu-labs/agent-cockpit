@@ -307,7 +307,7 @@ class SessionsProvider {
 
   regroup() {
     this.groups = groupSessions(this.sessions.filter(session => !this.isHidden(session)), this.order)
-    this.hidden = groupSessions(this.sessions.filter(session => this.isHidden(session)), this.order)
+    this.hidden = groupSessions(this.sessions.filter(session => this.isHidden(session)), this.order, { unticketedSort: 'age' })
   }
 
   // Resolves to the sessions that started needing input since the last refresh.
