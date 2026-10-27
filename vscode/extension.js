@@ -387,7 +387,8 @@ class SessionsProvider {
   }
 
   // Dropped on a sibling, an item moves before it; dropped on its parent, it moves last.
-  // Dropped on a different ticket (or onto the rule / loose area), a session is reassigned to that ticket.
+  // Dropped on a different ticket, a session is reassigned to that ticket.
+  // Dropped on the rule or on empty space, it loses its ticket.
   async moveTo(dragged, target) {
     if (dragged?.kind === 'session') {
       const targetTicket =
@@ -395,7 +396,7 @@ class SessionsProvider {
           ? target.group.ticket
           : target?.kind === 'session'
             ? target.session.ticket
-            : target?.kind === 'rule'
+            : !target || target.kind === 'rule'
               ? undefined
               : dragged.session.ticket
       if ((targetTicket ?? undefined) !== (dragged.session.ticket ?? undefined)) {
