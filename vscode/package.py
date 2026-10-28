@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 REPO_ROOT = ROOT.parent
-FILES = ["package.json", "extension.js", "group.js", "media/icon.svg"]
+FILES = ["package.json", "extension.js", "group.js", "inbox.js", "media/icon.svg"]
 
 pkg = json.loads((ROOT / "package.json").read_text())
 ident = f'{pkg["publisher"]}.{pkg["name"]}'

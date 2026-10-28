@@ -20,6 +20,7 @@ const {
   cacheTtlMs,
   cacheLeft,
   clock,
+  inboxModel,
 } = require('./group')
 
 const anyKey = ticketPattern()
@@ -187,4 +188,26 @@ test('the cache countdown runs from the last transcript write and stops at zero'
   assert.equal(cacheLeft(0, 300_000, 400_000), 0)
   assert.equal(clock(240_000), '4:00')
   assert.equal(clock(65_400), '1:06')
+})
+
+test('inbox lists sessions that need the person first and one card per ticket', () => {
+  const session = (id, state, ticket) => ({ id, name: `work ${id}${ticket ? ` (${ticket})` : ''}`, ticket, state, updatedAt: 0 })
+  const sessions = [session('a', 'working', 'PROJ-1'), session('b', 'blocked', 'PROJ-1'), session('c', 'idle', 'PROJ-2'), session('d', 'failed')]
+  const model = inboxModel({
+    groups: groupSessions(sessions),
+    hidden: [],
+    prs: { 'PROJ-1': [{ repo: 'r', number: 3 }] },
+    issues: { 'PROJ-2': { category: 'done', summary: 'Two', status: 'Done' } },
+    titles: { 'PROJ-1': 'One' },
+    pattern: proj,
+    cacheTtl: 300_000,
+    now: 60_000,
+  })
+  assert.deepEqual(model.needs.map(row => row.id), ['b', 'd'])
+  assert.deepEqual(model.tickets.map(t => [t.key, t.title, t.isBusy, t.prs.length]), [
+    ['PROJ-1', 'One', true, 1],
+    ['PROJ-2', 'Two', false, 0],
+  ])
+  assert.equal(model.tickets[0].sessions[0].name, 'work a')
+  assert.deepEqual(model.loose.map(row => row.id), ['d'])
 })

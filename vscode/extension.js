@@ -12,7 +12,6 @@ const {
   withoutTicketSuffix,
   assignTicket,
   groupSessions,
-  moveBefore,
   searchQueries,
   prsByTicket,
   isClosed,
@@ -23,7 +22,9 @@ const {
   cacheLeft,
   clock,
   age,
+  inboxModel,
 } = require('./group')
+const { InboxView } = require('./inbox')
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude')
 // The claude-deck plugin writes one file per session; order and hide flags sit beside them for every window.
@@ -33,7 +34,6 @@ const VIEW_FILE = path.join(DECK_DIR, 'view.json')
 // The claude-deck plugin in each running session polls here and runs /rename itself.
 const RENAMES_DIR = path.join(DECK_DIR, 'renames')
 const REFRESH_MS = 5_000
-const DRAG_MIME = 'application/vnd.code.tree.claudedeck.sessions'
 const TRACKER_MS = 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
 const PRS_MS = 120_000
@@ -45,36 +45,6 @@ const localBin = name => {
 }
 const CLAUDE = localBin('claude')
 const GH = localBin('gh')
-
-const ISSUE_ICON = {
-  new: { label: 'to do', icon: 'circle-large-outline' },
-  indeterminate: { label: 'in progress', icon: 'play-circle', color: 'charts.blue' },
-  done: { label: 'done', icon: 'pass-filled', color: 'charts.green' },
-}
-const UNKNOWN_ISSUE = { label: 'no tracker status', icon: 'question' }
-
-const PR_ICON = {
-  open: { label: 'open', icon: 'git-pull-request', color: 'charts.green' },
-  draft: { label: 'draft', icon: 'git-pull-request-draft', color: 'disabledForeground' },
-}
-
-const themeIcon = ({ icon, color }) => new vscode.ThemeIcon(icon, color && new vscode.ThemeColor(color))
-
-const LEGEND = [
-  { label: 'Ticket (tracker status)', entries: [...Object.values(ISSUE_ICON), UNKNOWN_ISSUE] },
-  { label: 'Session', entries: Object.values(STATUS) },
-  { label: 'Pull request', entries: Object.values(PR_ICON) },
-]
-
-const legendProvider = {
-  getChildren: element => (element ? element.entries : LEGEND),
-  getTreeItem: element => {
-    if (element.entries) return new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Expanded)
-    const item = new vscode.TreeItem(element.label)
-    item.iconPath = themeIcon(element)
-    return item
-  },
-}
 
 const readJson = async (file, fallback) => {
   try {
@@ -236,34 +206,10 @@ const loadPrs = async (keys, cfg) => {
   }
 }
 
-const elementId = element => {
-  if (element?.kind === 'section') return `section:${element.id}`
-  if (element?.kind === 'ticket') return `${element.hidden ? 'hidden:' : ''}ticket:${element.group.ticket ?? ''}`
-  return undefined
-}
-
-const orderKey = element => {
-  if (element?.kind === 'ticket') return element.group.ticket ?? undefined
-  if (element?.kind === 'session') return element.session.id
-  return undefined
-}
-
-const ruleItem = () => {
-  const item = new vscode.TreeItem('─'.repeat(40))
-  item.id = 'rule'
-  item.tooltip = 'Sessions without a ticket'
-  return item
-}
-
-const withSiblings = children => {
-  const siblings = children.map(orderKey)
-  return children.map(child => ({ ...child, siblings }))
-}
-
 class SessionsProvider {
   constructor() {
     this.changed = new vscode.EventEmitter()
-    this.onDidChangeTreeData = this.changed.event
+    this.onDidChange = this.changed.event
     this.sessions = []
     this.groups = []
     this.hidden = []
@@ -282,10 +228,6 @@ class SessionsProvider {
 
   get order() {
     return this.view.order ?? []
-  }
-
-  async setOrder(order) {
-    await this.saveView({ order })
   }
 
   async setHidden(session, isHidden) {
@@ -364,107 +306,23 @@ class SessionsProvider {
     return errors.length > 0 ? errors.join(' · ') : undefined
   }
 
-  // Active tickets, then a rule, then sessions without a ticket; the rest goes to the history view.
-  topLevel() {
-    const tickets = withSiblings(this.groups.filter(group => group.ticket !== null).map(group => ({ kind: 'ticket', group })))
-    const loose = withSiblings((this.groups.find(group => group.ticket === null)?.sessions ?? []).map(session => ({ kind: 'session', session })))
-    const rule = tickets.length > 0 && loose.length > 0 ? [{ kind: 'rule' }] : []
-    return [...tickets, ...rule, ...loose]
+  inboxModel() {
+    return inboxModel({
+      groups: this.groups,
+      hidden: this.hidden,
+      prs: this.prs,
+      issues: this.issues,
+      titles: this.titles,
+      pattern: this.pattern,
+      cacheTtl: this.cacheTtl,
+      now: Date.now(),
+    })
   }
 
-  history() {
-    return this.getChildren({ kind: 'section', id: 'history', groups: this.hidden })
-  }
-
-  getChildren(element) {
-    if (!element) return this.topLevel()
-    const parent = elementId(element)
-    if (element.kind === 'section') return withSiblings(element.groups.map(group => ({ kind: 'ticket', group, hidden: true, parent })))
-    const sessions = withSiblings(element.group.sessions.map(session => ({ kind: 'session', session, parent })))
-    if (element.hidden) return sessions
-    const prs = (this.prs[element.group.ticket] ?? []).map(pr => ({ kind: 'pr', pr }))
-    return [...prs, ...sessions]
-  }
-
-  // Dropped on a sibling, an item moves before it; dropped on its parent, it moves last.
-  // Dropped on a different ticket, a session is reassigned to that ticket.
-  // Dropped on the rule or on empty space, it loses its ticket.
-  async moveTo(dragged, target) {
-    if (dragged?.kind === 'session') {
-      const targetTicket =
-        target?.kind === 'ticket'
-          ? target.group.ticket
-          : target?.kind === 'session'
-            ? target.session.ticket
-            : !target || target.kind === 'rule'
-              ? undefined
-              : dragged.session.ticket
-      if ((targetTicket ?? undefined) !== (dragged.session.ticket ?? undefined)) {
-        const nextName = assignTicket(dragged.session.name, targetTicket, this.pattern)
-        await rename(dragged.session, nextName, this.pattern)
-        return
-      }
-    }
-    const key = orderKey(dragged)
-    if (!key || !dragged.siblings) return
-    const before = target && target.parent === dragged.parent && orderKey(target)
-    if (!before && elementId(target) !== dragged.parent) return
-    await this.setOrder(moveBefore(this.order, dragged.siblings, key, before || undefined))
-  }
-
-  getTreeItem(element) {
-    if (element.kind === 'rule') return ruleItem()
-    if (element.kind === 'ticket') return this.ticketItem(element.group, element.hidden)
-    if (element.kind === 'pr') return this.prItem(element.pr)
-    return this.sessionItem(element.session)
-  }
-
-  ticketItem(group, hidden = false) {
-    const issue = this.issues[group.ticket]
-    const prs = hidden ? [] : (this.prs[group.ticket] ?? [])
-    const { Expanded, Collapsed } = vscode.TreeItemCollapsibleState
-    const isOpen = !hidden && (group.isActive || prs.length > 0)
-    const item = new vscode.TreeItem(group.ticket ?? 'No ticket', isOpen ? Expanded : Collapsed)
-    // A ticket can have shown and hidden sessions, so it may show in both places.
-    item.id = elementId({ kind: 'ticket', group, hidden })
-    item.contextValue = group.ticket ? 'ticket' : undefined
-    const title = this.titles[group.ticket] ?? issue?.summary
-    const counts = group.counts.map(({ label, count }) => `${count} ${label}`).join(' · ')
-    const prCount = prs.length > 0 ? `${prs.length} open PR${prs.length > 1 ? 's' : ''}` : undefined
-    item.description = [title, counts, prCount].filter(Boolean).join(' · ')
-    item.iconPath = themeIcon(ISSUE_ICON[issue?.category] ?? UNKNOWN_ISSUE)
-    item.tooltip = [`${group.ticket}: ${issue?.summary ?? title ?? ''}`, issue?.status].filter(Boolean).join('\n')
-    return item
-  }
-
-  prItem(pr) {
-    const item = new vscode.TreeItem(`${pr.repo}#${pr.number}`)
-    item.description = pr.title
-    item.iconPath = themeIcon(pr.isDraft ? PR_ICON.draft : PR_ICON.open)
-    item.tooltip = `${pr.isDraft ? 'Draft: ' : ''}${pr.title}\n${pr.url}`
-    item.command = { command: 'vscode.open', title: 'Open PR', arguments: [vscode.Uri.parse(pr.url)] }
-    return item
-  }
-
-  sessionItem(session) {
-    const status = STATUS[session.state] ?? { label: session.state, icon: 'circle-outline' }
-    const item = new vscode.TreeItem(withoutTicketSuffix(session.name, this.pattern))
-    item.id = `session:${session.id}`
-    item.contextValue = this.isHidden(session) ? 'session.hidden' : 'session'
-    const isLive = session.state === 'working' || session.state === 'blocked'
-    const activity = isLive && session.detail ? session.detail : age(Date.now() - session.updatedAt)
-    // A working session keeps its cache warm, so the countdown only matters between turns.
-    const left = session.state !== 'working' && session.lastWriteAt ? cacheLeft(session.lastWriteAt, this.cacheTtl, Date.now()) : 0
-    const cache = left > 0 ? `cache ${clock(left)}` : undefined
-    item.description = [activity, cache].filter(Boolean).join(' · ')
-    item.iconPath = themeIcon(status)
-    const cacheLine = session.state === 'working' ? undefined : cache ? `${cache} left` : 'cache cold'
-    const renaming = session.isRenaming && 'rename pending: applies once the session is idle with the claude-deck plugin loaded'
-    item.tooltip = [session.name, `${status.label} · ${session.id}`, session.lastWriteAt && cacheLine, renaming]
-      .filter(Boolean)
-      .join('\n')
-    item.command = { command: 'claudeDeck.attach', title: 'Attach', arguments: [session] }
-    return item
+  // A session dropped on a ticket is reassigned to it; dropped on "no ticket" it loses its ticket.
+  async assign(session, ticket) {
+    if ((ticket ?? undefined) === (session.ticket ?? undefined)) return
+    await rename(session, assignTicket(session.name, ticket, this.pattern), this.pattern)
   }
 }
 
@@ -624,28 +482,29 @@ const search = async provider => {
 const activate = async context => {
   const provider = new SessionsProvider()
   await migrateFromClaudeTickets()
-  const dragAndDropController = {
-    dragMimeTypes: [DRAG_MIME],
-    dropMimeTypes: [DRAG_MIME],
-    handleDrag: (elements, dataTransfer) => dataTransfer.set(DRAG_MIME, new vscode.DataTransferItem(elements)),
-    handleDrop: async (target, dataTransfer) => {
-      const [dragged] = dataTransfer.get(DRAG_MIME)?.value ?? []
-      if (dragged) {
-        await provider.moveTo(dragged, target)
-        refresh()
-      }
+  const sessionById = id => provider.sessions.find(session => session.id === id)
+  const inbox = new InboxView(provider, {
+    attach: ({ id }) => sessionById(id) && attach(sessionById(id), provider),
+    openUrl: ({ url }) => vscode.env.openExternal(vscode.Uri.parse(url)),
+    openTicket: ({ ticket }) => openJira({ group: { ticket } }),
+    startTask: ({ ticket }) => vscode.commands.executeCommand('claudeDeck.startTask', ticket && { group: { ticket } }),
+    newSession: () => vscode.commands.executeCommand('claudeDeck.newSession'),
+    refresh: () => refresh(true),
+    shown: () => refresh(),
+    rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('claudeDeck.rename', { session: sessionById(id) }),
+    hide: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), true),
+    show: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), false),
+    assign: async ({ id, ticket }) => {
+      const session = sessionById(id)
+      if (!session) return
+      await provider.assign(session, ticket ?? undefined)
+      refresh(true)
     },
-  }
-  const view = vscode.window.createTreeView('claudeDeck.sessions', { treeDataProvider: provider, dragAndDropController })
-  const historyProvider = {
-    onDidChangeTreeData: provider.onDidChangeTreeData,
-    getChildren: element => (element ? provider.getChildren(element) : provider.history()),
-    getTreeItem: element => provider.getTreeItem(element),
-  }
-  const history = vscode.window.createTreeView('claudeDeck.history', { treeDataProvider: historyProvider })
-  const showCount = () => (history.description = `${provider.hidden.reduce((sum, group) => sum + group.sessions.length, 0)} sessions`)
-  context.subscriptions.push(history, provider.onDidChangeTreeData(showCount))
-  context.subscriptions.push(vscode.window.createTreeView('claudeDeck.legend', { treeDataProvider: legendProvider }))
+  })
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider('claudeDeck.inbox', inbox),
+    provider.onDidChange(() => inbox.post()),
+  )
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10)
   statusBar.command = 'claudeDeck.focus'
   context.subscriptions.push(statusBar)
@@ -683,9 +542,8 @@ const activate = async context => {
   let running
   const refresh = (force = false) =>
     (running ??= provider
-      .refresh({ force, withRemote: view.visible })
+      .refresh({ force, withRemote: inbox.visible })
       .then(blocked => {
-        view.message = provider.message
         blocked.forEach(notify)
         updateStatusBar()
       })
@@ -711,21 +569,18 @@ const activate = async context => {
     }
   }
   context.subscriptions.push(
-    view,
     { dispose: () => clearInterval(timer) },
     { dispose: () => watcher.close() },
-    view.onDidChangeVisibility(({ visible }) => visible && refresh()),
     vscode.workspace.onDidChangeConfiguration(e => e.affectsConfiguration('claudeDeck') && refresh(true)),
     vscode.commands.registerCommand('claudeDeck.focus', () => {
       const blocked = provider.sessions.find(s => s.state === 'blocked' && !provider.isHidden(s))
       if (blocked) return attach(blocked, provider)
-      vscode.commands.executeCommand('claudeDeck.sessions.focus')
+      vscode.commands.executeCommand('claudeDeck.inbox.focus')
     }),
     vscode.commands.registerCommand('claudeDeck.refresh', () => refresh(true)),
     vscode.commands.registerCommand('claudeDeck.attach', session => attach(session, provider)),
     vscode.commands.registerCommand('claudeDeck.openJira', openJira),
     vscode.commands.registerCommand('claudeDeck.search', () => search(provider)),
-    vscode.commands.registerCommand('claudeDeck.sortAlphabetically', () => provider.setOrder([])),
     vscode.commands.registerCommand('claudeDeck.rename', async ({ session }) => {
       const name = (await vscode.window.showInputBox({ title: 'Rename session', value: session.name }))?.trim()
       if (!name || name === session.name) return

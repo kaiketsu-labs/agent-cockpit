@@ -230,6 +230,55 @@ const age = ms => {
   return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`
 }
 
+const NEEDS_YOU = new Set(['blocked', 'failed'])
+const IS_BUSY = new Set(['blocked', 'failed', 'working'])
+
+const inboxRow = (session, { pattern, now, cacheTtl, isHidden }) => {
+  const status = STATUS[session.state] ?? { label: session.state }
+  const isLive = session.state === 'working' || session.state === 'blocked'
+  const left = session.state !== 'working' && session.lastWriteAt ? cacheLeft(session.lastWriteAt, cacheTtl, now) : 0
+  return {
+    id: session.id,
+    name: withoutTicketSuffix(session.name, pattern),
+    ticket: session.ticket ?? null,
+    state: session.state,
+    stateLabel: status.label,
+    activity: isLive && session.detail ? session.detail : age(now - session.updatedAt),
+    cache: left > 0 ? clock(left) : null,
+    isHidden,
+    isRenaming: session.isRenaming === true,
+  }
+}
+
+// What the Inbox webview draws: sessions that need the person first, then one card per ticket.
+const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now }) => {
+  const options = { pattern, now, cacheTtl }
+  const card = (group, isHidden) => {
+    const issue = issues[group.ticket]
+    const sessions = group.sessions.map(session => inboxRow(session, { ...options, isHidden }))
+    return {
+      key: group.ticket,
+      title: titles[group.ticket] ?? issue?.summary ?? '',
+      category: issue?.category ?? null,
+      status: issue?.status ?? null,
+      sessions,
+      prs: isHidden ? [] : (prs[group.ticket] ?? []),
+      isBusy: sessions.some(row => IS_BUSY.has(row.state)),
+    }
+  }
+  const active = groups.filter(group => group.ticket !== null).map(group => card(group, false))
+  const loose = (groups.find(group => group.ticket === null)?.sessions ?? []).map(session => inboxRow(session, { ...options, isHidden: false }))
+  const needs = [...active.flatMap(ticket => ticket.sessions), ...loose]
+    .filter(row => NEEDS_YOU.has(row.state))
+    .sort((a, b) => STATUS[a.state].rank - STATUS[b.state].rank)
+  return {
+    needs,
+    tickets: active,
+    loose,
+    history: hidden.map(group => card(group, true)),
+  }
+}
+
 module.exports = {
   STATUS,
   normalizeTicket,
@@ -253,4 +302,5 @@ module.exports = {
   cacheLeft,
   clock,
   age,
+  inboxModel,
 }

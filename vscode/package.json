@@ -27,18 +27,9 @@
     "views": {
       "claudeDeck": [
         {
-          "id": "claudeDeck.sessions",
-          "name": "Sessions"
-        },
-        {
-          "id": "claudeDeck.history",
-          "name": "History",
-          "visibility": "collapsed"
-        },
-        {
-          "id": "claudeDeck.legend",
-          "name": "Legend",
-          "visibility": "collapsed"
+          "type": "webview",
+          "id": "claudeDeck.inbox",
+          "name": "Inbox"
         }
       ]
     },
@@ -115,11 +106,6 @@
         "icon": "$(inbox)"
       },
       {
-        "command": "claudeDeck.sortAlphabetically",
-        "title": "Sort alphabetically",
-        "icon": "$(sort-precedence)"
-      },
-      {
         "command": "claudeDeck.newSession",
         "title": "New session (no ticket)",
         "icon": "$(comment-discussion)"
@@ -131,32 +117,6 @@
       }
     ],
     "menus": {
-      "view/title": [
-        {
-          "command": "claudeDeck.startTask",
-          "when": "view == claudeDeck.sessions",
-          "group": "navigation"
-        },
-        {
-          "command": "claudeDeck.newSession",
-          "when": "view == claudeDeck.sessions",
-          "group": "navigation"
-        },
-        {
-          "command": "claudeDeck.search",
-          "when": "view == claudeDeck.sessions",
-          "group": "navigation"
-        },
-        {
-          "command": "claudeDeck.refresh",
-          "when": "view == claudeDeck.sessions",
-          "group": "navigation"
-        },
-        {
-          "command": "claudeDeck.sortAlphabetically",
-          "when": "view == claudeDeck.sessions"
-        }
-      ],
       "commandPalette": [
         {
           "command": "claudeDeck.attach",
@@ -177,33 +137,6 @@
         {
           "command": "claudeDeck.rename",
           "when": "false"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "claudeDeck.startTask",
-          "when": "view =~ /^claudeDeck\\.(sessions|history)$/ && viewItem == ticket",
-          "group": "inline"
-        },
-        {
-          "command": "claudeDeck.openJira",
-          "when": "view =~ /^claudeDeck\\.(sessions|history)$/ && viewItem == ticket",
-          "group": "inline"
-        },
-        {
-          "command": "claudeDeck.hide",
-          "when": "view == claudeDeck.sessions && viewItem == session",
-          "group": "inline"
-        },
-        {
-          "command": "claudeDeck.show",
-          "when": "view == claudeDeck.history && viewItem == session.hidden",
-          "group": "inline"
-        },
-        {
-          "command": "claudeDeck.rename",
-          "when": "view =~ /^claudeDeck\\.(sessions|history)$/ && viewItem =~ /^session/",
-          "group": "1_edit"
         }
       ]
     }
