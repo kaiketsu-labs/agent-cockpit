@@ -41,8 +41,8 @@ The task is what the prompt asks beyond the ticket key; a stated task stands. As
 |---|---|---|
 | Implement directly | Small and clear: concrete acceptance criteria, one repo, a change you can name in a sentence | Implement in worktrees, run the repo's checks |
 | Investigate + plan | Unclear, large or cross-repo; open design questions; no acceptance criteria | `EnterPlanMode`; read the code, show the plan in full in chat, then `ExitPlanMode`. Implement only once the user approves it. A session backgrounded in plan mode gets a new plan path, so its dialog shows no plan |
-| Investigate only | The ticket asks a question or an analysis, no code change | Answer or analyse, no plan, no edits |
-| Review | Open PRs carry the change and await review | Review those PRs |
+| Investigate only | The issue type is not a Story or Bug (Spike, Task, Question, Analysis), or the ticket asks for findings, no code change | Answer or analyse, no plan, no edits |
+| Review | Open PRs carry the change and await review: you are not the assignee, or the PRs are ready for review. Drafts of your own ticket mean the work is still yours | Review those PRs |
 
 Free text via Other is a task of its own. With no stated task and no fetched ticket, recommend nothing.
 
