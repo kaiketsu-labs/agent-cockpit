@@ -11,7 +11,7 @@ Claude Deck consists of two halves that communicate asynchronously via JSON file
    - [`plugin/skills/`](plugin/skills/): Optional companion skills (`start-task`, `finish-task`, `cleanup-worktrees`).
    - [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) & [`plugin/.claude-plugin/plugin.json`](plugin/.claude-plugin/plugin.json): Claude Code plugin manifests.
 
-2. **VS Code Extension (`vscode/`)** — Named `KaiketsuLabs.claude-deck`. Renders the webview sidebar and status bar:
+2. **VS Code Extension (`vscode/`)** — Named `kaiketsu-labs.claude-deck`. Renders the webview sidebar and status bar:
    - [`vscode/extension.js`](vscode/extension.js): VS Code activation, `WebviewViewProvider`, status bar item, file watchers on `~/.claude/deck/`, interactive terminal discovery (`ps -o ppid=` on macOS, `/proc/<pid>/stat` on Linux), automatic VS Code terminal tab renaming (`workbench.action.terminal.renameWithArg`), folder & session management commands (`newFolder`, `renameFolder`, `moveToFolder`, `rename`), and issue/PR polling (3-stage Jira cascade: REST API -> `acli` -> `jira-cli`; GitHub Issues & PRs via `gh`; custom `trackerCommand`).
    - [`vscode/inbox.js`](vscode/inbox.js): Self-contained Webview UI rendering top-level project/ticket folder cards, standalone ungrouped session cards, live status orbs, prompt cache progress bars, and drag-and-drop ordering.
    - [`vscode/group.js`](vscode/group.js): Pure grouping, folder & ticket normalization (`normalizeFolder`, `normalizeTicket`, `folderOf`, `ticketOf`, `folderTicket`), JSONL `custom-title` helpers (`encodeProjectPath`, `customTitleLine`), sorting, and state normalization logic.
