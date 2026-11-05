@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Agent Cockpit: All your coding agent sessions, one cockpit." width="100%">
+  <img src="https://raw.githubusercontent.com/kaiketsu-labs/agent-cockpit/main/assets/banner.png" alt="Agent Cockpit: All your coding agent sessions, one cockpit." width="100%">
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-e8825a?style=flat-square"></a>
+  <a href="https://github.com/kaiketsu-labs/agent-cockpit/blob/main/LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-e8825a?style=flat-square"></a>
   <img alt="VS Code extension" src="https://img.shields.io/badge/VS%20Code-extension-3794ff?style=flat-square">
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-cc785c?style=flat-square">
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-zero-89d185?style=flat-square">
@@ -37,7 +37,7 @@ Claude Code makes parallel agent workflows effortless to start — and chaotic t
 **Agent Cockpit is your mission control:** one sidebar that automatically names your sessions and terminal tabs, organizes them into topic or ticket folders, shows live status and open PRs, and takes you to the right terminal in a single click.
 
 <p align="center">
-  <img src="assets/sidebar.svg" alt="The Agent Cockpit sidebar: sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, live status orbs, prompt cache countdowns and keepalive, and History" width="480">
+  <img src="https://raw.githubusercontent.com/kaiketsu-labs/agent-cockpit/main/assets/sidebar.png" alt="The Agent Cockpit sidebar: sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, live status orbs, prompt cache countdowns and keepalive, and History" width="480">
   <br><sub>Live sidebar overview — ticket folders with issue summaries, clean topic folders, ungrouped sessions, live status orbs, and prompt cache TTL / keepalive</sub>
 </p>
 
