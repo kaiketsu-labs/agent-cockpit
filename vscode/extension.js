@@ -15,6 +15,7 @@ const {
   customTitleLine,
   groupSessions,
   moveBefore,
+  parseGithubRemote,
   searchQueries,
   prsByTicket,
   isClosed,
@@ -56,6 +57,7 @@ const CLAUDE = localBin('claude')
 const GH = localBin('gh')
 const ACLI = localBin('acli')
 const JIRA_CLI = localBin('jira')
+const GIT = localBin('git')
 
 const readJson = async (file, fallback) => {
   try {
@@ -74,6 +76,22 @@ const run = (file, args, input, options = {}) =>
     child.stdin.on('error', () => {})
     child.stdin.end(input)
   })
+
+const repoCache = new Map()
+
+const detectGithubRepo = async cwd => {
+  if (!cwd || typeof cwd !== 'string') return undefined
+  if (repoCache.has(cwd)) return repoCache.get(cwd)
+  try {
+    const stdout = await run(GIT, ['remote', '-v'], undefined, { cwd })
+    const repo = parseGithubRemote(stdout)
+    repoCache.set(cwd, repo)
+    return repo
+  } catch {
+    repoCache.set(cwd, undefined)
+    return undefined
+  }
+}
 
 // The env Claude Code sessions see: user settings, then each workspace's project and local settings.
 const loadEnv = async () => {
@@ -284,12 +302,25 @@ const loadJiraIssues = async (env, keys, cwd) => {
   return {}
 }
 
-const loadGithubIssues = async (keys, cwd) => {
+const loadGithubIssues = async (keys, cwd, options = {}) => {
+  const { reposByTicket = {}, defaultRepos = [] } = options
+  const defaultRepo = defaultRepos[0]
   const issues = {}
   await Promise.all(
     keys.map(async key => {
       try {
-        const [repo, num] = key.startsWith('#') ? [undefined, key.slice(1)] : key.split('#')
+        let repo
+        let num
+        if (key.startsWith('#')) {
+          num = key.slice(1)
+          repo = reposByTicket[key] ?? defaultRepo
+        } else if (key.includes('#')) {
+          const parts = key.split('#')
+          repo = parts[0]
+          num = parts[1]
+        } else {
+          return
+        }
         const args = ['issue', 'view', num, '--json', 'title,state,url']
         if (repo) args.push('-R', repo)
         const data = JSON.parse(await run(GH, args, undefined, { cwd }))
@@ -306,7 +337,7 @@ const loadGithubIssues = async (keys, cwd) => {
   return issues
 }
 
-const loadIssues = async (env, keys, cfg, cwd) => {
+const loadIssues = async (env, keys, cfg, cwd, options = {}) => {
   if (keys.length === 0 || cfg.tracker === 'none') return {}
   if (cfg.tracker === 'command') {
     if (!cfg.trackerCommand) return {}
@@ -324,18 +355,20 @@ const loadIssues = async (env, keys, cfg, cwd) => {
     }
   }
   if ((cfg.tracker === 'auto' || cfg.tracker === 'github') && ghKeys.length > 0) {
-    Object.assign(results, await loadGithubIssues(ghKeys, cwd))
+    Object.assign(results, await loadGithubIssues(ghKeys, cwd, options))
   }
   return results
 }
 
-const loadPrs = async (keys, cfg) => {
+const loadPrs = async (keys, cfg, options = {}) => {
   if (keys.length === 0 || cfg.pullRequests === 'none') return {}
   try {
+    const queries = searchQueries(keys, 6, options)
+    if (queries.length === 0) return {}
     const pages = await Promise.all(
-      searchQueries(keys).map(q => run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'])),
+      queries.map(q => run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'])),
     )
-    return prsByTicket(pages.flatMap(page => JSON.parse(page).items), keys)
+    return prsByTicket(pages.flatMap(page => JSON.parse(page).items), keys, options)
   } catch (err) {
     if (cfg.pullRequests === 'github') throw err
     return {}
@@ -465,12 +498,47 @@ class SessionsProvider {
     ])
     const isDue = (what, ms) => withRemote && (force || Date.now() - this.fetchedAt[what] > ms)
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
+
+    const resolveRepoOptions = async () => {
+      const workspaceCwds = (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.fsPath)
+      const workspaceRepos = (await Promise.all(workspaceCwds.map(detectGithubRepo))).filter(Boolean)
+      const defaultRepo = workspaceRepos[0] ?? (await detectGithubRepo(cwd))
+      const reposByTicket = {}
+      for (const group of this.groups) {
+        const tKey = folderTicket(group.ticket, this.pattern)
+        if (!tKey) continue
+        if (tKey.includes('/') && tKey.includes('#')) {
+          reposByTicket[tKey] = tKey.split('#')[0]
+        } else {
+          const sessionCwds = (group.sessions ?? []).map(s => s.cwd).filter(Boolean)
+          const sessionRepos = (await Promise.all(sessionCwds.map(detectGithubRepo))).filter(Boolean)
+          const groupRepo = sessionRepos[0] ?? defaultRepo
+          if (groupRepo) reposByTicket[tKey] = groupRepo
+        }
+      }
+      for (const session of this.sessions) {
+        const tKey = folderTicket(session.folder ?? session.ticket, this.pattern)
+        if (!tKey || reposByTicket[tKey]) continue
+        if (tKey.includes('/') && tKey.includes('#')) {
+          reposByTicket[tKey] = tKey.split('#')[0]
+        } else if (session.cwd) {
+          const repo = await detectGithubRepo(session.cwd)
+          if (repo) reposByTicket[tKey] = repo
+        }
+      }
+      const allDetectedRepos = [...new Set([...workspaceRepos, ...Object.values(reposByTicket), defaultRepo].filter(Boolean))]
+      return { reposByTicket, defaultRepos: allDetectedRepos }
+    }
+
     // PRs only for live ticket folders: each six keys cost one of GitHub's 30 searches a minute.
+    const repoOptions = isDue('issues', TRACKER_MS) || isDue('prs', PRS_MS) ? await resolveRepoOptions() : {}
     await Promise.all([
       isDue('issues', TRACKER_MS) &&
-        this.track('tracker', async () => (this.issues = await loadIssues(this.env, allTicketKeys, this.config, cwd)), 'issues'),
+        this.track('tracker', async () => (this.issues = await loadIssues(this.env, allTicketKeys, this.config, cwd, repoOptions)), 'issues'),
       isDue('prs', PRS_MS) &&
-        this.track('gh search', async () => (this.prs = await loadPrs(activeTicketKeys, this.config)), 'prs'),
+        this.track('gh search', async () => {
+          this.prs = await loadPrs(activeTicketKeys, this.config, repoOptions)
+        }, 'prs'),
     ])
     this.regroup()
     this.changed.fire()
