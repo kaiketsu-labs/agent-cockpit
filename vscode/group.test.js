@@ -14,6 +14,7 @@ const {
   customTitleLine,
   groupSessions,
   moveBefore,
+  parseGithubRemote,
   searchQueries,
   prsByTicket,
   isClosed,
@@ -146,6 +147,76 @@ test('PR searches batch six keys and match PRs to every key their title names', 
   const byTicket = prsByTicket([pr], ['PROJ-1', 'PROJ-2', 'PROJ-3', '#42', '#4'])
   assert.deepEqual(Object.keys(byTicket), ['PROJ-1', 'PROJ-2', '#42'])
   assert.deepEqual(byTicket['PROJ-1'][0], { repo: 'api', number: 9, title: 'feat(proj-1): x, PROJ-2, not PROJ-20, fixes #42', url: 'u', isDraft: true })
+})
+
+test('parseGithubRemote extracts owner/repo from various git remote URL formats', () => {
+  assert.equal(
+    parseGithubRemote('origin\thttps://github.com/kaiketsu-labs/agent-cockpit.git (fetch)\norigin\thttps://github.com/kaiketsu-labs/agent-cockpit.git (push)'),
+    'kaiketsu-labs/agent-cockpit',
+  )
+  assert.equal(parseGithubRemote('origin\tgit@github.com:owner/repo.git (fetch)'), 'owner/repo')
+  assert.equal(parseGithubRemote('origin\tssh://git@github.com/owner/repo (fetch)'), 'owner/repo')
+  assert.equal(parseGithubRemote('origin\tgit@github-work:my-org/my-project.git (fetch)'), 'my-org/my-project')
+  assert.equal(parseGithubRemote('origin\thttps://gitlab.com/foo/bar.git (fetch)'), undefined)
+  assert.equal(parseGithubRemote(''), undefined)
+  assert.equal(parseGithubRemote(undefined), undefined)
+})
+
+test('PR searches scope to repository and reject PRs from stranger public repos', () => {
+  // Bare issue number #12 with repo specified scopes to repo
+  assert.deepEqual(
+    searchQueries(['#12'], 6, { reposByTicket: { '#12': 'kaiketsu-labs/agent-cockpit' } }),
+    ['repo:kaiketsu-labs/agent-cockpit is:pr is:open in:title #12'],
+  )
+
+  // Explicit owner/repo#42 scopes to that repo
+  assert.deepEqual(
+    searchQueries(['other-org/other-repo#42'], 6, { reposByTicket: {} }),
+    ['repo:other-org/other-repo is:pr is:open in:title #42'],
+  )
+
+  // Bare issue number #12 with NO repo known is skipped (never queried globally across GitHub)
+  assert.deepEqual(
+    searchQueries(['#12'], 6, { reposByTicket: {}, defaultRepos: [] }),
+    [],
+  )
+
+  // Keys with multiple default repos generate separate queries per repo (GitHub does not support grouping repo qualifiers)
+  assert.deepEqual(
+    searchQueries(['PROJ-1', 'PROJ-2'], 6, { reposByTicket: {}, defaultRepos: ['org/repo1', 'org/repo2'] }),
+    [
+      'repo:org/repo1 is:pr is:open in:title PROJ-1 OR PROJ-2',
+      'repo:org/repo2 is:pr is:open in:title PROJ-1 OR PROJ-2',
+    ],
+  )
+
+  // prsByTicket rejects stranger PRs (e.g. NewsNest#97 Issue #12)
+  const strangerPr = {
+    number: 97,
+    title: 'Issue #12',
+    html_url: 'https://github.com/someone/NewsNest/pull/97',
+    repository_url: 'https://api.github.com/repos/someone/NewsNest',
+    draft: false,
+  }
+  const myPr = {
+    number: 97,
+    title: 'Issue #12',
+    html_url: 'https://github.com/kaiketsu-labs/agent-cockpit/pull/97',
+    repository_url: 'https://api.github.com/repos/kaiketsu-labs/agent-cockpit',
+    draft: false,
+  }
+
+  // Stranger PR is rejected
+  assert.deepEqual(
+    prsByTicket([strangerPr], ['#12'], { reposByTicket: { '#12': 'kaiketsu-labs/agent-cockpit' } }),
+    {},
+  )
+
+  // Own PR is accepted
+  const accepted = prsByTicket([myPr], ['#12'], { reposByTicket: { '#12': 'kaiketsu-labs/agent-cockpit' } })
+  assert.equal(accepted['#12']?.length, 1)
+  assert.equal(accepted['#12'][0].repo, 'agent-cockpit')
+  assert.equal(accepted['#12'][0].number, 97)
 })
 
 test('only a ticket the tracker calls done is closed', () => {

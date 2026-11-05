@@ -134,10 +134,65 @@ const groupSessions = (sessions, order = [], options = {}) => {
   return [...sortByOrder(grouped, g => g.ticket, g => g.ticket, orderList), ...groups.filter(group => group.ticket === null)]
 }
 
+const parseGithubRemote = stdout => {
+  if (!stdout) return undefined
+  for (const line of stdout.split('\n')) {
+    const match = line.match(/(?:github\.com|github[^/:\s]*?)[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\s|\(|$)/i)
+    if (match) return `${match[1]}/${match[2]}`
+  }
+  return undefined
+}
+
 // GitHub search allows five OR operators, so six keys a query. Titles only: release PRs list every key in their body.
-const searchQueries = (keys, size = 6) => {
+// When repo scoping is available, queries are scoped to relevant repos to avoid matching random public repos.
+const searchQueries = (keys, size = 6, options = {}) => {
+  const { reposByTicket = {}, defaultRepos = [] } = options
+  const hasOptions = Boolean(options.reposByTicket || options.defaultRepos || options.repos)
+  const fallbackRepos = (options.repos ?? defaultRepos).filter(Boolean)
+
+  if (!hasOptions) {
+    const queries = []
+    for (let i = 0; i < keys.length; i += size) queries.push(`is:pr is:open in:title ${keys.slice(i, i + size).join(' OR ')}`)
+    return queries
+  }
+
+  const byScope = new Map()
+
+  for (const key of keys) {
+    let repoList = []
+    let term = key
+
+    if (key.includes('/') && key.includes('#')) {
+      const parts = key.split('#')
+      repoList = [parts[0]]
+      term = `#${parts[1]}`
+    } else if (reposByTicket[key]) {
+      repoList = Array.isArray(reposByTicket[key]) ? reposByTicket[key] : [reposByTicket[key]]
+    } else if (key.startsWith('#')) {
+      if (fallbackRepos.length > 0) {
+        repoList = fallbackRepos
+      } else {
+        // Unknown repo for a bare issue number like #12: skip to avoid matching random public repos globally
+        continue
+      }
+    } else {
+      if (fallbackRepos.length > 0) repoList = fallbackRepos
+      else repoList = ['']
+    }
+
+    for (const repo of repoList) {
+      const scopePrefix = repo && typeof repo === 'string' && repo.trim() ? `repo:${repo.trim()} ` : ''
+      if (!byScope.has(scopePrefix)) byScope.set(scopePrefix, [])
+      byScope.get(scopePrefix).push(term)
+    }
+  }
+
   const queries = []
-  for (let i = 0; i < keys.length; i += size) queries.push(`is:pr is:open in:title ${keys.slice(i, i + size).join(' OR ')}`)
+  for (const [scopePrefix, terms] of byScope) {
+    for (let i = 0; i < terms.length; i += size) {
+      queries.push(`${scopePrefix}is:pr is:open in:title ${terms.slice(i, i + size).join(' OR ')}`)
+    }
+  }
   return queries
 }
 
@@ -149,18 +204,62 @@ const keyInTitle = (title, key) => {
   return new RegExp(bound, 'i').test(title)
 }
 
-const prsByTicket = (items, keys) => {
+const itemRepoOf = item => {
+  const url = item?.repository_url || ''
+  const parts = url.split('/')
+  return parts.length >= 2 ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}` : parts[parts.length - 1]
+}
+
+const prsByTicket = (items, keys, options = {}) => {
+  const { reposByTicket = {}, defaultRepos = [] } = options
+  const fallbackRepos = (options.repos ?? defaultRepos).map(r => r.toLowerCase())
+  const hasOptions = Boolean(options.reposByTicket || options.defaultRepos || options.repos)
   const byTicket = {}
+
   for (const item of items) {
-    for (const key of keys.filter(key => keyInTitle(item.title, key))) {
-      const pr = {
-        repo: item.repository_url.split('/').pop(),
-        number: item.number,
-        title: item.title,
-        url: item.html_url,
-        isDraft: item.draft === true,
+    const itemRepo = itemRepoOf(item).toLowerCase()
+    const itemRepoShort = item.repository_url ? item.repository_url.split('/').pop().toLowerCase() : ''
+
+    for (const key of keys) {
+      let expectedRepo
+      let term = key
+
+      if (key.includes('/') && key.includes('#')) {
+        const parts = key.split('#')
+        expectedRepo = parts[0].toLowerCase()
+        term = `#${parts[1]}`
+      } else if (reposByTicket[key]) {
+        expectedRepo = reposByTicket[key].toLowerCase()
+      } else if (key.startsWith('#')) {
+        if (fallbackRepos.length === 1) {
+          expectedRepo = fallbackRepos[0]
+        }
       }
-      byTicket[key] = [...(byTicket[key] ?? []), pr]
+
+      if (expectedRepo) {
+        const matchesRepo = itemRepo === expectedRepo || itemRepoShort === expectedRepo || expectedRepo.endsWith('/' + itemRepoShort)
+        if (!matchesRepo) continue
+      } else if (hasOptions && key.startsWith('#')) {
+        continue
+      } else if (hasOptions && fallbackRepos.length > 0) {
+        const matchesAny = fallbackRepos.some(r => itemRepo === r || itemRepoShort === r || r.endsWith('/' + itemRepoShort))
+        if (!matchesAny) continue
+      }
+
+      const numMatch = key.startsWith('#') && Number(key.slice(1)) === item.number
+      const explicitNumMatch = key.includes('#') && Number(key.split('#')[1]) === item.number
+      const titleMatch = keyInTitle(item.title, term) || keyInTitle(item.title, key)
+
+      if (numMatch || explicitNumMatch || titleMatch) {
+        const pr = {
+          repo: item.repository_url.split('/').pop(),
+          number: item.number,
+          title: item.title,
+          url: item.html_url,
+          isDraft: item.draft === true,
+        }
+        byTicket[key] = [...(byTicket[key] ?? []), pr]
+      }
     }
   }
   return byTicket
@@ -346,6 +445,7 @@ module.exports = {
   sortByOrder,
   moveBefore,
   groupSessions,
+  parseGithubRemote,
   searchQueries,
   prsByTicket,
   isClosed,
