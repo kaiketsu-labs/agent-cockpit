@@ -4,6 +4,29 @@
   "description": "Claude Code sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
   "version": "0.3.0",
   "publisher": "kaiketsu-labs",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#18181b",
+    "theme": "dark"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Productivity"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "terminal",
+    "session manager",
+    "worktrees",
+    "jira",
+    "github"
+  ],
+  "homepage": "https://github.com/kaiketsu-labs/claude-deck#readme",
+  "bugs": {
+    "url": "https://github.com/kaiketsu-labs/claude-deck/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

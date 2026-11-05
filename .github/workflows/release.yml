@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   release:
@@ -55,10 +56,16 @@ jobs:
         run: gh release upload "${{ steps.release.outputs.tag_name }}" "${{ steps.build.outputs.vsix }}" "${{ steps.build.outputs.vsix_latest }}" --clobber
 
       - name: Publish to VS Code Marketplace
-        if: ${{ steps.release.outputs.release_created && env.VSCE_PAT != '' }}
+        if: ${{ steps.release.outputs.release_created && (env.VSCE_PAT != '' || vars.VSCE_USE_OIDC == 'true') }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce publish --packagePath "${{ steps.build.outputs.vsix }}" -p "$VSCE_PAT"
+          USE_OIDC: ${{ vars.VSCE_USE_OIDC }}
+        run: |
+          if [ -n "$VSCE_PAT" ]; then
+            npx --yes @vscode/vsce publish --packagePath "${{ steps.build.outputs.vsix }}" -p "$VSCE_PAT"
+          else
+            npx --yes @vscode/vsce publish --packagePath "${{ steps.build.outputs.vsix }}" --oidc
+          fi
 
       - name: Publish to Open VSX Registry
         if: ${{ steps.release.outputs.release_created && env.OVSX_PAT != '' }}
