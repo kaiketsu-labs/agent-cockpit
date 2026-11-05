@@ -95,6 +95,11 @@
           "type": "string",
           "default": "",
           "description": "Optional custom regular expression for matching ticket keys."
+        },
+        "claudeDeck.closeTerminalOnArchive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically close the associated VS Code terminal tab when archiving a session (moving to history)."
         }
       }
     },
