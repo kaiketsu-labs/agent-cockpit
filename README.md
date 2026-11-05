@@ -109,21 +109,24 @@ Add `CLAUDE_CODE_PLUGIN_DIRS` to the `env` block of `~/.claude/settings.json`:
 
 ### 2. Install the VS Code extension
 
-<!-- x-release-please-start-version -->
-Download and install `claude-deck-0.3.0.vsix` in one command:
+Install the latest release in one command:
 
 ```bash
-# Downloads and installs into VS Code (replace 'code' with 'cursor' or 'windsurf' if preferred)
 curl -fsSL https://github.com/kaiketsu-labs/claude-deck/releases/latest/download/claude-deck.vsix -o /tmp/claude-deck.vsix && code --install-extension /tmp/claude-deck.vsix --force
 ```
+*(Replace `code` with `cursor` or `windsurf` if preferred).*
 
-Or manually download `claude-deck-0.3.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
+<details>
+<summary><b>Manual download & build options</b></summary>
+
+<!-- x-release-please-start-version -->
+Download `claude-deck-0.3.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
 
 ```bash
 code --install-extension claude-deck-0.3.0.vsix --force
 ```
 
-Or build and install it from source in one command (zero npm dependencies — `package.py` packages the `.vsix` directly):
+Or build and install from source (zero npm dependencies — `package.py` packages the `.vsix` directly):
 
 ```bash
 git clone https://github.com/kaiketsu-labs/claude-deck
@@ -131,6 +134,7 @@ cd claude-deck/vscode
 python3 package.py && code --install-extension claude-deck-0.3.0.vsix --force
 ```
 <!-- x-release-please-end -->
+</details>
 
 ### 3. Open the deck
 
