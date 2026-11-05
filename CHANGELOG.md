@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.4.3...v0.5.0) (2026-11-05)
+
+
+### Features
+
+* rebrand project to Agent Cockpit ([#17](https://github.com/kaiketsu-labs/agent-cockpit/issues/17)) ([ee080de](https://github.com/kaiketsu-labs/agent-cockpit/commit/ee080deaf5356a41e1d610610564759c3038f4dc))
+* **vscode:** close terminal tab when archiving a session ([#15](https://github.com/kaiketsu-labs/agent-cockpit/issues/15)) ([e5cce19](https://github.com/kaiketsu-labs/agent-cockpit/commit/e5cce1948ff1ab7f15e45237bed3ee750d21ed87))
+
 ## [0.4.3](https://github.com/kaiketsu-labs/claude-deck/compare/v0.4.2...v0.4.3) (2026-11-05)
 
 
