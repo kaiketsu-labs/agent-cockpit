@@ -689,7 +689,7 @@ const SHAPES = {
   restore: '<path d="M3.5 7.5 6.5 4.5M3.5 7.5l3 3M3.5 7.5H10a3 3 0 1 1 0 6H7.5"/>',
   external: '<path d="M9 3h4v4M13 3 7.5 8.5M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
   close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
-  globe: '<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2a9 9 0 0 1 0 12 9 9 0 0 1 0-12z"/>',
+  gear: '<path d="M9.1 1.5H6.9l-.3 1.5a5 5 0 0 0-1.2.7L4 3 2.5 4.5l.7 1.4a5 5 0 0 0-.7 1.2l-1.5.3v2.2l1.5.3a5 5 0 0 0 .7 1.2L2.5 12 4 13.5l1.4-.7a5 5 0 0 0 1.2.7l.3 1.5h2.2l.3-1.5a5 5 0 0 0 1.2-.7l1.4.7 1.5-1.5-.7-1.4a5 5 0 0 0 .7-1.2l1.5-.3V6.9l-1.5-.3a5 5 0 0 0-.7-1.2l.7-1.4L13.5 3 12 2.5l-1.4.7a5 5 0 0 0-1.2-.7l-.3-1.5zM8 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -897,13 +897,13 @@ const renderList = () => {
     if (blockedCount === 0 && workingCount === 0 && allRows.length > 0) {
       stats.append(el('span', { class: 'stat-pill' }, allRows.length + ' session' + (allRows.length === 1 ? '' : 's')))
     }
-    const showScope = (model.githubScope && model.githubScope !== 'auto') || ui.filter === 'prs'
-    if (showScope && model.githubScope) {
+    const showScope = Boolean(model.githubScope)
+    if (showScope) {
       stats.append(el('span', {
         class: 'stat-pill scope clickable',
         title: 'GitHub PR search scope: ' + model.githubScope + ' · Click to configure',
         onclick: () => send('configureGithubScope'),
-      }, icon('globe'), model.githubScope))
+      }, icon('gear'), model.githubScope))
     }
   }
 

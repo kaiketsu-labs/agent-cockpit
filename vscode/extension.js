@@ -586,12 +586,17 @@ class SessionsProvider {
   }
 
   inboxModel() {
-    let githubScope = 'auto'
-    if (this.config?.githubOrg) {
+    let githubScope = ''
+    if (this.config?.pullRequests === 'none') {
+      githubScope = 'PRs disabled'
+    } else if (this.config?.githubOrg) {
       githubScope = `org:${this.config.githubOrg.trim()}`
     } else if (this.config?.githubRepositories) {
       const repos = this.config.githubRepositories.split(',').map(r => r.trim()).filter(Boolean)
       githubScope = repos.length === 1 ? repos[0] : `${repos.length} repos`
+    } else {
+      const defaultRepo = (vscode.workspace.workspaceFolders ?? []).map(f => repoCache.get(f.uri.fsPath)).find(Boolean)
+      if (defaultRepo) githubScope = defaultRepo.split('/').pop()
     }
     return inboxModel({
       groups: this.groups,
@@ -1131,26 +1136,38 @@ const activate = async context => {
       const config = vscode.workspace.getConfiguration('agentCockpit')
       const currentOrg = config.get('githubOrg', '')
       const currentRepos = config.get('githubRepositories', '')
-      const currentMode = currentOrg ? `Organization (${currentOrg})` : currentRepos ? `Specific Repositories (${currentRepos})` : 'Auto (Workspace Repositories)'
+      const isNone = config.get('pullRequests', 'auto') === 'none'
+
+      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
+      const detectedRepo = await detectGithubRepo(cwd)
+      const currentMode = isNone
+        ? 'Disabled'
+        : currentOrg
+        ? `Organization (${currentOrg})`
+        : currentRepos
+        ? `Repositories (${currentRepos})`
+        : detectedRepo
+        ? `Repositories (${detectedRepo})`
+        : 'Not configured'
 
       const choice = await vscode.window.showQuickPick([
         {
-          label: '$(sync) Auto',
-          description: 'Detect repositories automatically from workspace and active sessions',
-          id: 'auto',
-          picked: !currentOrg && !currentRepos,
-        },
-        {
           label: '$(organization) Organization',
-          description: currentOrg ? `Search across entire organization (currently: ${currentOrg})` : 'Search across all repositories in a GitHub organization',
+          description: currentOrg ? `Currently: ${currentOrg}` : 'Search across all repositories in a GitHub organization',
           id: 'org',
-          picked: Boolean(currentOrg),
+          picked: Boolean(currentOrg) && !isNone,
         },
         {
-          label: '$(repo) Specific Repositories',
-          description: currentRepos ? `Comma-separated list (currently: ${currentRepos})` : 'Search specific comma-separated list of owner/repo',
+          label: '$(repo) Repositories',
+          description: currentRepos ? `Currently: ${currentRepos}` : `Specific repository or comma-separated list${detectedRepo ? ` (prefills ${detectedRepo})` : ''}`,
           id: 'repos',
-          picked: Boolean(currentRepos),
+          picked: (Boolean(currentRepos) || (!currentOrg && !isNone)) && !isNone,
+        },
+        {
+          label: '$(circle-slash) Disabled',
+          description: 'Do not search GitHub for pull requests',
+          id: 'none',
+          picked: isNone,
         },
       ], {
         title: 'Configure GitHub PR Search Scope',
@@ -1160,21 +1177,18 @@ const activate = async context => {
       if (!choice) return
       const target = vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global
 
-      if (choice.id === 'auto') {
-        await config.update('githubOrg', undefined, target)
-        await config.update('githubRepositories', undefined, target)
-        vscode.window.showInformationMessage('Agent Cockpit: GitHub PR scope set to Auto (workspace repositories).')
-      } else if (choice.id === 'org') {
+      if (choice.id === 'org') {
         const org = (await vscode.window.showInputBox({
           title: 'GitHub Organization Scope',
           prompt: 'Enter the GitHub organization or username (e.g. "kaiketsu-labs")',
-          value: currentOrg,
+          value: currentOrg || (detectedRepo ? detectedRepo.split('/')[0] : ''),
           placeHolder: 'kaiketsu-labs',
         }))?.trim()
         if (org !== undefined) {
           if (org) {
             await config.update('githubOrg', org, target)
             await config.update('githubRepositories', undefined, target)
+            if (isNone) await config.update('pullRequests', 'auto', target)
             vscode.window.showInformationMessage(`Agent Cockpit: GitHub PR scope set to org:${org}.`)
           } else {
             await config.update('githubOrg', undefined, target)
@@ -1182,20 +1196,24 @@ const activate = async context => {
         }
       } else if (choice.id === 'repos') {
         const repos = (await vscode.window.showInputBox({
-          title: 'Specific GitHub Repositories Scope',
-          prompt: 'Enter comma-separated repositories (e.g. "org/repo1, org/repo2")',
-          value: currentRepos,
-          placeHolder: 'org/repo1, org/repo2',
+          title: 'GitHub Repositories Scope',
+          prompt: 'Enter specific repository or comma-separated list of owner/repo',
+          value: currentRepos || detectedRepo || '',
+          placeHolder: 'owner/repo or org/repo1, org/repo2',
         }))?.trim()
         if (repos !== undefined) {
           if (repos) {
             await config.update('githubRepositories', repos, target)
             await config.update('githubOrg', undefined, target)
+            if (isNone) await config.update('pullRequests', 'auto', target)
             vscode.window.showInformationMessage(`Agent Cockpit: GitHub PR scope set to ${repos}.`)
           } else {
             await config.update('githubRepositories', undefined, target)
           }
         }
+      } else if (choice.id === 'none') {
+        await config.update('pullRequests', 'none', target)
+        vscode.window.showInformationMessage('Agent Cockpit: GitHub PR search disabled.')
       }
       refresh(true)
     }),
