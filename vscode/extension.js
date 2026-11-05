@@ -303,27 +303,29 @@ const loadJiraIssues = async (env, keys, cwd) => {
 }
 
 const loadGithubIssues = async (keys, cwd, options = {}) => {
-  const { reposByTicket = {}, defaultRepos = [] } = options
-  const defaultRepo = defaultRepos[0]
+  const { reposByTicket = {} } = options
   const issues = {}
   await Promise.all(
     keys.map(async key => {
       try {
         let repo
         let num
-        if (key.startsWith('#')) {
-          num = key.slice(1)
-          repo = reposByTicket[key] ?? defaultRepo
-        } else if (key.includes('#')) {
+        if (key.includes('/') && key.includes('#')) {
           const parts = key.split('#')
           repo = parts[0]
           num = parts[1]
+        } else if (key.startsWith('#')) {
+          num = key.slice(1)
+          // For bare GitHub issues: only query if we are sure about the repo
+          repo = reposByTicket[key]
         } else {
           return
         }
-        const args = ['issue', 'view', num, '--json', 'title,state,url']
-        if (repo) args.push('-R', repo)
+        if (!repo) return
+        const args = ['issue', 'view', num, '--json', 'title,state,url', '-R', repo]
         const data = JSON.parse(await run(GH, args, undefined, { cwd }))
+        // GitHub API returns PRs as issues under /issues/:num; ignore if it is actually a PR
+        if (data.url && data.url.includes('/pull/')) return
         const isDone = String(data.state).toUpperCase() === 'CLOSED'
         issues[key] = {
           status: isDone ? 'Closed' : 'Open',
@@ -512,8 +514,13 @@ class SessionsProvider {
         } else {
           const sessionCwds = (group.sessions ?? []).map(s => s.cwd).filter(Boolean)
           const sessionRepos = (await Promise.all(sessionCwds.map(detectGithubRepo))).filter(Boolean)
-          const groupRepo = sessionRepos[0] ?? defaultRepo
-          if (groupRepo) reposByTicket[tKey] = groupRepo
+          if (tKey.startsWith('#')) {
+            // For bare GitHub issues: only assign if we are sure (at least one session in this group has a detected repo)
+            if (sessionRepos.length > 0) reposByTicket[tKey] = sessionRepos[0]
+          } else {
+            const groupRepo = sessionRepos[0] ?? defaultRepo
+            if (groupRepo) reposByTicket[tKey] = groupRepo
+          }
         }
       }
       for (const session of this.sessions) {

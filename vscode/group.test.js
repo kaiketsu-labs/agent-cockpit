@@ -181,6 +181,18 @@ test('PR searches scope to repository and reject PRs from stranger public repos'
     [],
   )
 
+  // Bare issue number #12 does NOT guess fallback repos when not in reposByTicket (only match if sure)
+  assert.deepEqual(
+    searchQueries(['#12'], 6, { reposByTicket: {}, defaultRepos: ['some-org/some-repo'] }),
+    [],
+  )
+
+  // Jira keys with no repos at all do NOT search globally across GitHub
+  assert.deepEqual(
+    searchQueries(['PROJ-1'], 6, { reposByTicket: {}, defaultRepos: [] }),
+    [],
+  )
+
   // Keys with multiple default repos generate separate queries per repo (GitHub does not support grouping repo qualifiers)
   assert.deepEqual(
     searchQueries(['PROJ-1', 'PROJ-2'], 6, { reposByTicket: {}, defaultRepos: ['org/repo1', 'org/repo2'] }),

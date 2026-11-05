@@ -166,22 +166,29 @@ const searchQueries = (keys, size = 6, options = {}) => {
       const parts = key.split('#')
       repoList = [parts[0]]
       term = `#${parts[1]}`
-    } else if (reposByTicket[key]) {
-      repoList = Array.isArray(reposByTicket[key]) ? reposByTicket[key] : [reposByTicket[key]]
     } else if (key.startsWith('#')) {
-      if (fallbackRepos.length > 0) {
-        repoList = fallbackRepos
+      // For bare GitHub issues (#12): only match if we are sure about the exact repo
+      if (reposByTicket[key]) {
+        repoList = [reposByTicket[key]]
       } else {
         // Unknown repo for a bare issue number like #12: skip to avoid matching random public repos globally
         continue
       }
     } else {
-      if (fallbackRepos.length > 0) repoList = fallbackRepos
-      else repoList = ['']
+      // Jira keys: can span across known repositories, but NEVER search globally across all of GitHub
+      if (reposByTicket[key]) {
+        repoList = Array.isArray(reposByTicket[key]) ? reposByTicket[key] : [reposByTicket[key]]
+      } else if (fallbackRepos.length > 0) {
+        repoList = fallbackRepos
+      } else {
+        // No known repos: do NOT search all of GitHub globally
+        continue
+      }
     }
 
     for (const repo of repoList) {
       const scopePrefix = repo && typeof repo === 'string' && repo.trim() ? `repo:${repo.trim()} ` : ''
+      if (!scopePrefix) continue
       if (!byScope.has(scopePrefix)) byScope.set(scopePrefix, [])
       byScope.get(scopePrefix).push(term)
     }
@@ -228,12 +235,15 @@ const prsByTicket = (items, keys, options = {}) => {
         const parts = key.split('#')
         expectedRepo = parts[0].toLowerCase()
         term = `#${parts[1]}`
+      } else if (key.startsWith('#')) {
+        // Bare GitHub issues: ONLY match if we are sure about the repo
+        if (reposByTicket[key]) {
+          expectedRepo = reposByTicket[key].toLowerCase()
+        } else if (hasOptions) {
+          continue
+        }
       } else if (reposByTicket[key]) {
         expectedRepo = reposByTicket[key].toLowerCase()
-      } else if (key.startsWith('#')) {
-        if (fallbackRepos.length === 1) {
-          expectedRepo = fallbackRepos[0]
-        }
       }
 
       if (expectedRepo) {
@@ -244,6 +254,8 @@ const prsByTicket = (items, keys, options = {}) => {
       } else if (hasOptions && fallbackRepos.length > 0) {
         const matchesAny = fallbackRepos.some(r => itemRepo === r || itemRepoShort === r || r.endsWith('/' + itemRepoShort))
         if (!matchesAny) continue
+      } else if (hasOptions) {
+        continue
       }
 
       const numMatch = key.startsWith('#') && Number(key.slice(1)) === item.number
