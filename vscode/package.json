@@ -133,7 +133,7 @@
       {
         "command": "claudeDeck.toggleKeepWarm",
         "title": "Toggle Keep Warm (Prompt Cache Keepalive)",
-        "icon": "$(flame)",
+        "icon": "$(zap)",
         "category": "Claude Deck"
       }
     ],

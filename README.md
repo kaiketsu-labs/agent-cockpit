@@ -62,7 +62,7 @@ You don't need to change how you use Claude Code or memorize slash commands:
 | 🔔 **Needs-input spotlight** | Pins blocked or failed sessions to an **Attention Needed** spotlight at the top of the sidebar and triggers a VS Code toast notification with an **Open** action. |
 | 📊 **Status bar telemetry** | Shows `Claude (1 waiting)` or `Claude (2 running)` in the VS Code status bar; clicking it immediately focuses the session needing input or opens the deck. |
 | ⏱️ **Prompt cache countdown** | Tracks each session's 5m / 1h prompt cache TTL with a countdown badge (`⚡ 4:12`) and micro progress bar so you can reply before a warm cache goes cold. |
-| 🔥 **Prompt cache keepalive** | Toggle keepalive on any session with one click (`🔥 Keep warm`) or via the `keep_warm` MCP tool. Claude Deck automatically pings the session prefix before cache expiry to keep the cache warm while you step away or switch between parallel sessions. |
+| ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Claude Deck pings the session prefix before cache expiry so you never lose your warm cache while switching tasks or stepping away. |
 | 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and open PRs via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
 | 🧹 **Self-tidying & drag-and-drop** | Closed tickets and sessions inactive for 7 days automatically archive to **History**. Drag and drop sessions between folders, or use inline hover actions to rename, move, or archive. |
 
