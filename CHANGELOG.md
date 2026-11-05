@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.4...v0.6.0) (2026-11-05)
+
+
+### Features
+
+* **vscode:** add configurable GitHub PR scope with gear icon and QuickPick ([#30](https://github.com/kaiketsu-labs/agent-cockpit/issues/30)) ([2d2f8ca](https://github.com/kaiketsu-labs/agent-cockpit/commit/2d2f8ca9e22172f18bbb9d98752c8287d1e6108f))
+
 ## [0.5.4](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.3...v0.5.4) (2026-11-05)
 
 
