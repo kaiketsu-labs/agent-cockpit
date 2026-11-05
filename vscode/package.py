@@ -24,14 +24,28 @@ CONTENT_TYPES = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 MANIFEST = f"""<?xml version="1.0" encoding="utf-8"?>
-<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
     <Identity Language="en-US" Id="{pkg["name"]}" Version="{pkg["version"]}" Publisher="{pkg["publisher"]}"/>
     <DisplayName>{pkg["displayName"]}</DisplayName>
     <Description xml:space="preserve">{pkg["description"]}</Description>
+    <Tags>{",".join(pkg.get("keywords", []))}</Tags>
+    <Categories>{",".join(pkg.get("categories", []))}</Categories>
+    <GalleryFlags>Public</GalleryFlags>
     <Icon>extension/media/icon.png</Icon>
     <Properties>
       <Property Id="Microsoft.VisualStudio.Code.Engine" Value="{pkg["engines"]["vscode"]}"/>
+      <Property Id="Microsoft.VisualStudio.Code.ExtensionDependencies" Value=""/>
+      <Property Id="Microsoft.VisualStudio.Code.ExtensionPack" Value=""/>
+      <Property Id="Microsoft.VisualStudio.Code.ExtensionKind" Value="ui,workspace"/>
+      <Property Id="Microsoft.VisualStudio.Code.LocalizedLanguages" Value=""/>
+      <Property Id="Microsoft.VisualStudio.Services.Links.Source" Value="{pkg.get("repository", {}).get("url", "")}.git"/>
+      <Property Id="Microsoft.VisualStudio.Services.Links.Getstarted" Value="{pkg.get("repository", {}).get("url", "")}.git"/>
+      <Property Id="Microsoft.VisualStudio.Services.Links.GitHub" Value="{pkg.get("repository", {}).get("url", "")}.git"/>
+      <Property Id="Microsoft.VisualStudio.Services.Links.Support" Value="{pkg.get("bugs", {}).get("url", "")}"/>
+      <Property Id="Microsoft.VisualStudio.Services.Links.Learn" Value="{pkg.get("homepage", "")}"/>
+      <Property Id="Microsoft.VisualStudio.Services.GitHubFlavoredMarkdown" Value="true"/>
+      <Property Id="Microsoft.VisualStudio.Services.Content.Pricing" Value="Free"/>
     </Properties>
     <License>extension/LICENSE.txt</License>
   </Metadata>
