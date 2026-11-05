@@ -74,14 +74,9 @@ You don't need to change how you use Claude Code or memorize slash commands:
 > Paste this prompt into Claude Code, Cursor, Windsurf, or your terminal agent:
 >
 > ```text
-> Install Claude Deck:
+> Install Claude Deck for me:
 > 1. Run: claude plugin marketplace add kaiketsu-labs/claude-deck && claude plugin install deck@claude-deck
 > 2. Download and install the latest VS Code extension from https://github.com/kaiketsu-labs/claude-deck/releases/latest/download/claude-deck.vsix using `code --install-extension` (or `cursor` / `windsurf`).
-> ```
->
-> Or run the one-line installer in your terminal:
-> ```bash
-> curl -fsSL https://raw.githubusercontent.com/kaiketsu-labs/claude-deck/main/install.sh | bash
 > ```
 
 ### 1. Install the Claude Code plugin
