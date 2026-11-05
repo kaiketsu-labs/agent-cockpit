@@ -119,6 +119,8 @@ const getCockpitConfig = env => {
     pullRequests: get('pullRequests', 'auto'),
     ticketProjects: get('ticketProjects', '') || env.TICKET_PROJECTS || '',
     ticketPattern: get('ticketPattern', ''),
+    githubOrg: get('githubOrg', '') || env.GITHUB_ORG || '',
+    githubRepositories: get('githubRepositories', ''),
     closeTerminalOnArchive: get('closeTerminalOnArchive', true),
   }
 }
@@ -533,8 +535,21 @@ class SessionsProvider {
           if (repo) reposByTicket[tKey] = repo
         }
       }
-      const allDetectedRepos = [...new Set([...workspaceRepos, ...Object.values(reposByTicket), defaultRepo].filter(Boolean))]
-      return { reposByTicket, defaultRepos: allDetectedRepos }
+      const configuredRepos = this.config?.githubRepositories
+        ? this.config.githubRepositories.split(',').map(r => r.trim()).filter(Boolean)
+        : []
+      const githubOrg = this.config?.githubOrg?.trim() || undefined
+      const allDetectedRepos = [...new Set([
+        ...configuredRepos,
+        ...workspaceRepos,
+        ...Object.values(reposByTicket),
+        defaultRepo,
+      ].filter(Boolean))]
+      return {
+        reposByTicket,
+        defaultRepos: configuredRepos.length > 0 ? configuredRepos : allDetectedRepos,
+        githubOrg,
+      }
     }
 
     // PRs only for live ticket folders: each six keys cost one of GitHub's 30 searches a minute.
@@ -571,6 +586,13 @@ class SessionsProvider {
   }
 
   inboxModel() {
+    let githubScope = 'auto'
+    if (this.config?.githubOrg) {
+      githubScope = `org:${this.config.githubOrg.trim()}`
+    } else if (this.config?.githubRepositories) {
+      const repos = this.config.githubRepositories.split(',').map(r => r.trim()).filter(Boolean)
+      githubScope = repos.length === 1 ? repos[0] : `${repos.length} repos`
+    }
     return inboxModel({
       groups: this.groups,
       hidden: this.hidden,
@@ -580,6 +602,7 @@ class SessionsProvider {
       pattern: this.pattern,
       cacheTtl: this.cacheTtl,
       now: Date.now(),
+      githubScope,
     })
   }
 
@@ -910,6 +933,7 @@ const activate = async context => {
     newFolder: () => vscode.commands.executeCommand('agentCockpit.newFolder'),
     renameFolder: ({ folder }) => vscode.commands.executeCommand('agentCockpit.renameFolder', { folder }),
     removeFolder: ({ folder }) => provider.removeFolder(folder),
+    configureGithubScope: () => vscode.commands.executeCommand('agentCockpit.configureGithubScope'),
     moveToFolder: ({ id }) => sessionById(id) && moveToFolder(sessionById(id), provider, refresh),
     refresh: () => refresh(true),
     shown: () => refresh(),
@@ -1101,6 +1125,78 @@ const activate = async context => {
         keepWarm: next,
         keepWarmUntil: next ? Date.now() + durationMs : null,
       })
+      refresh(true)
+    }),
+    ...registerCmd('configureGithubScope', async () => {
+      const config = vscode.workspace.getConfiguration('agentCockpit')
+      const currentOrg = config.get('githubOrg', '')
+      const currentRepos = config.get('githubRepositories', '')
+      const currentMode = currentOrg ? `Organization (${currentOrg})` : currentRepos ? `Specific Repositories (${currentRepos})` : 'Auto (Workspace Repositories)'
+
+      const choice = await vscode.window.showQuickPick([
+        {
+          label: '$(sync) Auto',
+          description: 'Detect repositories automatically from workspace and active sessions',
+          id: 'auto',
+          picked: !currentOrg && !currentRepos,
+        },
+        {
+          label: '$(organization) Organization',
+          description: currentOrg ? `Search across entire organization (currently: ${currentOrg})` : 'Search across all repositories in a GitHub organization',
+          id: 'org',
+          picked: Boolean(currentOrg),
+        },
+        {
+          label: '$(repo) Specific Repositories',
+          description: currentRepos ? `Comma-separated list (currently: ${currentRepos})` : 'Search specific comma-separated list of owner/repo',
+          id: 'repos',
+          picked: Boolean(currentRepos),
+        },
+      ], {
+        title: 'Configure GitHub PR Search Scope',
+        placeHolder: `Current: ${currentMode}`,
+      })
+
+      if (!choice) return
+      const target = vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global
+
+      if (choice.id === 'auto') {
+        await config.update('githubOrg', undefined, target)
+        await config.update('githubRepositories', undefined, target)
+        vscode.window.showInformationMessage('Agent Cockpit: GitHub PR scope set to Auto (workspace repositories).')
+      } else if (choice.id === 'org') {
+        const org = (await vscode.window.showInputBox({
+          title: 'GitHub Organization Scope',
+          prompt: 'Enter the GitHub organization or username (e.g. "kaiketsu-labs")',
+          value: currentOrg,
+          placeHolder: 'kaiketsu-labs',
+        }))?.trim()
+        if (org !== undefined) {
+          if (org) {
+            await config.update('githubOrg', org, target)
+            await config.update('githubRepositories', undefined, target)
+            vscode.window.showInformationMessage(`Agent Cockpit: GitHub PR scope set to org:${org}.`)
+          } else {
+            await config.update('githubOrg', undefined, target)
+          }
+        }
+      } else if (choice.id === 'repos') {
+        const repos = (await vscode.window.showInputBox({
+          title: 'Specific GitHub Repositories Scope',
+          prompt: 'Enter comma-separated repositories (e.g. "org/repo1, org/repo2")',
+          value: currentRepos,
+          placeHolder: 'org/repo1, org/repo2',
+        }))?.trim()
+        if (repos !== undefined) {
+          if (repos) {
+            await config.update('githubRepositories', repos, target)
+            await config.update('githubOrg', undefined, target)
+            vscode.window.showInformationMessage(`Agent Cockpit: GitHub PR scope set to ${repos}.`)
+          } else {
+            await config.update('githubRepositories', undefined, target)
+          }
+        }
+      }
       refresh(true)
     }),
   )

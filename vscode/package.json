@@ -101,6 +101,16 @@
           "default": "",
           "description": "Optional custom regular expression for matching ticket keys."
         },
+        "agentCockpit.githubOrg": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub organization or user scope (e.g. 'kaiketsu-labs') to search for pull requests on Jira ticket folders. When empty, defaults to auto-detected workspace repositories."
+        },
+        "agentCockpit.githubRepositories": {
+          "type": "string",
+          "default": "",
+          "description": "Comma-separated list of GitHub repositories (e.g. 'org/repo1,org/repo2') to search for pull requests on Jira ticket folders. Overrides auto-detection when set."
+        },
         "agentCockpit.closeTerminalOnArchive": {
           "type": "boolean",
           "default": true,
@@ -168,6 +178,12 @@
         "title": "Toggle Keep Warm (Prompt Cache Keepalive)",
         "icon": "$(zap)",
         "category": "Agent Cockpit"
+      },
+      {
+        "command": "agentCockpit.configureGithubScope",
+        "title": "Configure GitHub PR Scope...",
+        "icon": "$(globe)",
+        "category": "Agent Cockpit"
       }
     ],
     "menus": {
@@ -186,6 +202,11 @@
           "command": "agentCockpit.refresh",
           "when": "view == agentCockpit.inbox",
           "group": "navigation@3"
+        },
+        {
+          "command": "agentCockpit.configureGithubScope",
+          "when": "view == agentCockpit.inbox",
+          "group": "navigation@4"
         }
       ],
       "commandPalette": [
