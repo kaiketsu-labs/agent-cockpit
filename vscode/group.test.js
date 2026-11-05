@@ -202,6 +202,18 @@ test('PR searches scope to repository and reject PRs from stranger public repos'
     ],
   )
 
+  // When githubOrg is configured, Jira keys scope to org:<githubOrg>, while bare issues stay pinned to their repo
+  assert.deepEqual(
+    searchQueries(['PROJ-1', 'PROJ-2', '#12'], 6, {
+      githubOrg: 'kaiketsu-labs',
+      reposByTicket: { '#12': 'kaiketsu-labs/agent-cockpit' },
+    }),
+    [
+      'org:kaiketsu-labs is:pr is:open in:title PROJ-1 OR PROJ-2',
+      'repo:kaiketsu-labs/agent-cockpit is:pr is:open in:title #12',
+    ],
+  )
+
   // prsByTicket rejects stranger PRs (e.g. NewsNest#97 Issue #12)
   const strangerPr = {
     number: 97,
@@ -229,6 +241,32 @@ test('PR searches scope to repository and reject PRs from stranger public repos'
   assert.equal(accepted['#12']?.length, 1)
   assert.equal(accepted['#12'][0].repo, 'agent-cockpit')
   assert.equal(accepted['#12'][0].number, 97)
+
+  // Jira keys with githubOrg accept PRs from any repo in that organization
+  const orgPr1 = {
+    number: 10,
+    title: 'PROJ-1 add api endpoint',
+    html_url: 'https://github.com/kaiketsu-labs/backend/pull/10',
+    repository_url: 'https://api.github.com/repos/kaiketsu-labs/backend',
+    draft: false,
+  }
+  const orgPr2 = {
+    number: 20,
+    title: 'PROJ-1 frontend button',
+    html_url: 'https://github.com/kaiketsu-labs/frontend/pull/20',
+    repository_url: 'https://api.github.com/repos/kaiketsu-labs/frontend',
+    draft: false,
+  }
+  const strangerOrgPr = {
+    number: 30,
+    title: 'PROJ-1 someone else',
+    html_url: 'https://github.com/other-org/backend/pull/30',
+    repository_url: 'https://api.github.com/repos/other-org/backend',
+    draft: false,
+  }
+  const orgMatches = prsByTicket([orgPr1, orgPr2, strangerOrgPr], ['PROJ-1'], { githubOrg: 'kaiketsu-labs' })
+  assert.equal(orgMatches['PROJ-1']?.length, 2)
+  assert.deepEqual(orgMatches['PROJ-1'].map(p => p.repo), ['backend', 'frontend'])
 })
 
 test('only a ticket the tracker calls done is closed', () => {

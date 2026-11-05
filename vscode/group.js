@@ -146,9 +146,10 @@ const parseGithubRemote = stdout => {
 // GitHub search allows five OR operators, so six keys a query. Titles only: release PRs list every key in their body.
 // When repo scoping is available, queries are scoped to relevant repos to avoid matching random public repos.
 const searchQueries = (keys, size = 6, options = {}) => {
-  const { reposByTicket = {}, defaultRepos = [] } = options
-  const hasOptions = Boolean(options.reposByTicket || options.defaultRepos || options.repos)
+  const { reposByTicket = {}, defaultRepos = [], githubOrg } = options
+  const hasOptions = Boolean(options.reposByTicket || options.defaultRepos || options.repos || options.githubOrg)
   const fallbackRepos = (options.repos ?? defaultRepos).filter(Boolean)
+  const cleanOrg = typeof githubOrg === 'string' && githubOrg.trim() ? githubOrg.trim() : undefined
 
   if (!hasOptions) {
     const queries = []
@@ -175,7 +176,13 @@ const searchQueries = (keys, size = 6, options = {}) => {
         continue
       }
     } else {
-      // Jira keys: can span across known repositories, but NEVER search globally across all of GitHub
+      // Jira keys:
+      if (cleanOrg) {
+        const scopePrefix = `org:${cleanOrg} `
+        if (!byScope.has(scopePrefix)) byScope.set(scopePrefix, [])
+        byScope.get(scopePrefix).push(term)
+        continue
+      }
       if (reposByTicket[key]) {
         repoList = Array.isArray(reposByTicket[key]) ? reposByTicket[key] : [reposByTicket[key]]
       } else if (fallbackRepos.length > 0) {
@@ -218,9 +225,10 @@ const itemRepoOf = item => {
 }
 
 const prsByTicket = (items, keys, options = {}) => {
-  const { reposByTicket = {}, defaultRepos = [] } = options
+  const { reposByTicket = {}, defaultRepos = [], githubOrg } = options
   const fallbackRepos = (options.repos ?? defaultRepos).map(r => r.toLowerCase())
-  const hasOptions = Boolean(options.reposByTicket || options.defaultRepos || options.repos)
+  const cleanOrg = typeof githubOrg === 'string' && githubOrg.trim() ? githubOrg.trim().toLowerCase() : undefined
+  const hasOptions = Boolean(options.reposByTicket || options.defaultRepos || options.repos || options.githubOrg)
   const byTicket = {}
 
   for (const item of items) {
@@ -251,6 +259,10 @@ const prsByTicket = (items, keys, options = {}) => {
         if (!matchesRepo) continue
       } else if (hasOptions && key.startsWith('#')) {
         continue
+      } else if (cleanOrg) {
+        // For Jira keys with githubOrg, accept any repo belonging to that organization
+        const inOrg = itemRepo.startsWith(`${cleanOrg}/`)
+        if (!inOrg) continue
       } else if (hasOptions && fallbackRepos.length > 0) {
         const matchesAny = fallbackRepos.some(r => itemRepo === r || itemRepoShort === r || r.endsWith('/' + itemRepoShort))
         if (!matchesAny) continue
@@ -407,7 +419,7 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden }) => {
 }
 
 // What the Inbox webview draws: sessions that need the person first, then one card per folder/ticket.
-const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now }) => {
+const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now, githubScope }) => {
   const options = { pattern, now, cacheTtl }
   const card = (group, isHidden) => {
     const key = group.ticket
@@ -439,6 +451,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
     folders: active,
     loose,
     history: hidden.map(group => card(group, true)),
+    githubScope: githubScope ?? 'auto',
   }
 }
 
