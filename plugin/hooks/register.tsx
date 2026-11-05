@@ -129,7 +129,7 @@ const buildClassificationInstruction = (knownFolders: string[], presetFolder?: s
     `Focus on the high-level purpose (e.g. feature being built, bug being fixed, or component being refactored). ` +
     `Do NOT name after temporary micro-steps, follow-ups, or routine actions (e.g. avoid naming after running tests, fixing a typo, inspecting files, or git commands). ` +
     `Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
-    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>", "title": "<optional 3-5 word subtitle for the folder>"}. ` +
+    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>", "title": "<optional 3-5 word subtitle ONLY if folder is a ticket key (e.g. PROJ-123, #42); omit for normal folders>"}. ` +
     folderRule
   )
 }
@@ -157,7 +157,7 @@ const applyClassificationReply = async ($: EngineInterface, text: string, preset
     : (ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
   const name = sessionName(parsed.summary.trim(), resolvedFolder, suffix)
   await save($, { name, ...(resolvedFolder ? { folder: resolvedFolder, ticket: resolvedFolder } : {}) })
-  if (resolvedFolder && parsed.title?.trim()) {
+  if (resolvedFolder && isTicketKey(resolvedFolder, projects) && parsed.title?.trim()) {
     const titles = await storedTitles($)
     if (!titles[resolvedFolder]) {
       await storeTitles($, { [resolvedFolder]: parsed.title.trim() })
@@ -240,7 +240,7 @@ export const register: Register = on => {
           },
           title: {
             type: 'string',
-            description: 'Optional short subtitle (at most 6 words) shown beside the folder/ticket header in the sidebar.',
+            description: 'Optional short subtitle (at most 6 words) shown beside the ticket header in the sidebar (tickets only).',
           },
         },
         required: ['summary'],
@@ -382,7 +382,7 @@ export const register: Register = on => {
       : (ticketOf(summary, suffix) ?? record?.folder ?? record?.ticket)
     const name = sessionName(summary, resolvedFolder, suffix)
     await save($, { name, folder: resolvedFolder, ticket: resolvedFolder })
-    if (resolvedFolder && title) await storeTitles($, { [resolvedFolder]: title })
+    if (resolvedFolder && isTicketKey(resolvedFolder, projects) && title) await storeTitles($, { [resolvedFolder]: title })
     const sessionId = await $.session.id()
     const cwd = record?.cwd ?? (await $.session.cwd())
     await writeTranscriptTitle($, sessionId, cwd, name)

@@ -245,7 +245,7 @@ test('inbox lists sessions that need the person first and one card per folder or
   })
   assert.deepEqual(model.needs.map(row => row.id), ['b', 'd'])
   assert.deepEqual(model.tickets.map(t => [t.key, t.isTicket, t.title, t.isBusy, t.prs.length]), [
-    ['Auth Refactor', false, 'OAuth2 Cleanup', false, 0],
+    ['Auth Refactor', false, '', false, 0],
     ['PROJ-1', true, 'One Jira', true, 1],
   ])
   assert.equal(model.tickets[1].sessions[0].name, 'work a')
