@@ -71,10 +71,11 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as vsix:
     readme_path = REPO_ROOT / "README.md" if (REPO_ROOT / "README.md").exists() else ROOT / "README.md"
     if readme_path.exists():
         readme = readme_path.read_text()
-        # VS Code Marketplace requires absolute HTTPS URLs for images
+        # VS Code Marketplace requires absolute HTTPS URLs for images and blocks custom SVGs
         raw_base = "https://raw.githubusercontent.com/kaiketsu-labs/agent-cockpit/main/"
         readme = readme.replace('src="assets/', f'src="{raw_base}assets/')
         readme = readme.replace('(assets/', f'({raw_base}assets/')
+        readme = readme.replace('assets/sidebar.svg', 'assets/sidebar.png')
         readme = readme.replace('href="LICENSE"', 'href="https://github.com/kaiketsu-labs/agent-cockpit/blob/main/LICENSE"')
         vsix.writestr("extension/README.md", readme)
     if (REPO_ROOT / "LICENSE").exists():
