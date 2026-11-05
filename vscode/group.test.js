@@ -57,7 +57,7 @@ test('normalizeFolder and folderTicket distinguish free-form topic folders from 
 })
 
 test('encodeProjectPath and customTitleLine match Claude Code JSONL format', () => {
-  assert.equal(encodeProjectPath('/Users/david/Developer/claude-deck'), '-Users-david-Developer-claude-deck')
+  assert.equal(encodeProjectPath('/Users/david/Developer/agent-cockpit'), '-Users-david-Developer-agent-cockpit')
   assert.equal(customTitleLine('s1', 'Clean title'), '{"type":"custom-title","customTitle":"Clean title","sessionId":"s1"}\n')
 })
 

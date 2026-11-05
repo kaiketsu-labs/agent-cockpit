@@ -1,7 +1,7 @@
 {
-  "name": "kaiketsu-claude-deck",
-  "displayName": "Claude Deck",
-  "description": "Claude Code sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
+  "name": "agent-cockpit",
+  "displayName": "Agent Cockpit",
+  "description": "Coding agent sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
   "version": "0.4.3",
   "publisher": "kaiketsu-labs",
   "icon": "media/icon.png",
@@ -15,6 +15,9 @@
     "Productivity"
   ],
   "keywords": [
+    "agent",
+    "agent cockpit",
+    "cockpit",
     "claude",
     "claude code",
     "terminal",
@@ -23,14 +26,14 @@
     "jira",
     "github"
   ],
-  "homepage": "https://github.com/kaiketsu-labs/claude-deck#readme",
+  "homepage": "https://github.com/kaiketsu-labs/agent-cockpit#readme",
   "bugs": {
-    "url": "https://github.com/kaiketsu-labs/claude-deck/issues"
+    "url": "https://github.com/kaiketsu-labs/agent-cockpit/issues"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/kaiketsu-labs/claude-deck"
+    "url": "https://github.com/kaiketsu-labs/agent-cockpit"
   },
   "engines": {
     "vscode": "^1.90.0"
@@ -41,25 +44,25 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "claudeDeck",
-          "title": "Claude Deck",
+          "id": "agentCockpit",
+          "title": "Agent Cockpit",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "claudeDeck": [
+      "agentCockpit": [
         {
           "type": "webview",
-          "id": "claudeDeck.inbox",
+          "id": "agentCockpit.inbox",
           "name": "Inbox"
         }
       ]
     },
     "configuration": {
-      "title": "Claude Deck",
+      "title": "Agent Cockpit",
       "properties": {
-        "claudeDeck.tracker": {
+        "agentCockpit.tracker": {
           "type": "string",
           "enum": [
             "auto",
@@ -71,12 +74,12 @@
           "default": "auto",
           "description": "Issue tracker integration for ticket folders. 'auto' queries Jira for PROJ-123 keys (when JIRA_URL/JIRA_TOKEN are set) and GitHub Issues for #42 / owner/repo#42 keys (when gh is available), without showing error banners when unconfigured."
         },
-        "claudeDeck.trackerCommand": {
+        "agentCockpit.trackerCommand": {
           "type": "string",
           "default": "",
-          "description": "Shell command used when claudeDeck.tracker is 'command'. Receives JSON array of ticket keys on stdin and must print a JSON object mapping keys to { status, category ('new'|'indeterminate'|'done'), summary, url }."
+          "description": "Shell command used when agentCockpit.tracker is 'command'. Receives JSON array of ticket keys on stdin and must print a JSON object mapping keys to { status, category ('new'|'indeterminate'|'done'), summary, url }."
         },
-        "claudeDeck.pullRequests": {
+        "agentCockpit.pullRequests": {
           "type": "string",
           "enum": [
             "auto",
@@ -86,17 +89,17 @@
           "default": "auto",
           "description": "Pull request lookup mode for ticket folders. 'auto' queries GitHub via gh when available and stays silent when unconfigured; 'none' disables PR lookups."
         },
-        "claudeDeck.ticketProjects": {
+        "agentCockpit.ticketProjects": {
           "type": "string",
           "default": "",
           "description": "Comma-separated project prefixes (e.g. 'PROJ,OPS') to restrict Jira-style ticket recognition. Falls back to TICKET_PROJECTS in settings.json."
         },
-        "claudeDeck.ticketPattern": {
+        "agentCockpit.ticketPattern": {
           "type": "string",
           "default": "",
           "description": "Optional custom regular expression for matching ticket keys."
         },
-        "claudeDeck.closeTerminalOnArchive": {
+        "agentCockpit.closeTerminalOnArchive": {
           "type": "boolean",
           "default": true,
           "description": "Automatically close the associated VS Code terminal tab when archiving a session (moving to history)."
@@ -105,107 +108,107 @@
     },
     "commands": [
       {
-        "command": "claudeDeck.focus",
+        "command": "agentCockpit.focus",
         "title": "Focus / Open Session Needing Input",
-        "category": "Claude Deck"
+        "category": "Agent Cockpit"
       },
       {
-        "command": "claudeDeck.refresh",
+        "command": "agentCockpit.refresh",
         "title": "Refresh",
         "icon": "$(refresh)"
       },
       {
-        "command": "claudeDeck.attach",
+        "command": "agentCockpit.attach",
         "title": "Attach in terminal"
       },
       {
-        "command": "claudeDeck.openJira",
+        "command": "agentCockpit.openJira",
         "title": "Open ticket",
         "icon": "$(link-external)"
       },
       {
-        "command": "claudeDeck.newSession",
+        "command": "agentCockpit.newSession",
         "title": "New session",
         "icon": "$(add)"
       },
       {
-        "command": "claudeDeck.newFolder",
+        "command": "agentCockpit.newFolder",
         "title": "New folder or ticket",
         "icon": "$(new-folder)"
       },
       {
-        "command": "claudeDeck.renameFolder",
+        "command": "agentCockpit.renameFolder",
         "title": "Rename folder",
         "icon": "$(edit)"
       },
       {
-        "command": "claudeDeck.search",
+        "command": "agentCockpit.search",
         "title": "Search sessions",
         "icon": "$(search)"
       },
       {
-        "command": "claudeDeck.hide",
+        "command": "agentCockpit.hide",
         "title": "Move to history",
         "icon": "$(archive)"
       },
       {
-        "command": "claudeDeck.show",
+        "command": "agentCockpit.show",
         "title": "Back to the list",
         "icon": "$(inbox)"
       },
       {
-        "command": "claudeDeck.rename",
+        "command": "agentCockpit.rename",
         "title": "Rename",
         "icon": "$(edit)"
       },
       {
-        "command": "claudeDeck.toggleKeepWarm",
+        "command": "agentCockpit.toggleKeepWarm",
         "title": "Toggle Keep Warm (Prompt Cache Keepalive)",
         "icon": "$(zap)",
-        "category": "Claude Deck"
+        "category": "Agent Cockpit"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "claudeDeck.newSession",
-          "when": "view == claudeDeck.inbox",
+          "command": "agentCockpit.newSession",
+          "when": "view == agentCockpit.inbox",
           "group": "navigation@1"
         },
         {
-          "command": "claudeDeck.newFolder",
-          "when": "view == claudeDeck.inbox",
+          "command": "agentCockpit.newFolder",
+          "when": "view == agentCockpit.inbox",
           "group": "navigation@2"
         },
         {
-          "command": "claudeDeck.refresh",
-          "when": "view == claudeDeck.inbox",
+          "command": "agentCockpit.refresh",
+          "when": "view == agentCockpit.inbox",
           "group": "navigation@3"
         }
       ],
       "commandPalette": [
         {
-          "command": "claudeDeck.attach",
+          "command": "agentCockpit.attach",
           "when": "false"
         },
         {
-          "command": "claudeDeck.openJira",
+          "command": "agentCockpit.openJira",
           "when": "false"
         },
         {
-          "command": "claudeDeck.hide",
+          "command": "agentCockpit.hide",
           "when": "false"
         },
         {
-          "command": "claudeDeck.show",
+          "command": "agentCockpit.show",
           "when": "false"
         },
         {
-          "command": "claudeDeck.rename",
+          "command": "agentCockpit.rename",
           "when": "false"
         },
         {
-          "command": "claudeDeck.renameFolder",
+          "command": "agentCockpit.renameFolder",
           "when": "false"
         }
       ]

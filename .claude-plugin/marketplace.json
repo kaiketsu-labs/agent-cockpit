@@ -1,13 +1,13 @@
 {
-  "name": "claude-deck",
+  "name": "agent-cockpit",
   "owner": {
     "name": "kaiketsu-labs"
   },
   "plugins": [
     {
-      "name": "deck",
+      "name": "cockpit",
       "source": "./plugin",
-      "description": "Silently names and groups Claude Code sessions into folders and tickets for the Claude Deck VS Code sidebar, with optional ticket workflow skills (start-task, finish-task, cleanup-worktrees)"
+      "description": "Silently names and groups Claude Code sessions into folders and tickets for the Agent Cockpit VS Code sidebar, with optional ticket workflow skills (start-task, finish-task, cleanup-worktrees)"
     }
   ]
 }
