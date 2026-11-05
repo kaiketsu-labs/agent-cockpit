@@ -175,6 +175,7 @@ Configure Claude Deck via **VS Code Settings** (`claudeDeck.*`) or via the `env`
 | `claudeDeck.pullRequests` | — | `"auto"` | `"auto"` (queries GitHub via `gh` when available, silent when unconfigured), `"github"`, or `"none"`. |
 | `claudeDeck.ticketProjects` | `TICKET_PROJECTS` | `""` | Comma-separated project keys, e.g. `PROJ,OPS`. Narrows Jira-style keys (case-insensitive). Default: any `ABC-123` or `#42` / `owner/repo#42` key. |
 | `claudeDeck.ticketPattern` | — | `""` | Custom regular expression override for matching ticket keys. |
+| `claudeDeck.closeTerminalOnArchive` | — | `true` | Automatically close the associated VS Code terminal tab when archiving a session (moving to history). |
 | — | `JIRA_URL`, `JIRA_TOKEN`, `JIRA_EMAIL` | — | Base URL and PAT/API token for Jira REST lookups (with `JIRA_EMAIL` uses Basic Auth for Jira Cloud; otherwise Bearer PAT). Automatically falls back to `acli` or `jira-cli` when unset. |
 | — | `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` | `5m` | Sets the prompt cache countdown to 1 hour instead of 5 minutes (also honours `ENABLE_PROMPT_CACHING_1H`). |
 

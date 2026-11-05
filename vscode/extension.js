@@ -92,6 +92,7 @@ const getDeckConfig = env => {
     pullRequests: cfg.get('pullRequests', 'auto'),
     ticketProjects: cfg.get('ticketProjects', '') || env.TICKET_PROJECTS || '',
     ticketPattern: cfg.get('ticketPattern', ''),
+    closeTerminalOnArchive: cfg.get('closeTerminalOnArchive', true),
   }
 }
 
@@ -519,7 +520,13 @@ const attachArgs = session => (session.ended ? ['--resume', session.id] : ['atta
 
 const isAttachTerminal = (terminal, session) => {
   const args = terminal.creationOptions?.shellArgs
-  return Array.isArray(args) && args.join(' ') === attachArgs(session).join(' ')
+  if (!Array.isArray(args)) return false
+  const str = args.join(' ')
+  return (
+    str === `attach ${session.id}` ||
+    str === `--resume ${session.id}` ||
+    (session.sessionId && (str === `attach ${session.sessionId}` || str === `--resume ${session.sessionId}`))
+  )
 }
 
 // Cross-platform parent PID lookup: single ps snapshot on macOS/BSD, /proc on Linux.
@@ -631,6 +638,34 @@ const focusInteractive = async (session, provider) => {
     return
   }
   vscode.window.showInformationMessage(`${session.name} runs outside VS Code's terminals (pid ${session.pid}).`)
+}
+
+const closeTerminalForSession = async session => {
+  if (!session) return
+  let terminal = await findTerminalForSession(session)
+  if (!terminal && session.pid) {
+    const cached = terminalForPid.get(session.pid)
+    if (cached && vscode.window.terminals.includes(cached)) {
+      terminal = cached
+    }
+  }
+  if (!terminal && !session.interactive) {
+    terminal = vscode.window.terminals.find(t => isAttachTerminal(t, session))
+  }
+  if (terminal) {
+    if (session.pid) terminalForPid.delete(session.pid)
+    try {
+      terminal.dispose()
+    } catch {}
+  }
+}
+
+const hideSession = async (session, provider) => {
+  if (!session) return
+  await provider.setHidden(session, true)
+  if (provider?.config?.closeTerminalOnArchive !== false) {
+    await closeTerminalForSession(session)
+  }
 }
 
 // Opens an interactive Claude terminal directly in an editor tab, optionally pre-bound to a folder or ticket.
@@ -760,7 +795,7 @@ const moveToFolder = async (session, provider, refresh) => {
 const activate = async context => {
   const provider = new SessionsProvider()
   await migrateFromClaudeTickets()
-  const sessionById = id => provider.sessions.find(session => session.id === id)
+  const sessionById = id => provider.sessions.find(session => session.id === id || session.sessionId === id)
   const inbox = new InboxView(provider, {
     attach: ({ id }) => sessionById(id) && attach(sessionById(id), provider),
     openUrl: ({ url }) => vscode.env.openExternal(vscode.Uri.parse(url)),
@@ -784,7 +819,7 @@ const activate = async context => {
       refresh(true)
     },
     rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('claudeDeck.rename', { session: sessionById(id) }),
-    hide: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), true),
+    hide: ({ id }) => sessionById(id) && hideSession(sessionById(id), provider),
     show: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), false),
     assign: async ({ id, ticket }) => {
       const session = sessionById(id)
@@ -927,7 +962,10 @@ const activate = async context => {
       newSession(folder)
       setTimeout(() => refresh(), 2_500)
     }),
-    vscode.commands.registerCommand('claudeDeck.hide', element => provider.setHidden(element.session, true)),
+    vscode.commands.registerCommand('claudeDeck.hide', async element => {
+      const session = element?.session ?? (element?.id || element?.sessionId ? sessionById(element.id ?? element.sessionId) : element)
+      if (session) await hideSession(session, provider)
+    }),
     vscode.commands.registerCommand('claudeDeck.show', element => provider.setHidden(element.session, false)),
     vscode.commands.registerCommand('claudeDeck.toggleKeepWarm', async element => {
       const session = element?.session ?? (element?.id ? sessionById(element.id) : undefined)
