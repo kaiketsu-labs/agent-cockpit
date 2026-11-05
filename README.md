@@ -68,13 +68,29 @@ You don't need to change how you use Claude Code or memorize slash commands:
 
 ## Install
 
+> [!TIP]
+> **🤖 Ask your AI agent to install it for you**
+>
+> Paste this prompt into Claude Code, Cursor, Windsurf, or your terminal agent:
+>
+> ```text
+> Install Claude Deck for me:
+> 1. Run: claude plugin marketplace add kaiketsu-labs/claude-deck && claude plugin install deck@claude-deck
+> 2. Download and install the latest VS Code extension from https://github.com/kaiketsu-labs/claude-deck/releases/latest/download/claude-deck.vsix using `code --install-extension` (or `cursor` / `windsurf`).
+> ```
+
 ### 1. Install the Claude Code plugin
 
-Inside Claude Code, add the marketplace and install the plugin:
-
+**In Claude Code (interactive session):**
 ```text
 /plugin marketplace add kaiketsu-labs/claude-deck
 /plugin install deck@claude-deck
+```
+
+**Or from your terminal / agent CLI:**
+```bash
+claude plugin marketplace add kaiketsu-labs/claude-deck
+claude plugin install deck@claude-deck
 ```
 
 <details>
@@ -93,6 +109,16 @@ Add `CLAUDE_CODE_PLUGIN_DIRS` to the `env` block of `~/.claude/settings.json`:
 
 ### 2. Install the VS Code extension
 
+Install the latest release in one command:
+
+```bash
+curl -fsSL https://github.com/kaiketsu-labs/claude-deck/releases/latest/download/claude-deck.vsix -o /tmp/claude-deck.vsix && code --install-extension /tmp/claude-deck.vsix --force
+```
+*(Replace `code` with `cursor` or `windsurf` if preferred).*
+
+<details>
+<summary><b>Manual download & build options</b></summary>
+
 <!-- x-release-please-start-version -->
 Download `claude-deck-0.3.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
 
@@ -100,7 +126,7 @@ Download `claude-deck-0.3.0.vsix` from the [latest GitHub Release](https://githu
 code --install-extension claude-deck-0.3.0.vsix --force
 ```
 
-Or build and install it from source in one command (zero npm dependencies — `package.py` packages the `.vsix` directly):
+Or build and install from source (zero npm dependencies — `package.py` packages the `.vsix` directly):
 
 ```bash
 git clone https://github.com/kaiketsu-labs/claude-deck
@@ -108,6 +134,7 @@ cd claude-deck/vscode
 python3 package.py && code --install-extension claude-deck-0.3.0.vsix --force
 ```
 <!-- x-release-please-end -->
+</details>
 
 ### 3. Open the deck
 
