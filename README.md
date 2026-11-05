@@ -37,7 +37,7 @@ Claude Code makes parallel agent workflows effortless to start — and chaotic t
 **Agent Cockpit is your mission control:** one sidebar that automatically names your sessions and terminal tabs, organizes them into topic or ticket folders, shows live status and open PRs, and takes you to the right terminal in a single click.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/kaiketsu-labs/agent-cockpit/main/assets/sidebar.png" alt="The Agent Cockpit sidebar: sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, live status orbs, prompt cache countdowns and keepalive, and History" width="480">
+  <img src="https://raw.githubusercontent.com/kaiketsu-labs/agent-cockpit/main/assets/sidebar.svg" alt="The Agent Cockpit sidebar: sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, live status orbs, prompt cache countdowns and keepalive, and History" width="480">
   <br><sub>Live sidebar overview — ticket folders with issue summaries, clean topic folders, ungrouped sessions, live status orbs, and prompt cache TTL / keepalive</sub>
 </p>
 
