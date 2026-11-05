@@ -195,6 +195,17 @@ input[type="search"]:focus {
   border-color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 45%, transparent);
   background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 14%, transparent);
 }
+.stat-pill.scope {
+  font-weight: 500;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stat-pill.scope:hover {
+  border-color: var(--claude-accent-border);
+  color: var(--vscode-foreground);
+}
 .stat-pill.clickable {
   cursor: pointer;
   user-select: none;
@@ -518,6 +529,7 @@ h2.toggle:hover {
 .ico.ticket.t-done { color: var(--vscode-charts-green, #89d185); }
 .ico.pr { color: var(--vscode-charts-green, #89d185); }
 .ico.pr.draft { color: var(--vscode-disabledForeground); }
+.ico.gear { fill: currentColor; stroke: none; fill-rule: evenodd; }
 .ico.chev { width: 14px; height: 14px; stroke-width: 1.8; color: var(--vscode-descriptionForeground); transition: transform 0.14s ease; }
 .ico.chev.open { transform: rotate(90deg); }
 
@@ -678,6 +690,7 @@ const SHAPES = {
   restore: '<path d="M3.5 7.5 6.5 4.5M3.5 7.5l3 3M3.5 7.5H10a3 3 0 1 1 0 6H7.5"/>',
   external: '<path d="M9 3h4v4M13 3 7.5 8.5M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
   close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
+  gear: '<path d="M9.1 1.5H6.9l-.3 1.5a5 5 0 0 0-1.2.7L4 3 2.5 4.5l.7 1.4a5 5 0 0 0-.7 1.2l-1.5.3v2.2l1.5.3a5 5 0 0 0 .7 1.2L2.5 12 4 13.5l1.4-.7a5 5 0 0 0 1.2.7l.3 1.5h2.2l.3-1.5a5 5 0 0 0 1.2-.7l1.4.7 1.5-1.5-.7-1.4a5 5 0 0 0 .7-1.2l1.5-.3V6.9l-1.5-.3a5 5 0 0 0-.7-1.2l.7-1.4L13.5 3 12 2.5l-1.4.7a5 5 0 0 0-1.2-.7l-.3-1.5zM8 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -884,6 +897,14 @@ const renderList = () => {
     if (workingCount > 0) stats.append(el('span', { class: 'stat-pill working' }, '↻ ' + workingCount + ' running'))
     if (blockedCount === 0 && workingCount === 0 && allRows.length > 0) {
       stats.append(el('span', { class: 'stat-pill' }, allRows.length + ' session' + (allRows.length === 1 ? '' : 's')))
+    }
+    const showScope = Boolean(model.githubScope)
+    if (showScope) {
+      stats.append(el('span', {
+        class: 'stat-pill scope clickable',
+        title: 'GitHub PR search scope: ' + model.githubScope + ' · Click to configure',
+        onclick: () => send('configureGithubScope'),
+      }, icon('gear'), model.githubScope))
     }
   }
 

@@ -119,6 +119,8 @@ const getCockpitConfig = env => {
     pullRequests: get('pullRequests', 'auto'),
     ticketProjects: get('ticketProjects', '') || env.TICKET_PROJECTS || '',
     ticketPattern: get('ticketPattern', ''),
+    githubOrg: get('githubOrg', '') || env.GITHUB_ORG || '',
+    githubRepositories: get('githubRepositories', ''),
     closeTerminalOnArchive: get('closeTerminalOnArchive', true),
   }
 }
@@ -303,27 +305,29 @@ const loadJiraIssues = async (env, keys, cwd) => {
 }
 
 const loadGithubIssues = async (keys, cwd, options = {}) => {
-  const { reposByTicket = {}, defaultRepos = [] } = options
-  const defaultRepo = defaultRepos[0]
+  const { reposByTicket = {} } = options
   const issues = {}
   await Promise.all(
     keys.map(async key => {
       try {
         let repo
         let num
-        if (key.startsWith('#')) {
-          num = key.slice(1)
-          repo = reposByTicket[key] ?? defaultRepo
-        } else if (key.includes('#')) {
+        if (key.includes('/') && key.includes('#')) {
           const parts = key.split('#')
           repo = parts[0]
           num = parts[1]
+        } else if (key.startsWith('#')) {
+          num = key.slice(1)
+          // For bare GitHub issues: only query if we are sure about the repo
+          repo = reposByTicket[key]
         } else {
           return
         }
-        const args = ['issue', 'view', num, '--json', 'title,state,url']
-        if (repo) args.push('-R', repo)
+        if (!repo) return
+        const args = ['issue', 'view', num, '--json', 'title,state,url', '-R', repo]
         const data = JSON.parse(await run(GH, args, undefined, { cwd }))
+        // GitHub API returns PRs as issues under /issues/:num; ignore if it is actually a PR
+        if (data.url && data.url.includes('/pull/')) return
         const isDone = String(data.state).toUpperCase() === 'CLOSED'
         issues[key] = {
           status: isDone ? 'Closed' : 'Open',
@@ -512,8 +516,13 @@ class SessionsProvider {
         } else {
           const sessionCwds = (group.sessions ?? []).map(s => s.cwd).filter(Boolean)
           const sessionRepos = (await Promise.all(sessionCwds.map(detectGithubRepo))).filter(Boolean)
-          const groupRepo = sessionRepos[0] ?? defaultRepo
-          if (groupRepo) reposByTicket[tKey] = groupRepo
+          if (tKey.startsWith('#')) {
+            // For bare GitHub issues: only assign if we are sure (at least one session in this group has a detected repo)
+            if (sessionRepos.length > 0) reposByTicket[tKey] = sessionRepos[0]
+          } else {
+            const groupRepo = sessionRepos[0] ?? defaultRepo
+            if (groupRepo) reposByTicket[tKey] = groupRepo
+          }
         }
       }
       for (const session of this.sessions) {
@@ -526,8 +535,21 @@ class SessionsProvider {
           if (repo) reposByTicket[tKey] = repo
         }
       }
-      const allDetectedRepos = [...new Set([...workspaceRepos, ...Object.values(reposByTicket), defaultRepo].filter(Boolean))]
-      return { reposByTicket, defaultRepos: allDetectedRepos }
+      const configuredRepos = this.config?.githubRepositories
+        ? this.config.githubRepositories.split(',').map(r => r.trim()).filter(Boolean)
+        : []
+      const githubOrg = this.config?.githubOrg?.trim() || undefined
+      const allDetectedRepos = [...new Set([
+        ...configuredRepos,
+        ...workspaceRepos,
+        ...Object.values(reposByTicket),
+        defaultRepo,
+      ].filter(Boolean))]
+      return {
+        reposByTicket,
+        defaultRepos: configuredRepos.length > 0 ? configuredRepos : allDetectedRepos,
+        githubOrg,
+      }
     }
 
     // PRs only for live ticket folders: each six keys cost one of GitHub's 30 searches a minute.
@@ -564,6 +586,18 @@ class SessionsProvider {
   }
 
   inboxModel() {
+    let githubScope = ''
+    if (this.config?.pullRequests === 'none') {
+      githubScope = 'PRs disabled'
+    } else if (this.config?.githubOrg) {
+      githubScope = `org:${this.config.githubOrg.trim()}`
+    } else if (this.config?.githubRepositories) {
+      const repos = this.config.githubRepositories.split(',').map(r => r.trim()).filter(Boolean)
+      githubScope = repos.length === 1 ? repos[0] : `${repos.length} repos`
+    } else {
+      const defaultRepo = (vscode.workspace.workspaceFolders ?? []).map(f => repoCache.get(f.uri.fsPath)).find(Boolean)
+      if (defaultRepo) githubScope = defaultRepo.split('/').pop()
+    }
     return inboxModel({
       groups: this.groups,
       hidden: this.hidden,
@@ -573,6 +607,7 @@ class SessionsProvider {
       pattern: this.pattern,
       cacheTtl: this.cacheTtl,
       now: Date.now(),
+      githubScope,
     })
   }
 
@@ -903,6 +938,7 @@ const activate = async context => {
     newFolder: () => vscode.commands.executeCommand('agentCockpit.newFolder'),
     renameFolder: ({ folder }) => vscode.commands.executeCommand('agentCockpit.renameFolder', { folder }),
     removeFolder: ({ folder }) => provider.removeFolder(folder),
+    configureGithubScope: () => vscode.commands.executeCommand('agentCockpit.configureGithubScope'),
     moveToFolder: ({ id }) => sessionById(id) && moveToFolder(sessionById(id), provider, refresh),
     refresh: () => refresh(true),
     shown: () => refresh(),
@@ -1094,6 +1130,91 @@ const activate = async context => {
         keepWarm: next,
         keepWarmUntil: next ? Date.now() + durationMs : null,
       })
+      refresh(true)
+    }),
+    ...registerCmd('configureGithubScope', async () => {
+      const config = vscode.workspace.getConfiguration('agentCockpit')
+      const currentOrg = config.get('githubOrg', '')
+      const currentRepos = config.get('githubRepositories', '')
+      const isNone = config.get('pullRequests', 'auto') === 'none'
+
+      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
+      const detectedRepo = await detectGithubRepo(cwd)
+      const currentMode = isNone
+        ? 'Disabled'
+        : currentOrg
+        ? `Organization (${currentOrg})`
+        : currentRepos
+        ? `Repositories (${currentRepos})`
+        : detectedRepo
+        ? `Repositories (${detectedRepo})`
+        : 'Not configured'
+
+      const choice = await vscode.window.showQuickPick([
+        {
+          label: '$(organization) Organization',
+          description: currentOrg ? `Currently: ${currentOrg}` : 'Search across all repositories in a GitHub organization',
+          id: 'org',
+          picked: Boolean(currentOrg) && !isNone,
+        },
+        {
+          label: '$(repo) Repositories',
+          description: currentRepos ? `Currently: ${currentRepos}` : `Specific repository or comma-separated list${detectedRepo ? ` (prefills ${detectedRepo})` : ''}`,
+          id: 'repos',
+          picked: (Boolean(currentRepos) || (!currentOrg && !isNone)) && !isNone,
+        },
+        {
+          label: '$(circle-slash) Disabled',
+          description: 'Do not search GitHub for pull requests',
+          id: 'none',
+          picked: isNone,
+        },
+      ], {
+        title: 'Configure GitHub PR Search Scope',
+        placeHolder: `Current: ${currentMode}`,
+      })
+
+      if (!choice) return
+      const target = vscode.workspace.workspaceFolders?.length ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global
+
+      if (choice.id === 'org') {
+        const org = (await vscode.window.showInputBox({
+          title: 'GitHub Organization Scope',
+          prompt: 'Enter the GitHub organization or username (e.g. "kaiketsu-labs")',
+          value: currentOrg || (detectedRepo ? detectedRepo.split('/')[0] : ''),
+          placeHolder: 'kaiketsu-labs',
+        }))?.trim()
+        if (org !== undefined) {
+          if (org) {
+            await config.update('githubOrg', org, target)
+            await config.update('githubRepositories', undefined, target)
+            if (isNone) await config.update('pullRequests', 'auto', target)
+            vscode.window.showInformationMessage(`Agent Cockpit: GitHub PR scope set to org:${org}.`)
+          } else {
+            await config.update('githubOrg', undefined, target)
+          }
+        }
+      } else if (choice.id === 'repos') {
+        const repos = (await vscode.window.showInputBox({
+          title: 'GitHub Repositories Scope',
+          prompt: 'Enter specific repository or comma-separated list of owner/repo',
+          value: currentRepos || detectedRepo || '',
+          placeHolder: 'owner/repo or org/repo1, org/repo2',
+        }))?.trim()
+        if (repos !== undefined) {
+          if (repos) {
+            await config.update('githubRepositories', repos, target)
+            await config.update('githubOrg', undefined, target)
+            if (isNone) await config.update('pullRequests', 'auto', target)
+            vscode.window.showInformationMessage(`Agent Cockpit: GitHub PR scope set to ${repos}.`)
+          } else {
+            await config.update('githubRepositories', undefined, target)
+          }
+        }
+      } else if (choice.id === 'none') {
+        await config.update('pullRequests', 'none', target)
+        vscode.window.showInformationMessage('Agent Cockpit: GitHub PR search disabled.')
+      }
       refresh(true)
     }),
   )
