@@ -182,7 +182,7 @@
       {
         "command": "agentCockpit.configureGithubScope",
         "title": "Configure GitHub PR Scope...",
-        "icon": "$(globe)",
+        "icon": "$(gear)",
         "category": "Agent Cockpit"
       }
     ],
