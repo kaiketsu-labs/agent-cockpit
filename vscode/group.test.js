@@ -120,6 +120,22 @@ test('moving an item places it before its target, or last without one, and keeps
   assert.deepEqual(moveBefore(['x'], ['a', 'b'], 'a', 'z'), ['x'])
 })
 
+test('drag and drop reordered sessions maintain their manual order regardless of subsequent name changes', () => {
+  const sessions = [
+    { id: 's1', name: 'Zebra task', ticket: 'PROJ-1' },
+    { id: 's2', name: 'Alpha task', ticket: 'PROJ-1' },
+    { id: 's3', name: 'Beta task', ticket: 'PROJ-1' },
+  ]
+  const reordered = moveBefore([], ['s1', 's2', 's3'], 's1', 's3')
+  const groups = groupSessions(sessions, reordered)
+  assert.deepEqual(groups[0].sessions.map(s => s.id), ['s2', 's1', 's3'])
+
+  // Even if s1 gets renamed to start with A or Z, manual order is preserved
+  sessions[0].name = 'Aardvark task'
+  const groupsAfterRename = groupSessions(sessions, reordered)
+  assert.deepEqual(groupsAfterRename[0].sessions.map(s => s.id), ['s2', 's1', 's3'])
+})
+
 test('PR searches batch six keys and match PRs to every key their title names', () => {
   const keys = ['PROJ-1', 'PROJ-2', 'PROJ-3', 'PROJ-4', 'PROJ-5', 'PROJ-6', 'PROJ-7']
   assert.deepEqual(searchQueries(keys), [

@@ -232,6 +232,18 @@ input[type="search"]:focus {
   border-color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 45%, transparent);
   background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 14%, transparent);
 }
+.stat-pill.clickable {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.1s ease, filter 0.12s ease;
+}
+.stat-pill.clickable:hover {
+  filter: brightness(1.2);
+  transform: translateY(-1px);
+}
+.stat-pill.clickable:active {
+  transform: translateY(0);
+}
 
 /* Section Headers */
 .section-block {
@@ -294,53 +306,6 @@ h2.toggle:hover {
   color: var(--vscode-foreground);
 }
 
-/* Needs You Spotlight Cards */
-.needs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.needs-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 6px 10px;
-  border-radius: var(--radius-md);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 16%, var(--card-bg)) 0%, var(--card-bg) 100%);
-  border: 1px solid color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 45%, var(--card-border));
-  border-left: 3px solid var(--vscode-charts-yellow, #cca700);
-  cursor: pointer;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
-}
-.needs-card.failed {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 16%, var(--card-bg)) 0%, var(--card-bg) 100%);
-  border-color: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 45%, var(--card-border));
-  border-left-color: var(--vscode-charts-red, #f14c4c);
-}
-.needs-card:hover {
-  border-color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 70%, var(--card-border));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-}
-.needs-card.failed:hover {
-  border-color: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 70%, var(--card-border));
-}
-.needs-card .cta {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  line-height: 1;
-  font-size: 0.78em;
-  font-weight: 600;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 22%, transparent);
-  color: var(--vscode-charts-yellow, #cca700);
-}
-.needs-card.failed .cta {
-  background: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 22%, transparent);
-  color: var(--vscode-charts-red, #f14c4c);
-}
 
 /* Folder & Ticket Cards */
 .card {
@@ -452,10 +417,25 @@ h2.toggle:hover {
   border-left: 2.5px solid var(--vscode-charts-blue, #3794ff);
 }
 .session-card.blocked {
-  border-left: 2.5px solid var(--vscode-charts-yellow, #cca700);
+  border-left: 3px solid var(--vscode-charts-yellow, #cca700);
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 8%, var(--row-bg));
 }
 .session-card.failed {
-  border-left: 2.5px solid var(--vscode-charts-red, #f14c4c);
+  border-left: 3px solid var(--vscode-charts-red, #f14c4c);
+  background: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 8%, var(--row-bg));
+}
+.session-card.spotlight-pulse {
+  animation: cardHighlight 1.2s ease-out;
+}
+@keyframes cardHighlight {
+  0% { box-shadow: 0 0 0 2px var(--vscode-charts-yellow, #cca700); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.session-card.drop-before {
+  border-top: 2px solid var(--vscode-focusBorder, #007acc) !important;
+}
+.session-card.drop-after {
+  border-bottom: 2px solid var(--vscode-focusBorder, #007acc) !important;
 }
 
 .session-top {
@@ -740,13 +720,17 @@ const cardMatches = (card, q) =>
   !q || matches((card.key ?? '') + ' ' + card.title, q) || card.sessions.some(row => sessionMatches(row, q)) || card.prs.some(pr => matches(pr.title + pr.repo, q))
 const passesFilter = card => ui.filter === 'all' || (ui.filter === 'active' && card.isBusy) || (ui.filter === 'prs' && card.prs.length > 0)
 
-const sessionRow = row =>
-  el('div', {
+const sessionRow = row => {
+  const node = el('div', {
+      id: 'session-' + row.id,
       class: 'session-card ' + row.state,
       draggable: 'true',
       title: row.name + ' · ' + row.stateLabel,
       onclick: () => send('attach', { id: row.id }),
-      ondragstart: event => { event.dataTransfer.setData('text/plain', row.id); event.dataTransfer.effectAllowed = 'move' },
+      ondragstart: event => {
+        event.dataTransfer.setData('text/plain', row.id)
+        event.dataTransfer.effectAllowed = 'move'
+      },
     },
     el('div', { class: 'session-top' },
       el('span', { class: 'status-orb ' + row.state }),
@@ -761,6 +745,30 @@ const sessionRow = row =>
           ? iconBtn('restore', 'Restore from history', () => send('show', { id: row.id }))
           : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id })))),
     row.cachePct > 0 && el('div', { class: 'cache-bar', style: 'width:' + row.cachePct + '%' }))
+
+  node.addEventListener('dragover', event => {
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = node.getBoundingClientRect()
+    const isBefore = (event.clientY - rect.top) < rect.height / 2
+    node.classList.toggle('drop-before', isBefore)
+    node.classList.toggle('drop-after', !isBefore)
+  })
+  node.addEventListener('dragleave', () => {
+    node.classList.remove('drop-before', 'drop-after')
+  })
+  node.addEventListener('drop', event => {
+    event.preventDefault()
+    event.stopPropagation()
+    const isBefore = node.classList.contains('drop-before')
+    node.classList.remove('drop-before', 'drop-after')
+    const movedId = event.dataTransfer.getData('text/plain')
+    if (movedId && movedId !== row.id) {
+      send('reorderSession', { movedId, targetId: row.id, before: isBefore, folder: row.folder })
+    }
+  })
+  return node
+}
 
 const prRow = pr =>
   el('div', { class: 'pr-row' + (pr.isDraft ? ' draft' : ''), title: pr.title + '\\n' + pr.url, onclick: () => send('openUrl', { url: pr.url }) },
@@ -847,6 +855,34 @@ const render = () => {
   renderList()
 }
 
+let waitingIndex = 0
+
+const focusNextWaiting = () => {
+  const waiting = (data.model?.needs ?? []).filter(r => r.state === 'blocked' || r.state === 'failed')
+  if (waiting.length === 0) return
+  const target = waiting[waitingIndex % waiting.length]
+  waitingIndex = (waitingIndex + 1) % waiting.length
+  if (target.isHidden) {
+    ui.history = true
+    if (target.folder) ui.open['history:' + target.folder] = true
+    save()
+    renderList()
+  } else if (target.folder) {
+    ui.open[target.folder] = true
+    save()
+    renderList()
+  }
+  send('attach', { id: target.id })
+  setTimeout(() => {
+    const node = document.getElementById('session-' + target.id)
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      node.classList.add('spotlight-pulse')
+      setTimeout(() => node.classList.remove('spotlight-pulse'), 1200)
+    }
+  }, 50)
+}
+
 const renderList = () => {
   const list = document.getElementById('list')
   const stats = document.getElementById('stats')
@@ -861,7 +897,13 @@ const renderList = () => {
   const workingCount = allRows.filter(r => r.state === 'working').length
   const blockedCount = allRows.filter(r => r.state === 'blocked').length
   if (stats) {
-    if (blockedCount > 0) stats.append(el('span', { class: 'stat-pill blocked' }, '● ' + blockedCount + ' waiting'))
+    if (blockedCount > 0) {
+      stats.append(el('span', {
+        class: 'stat-pill blocked clickable',
+        title: 'Click to focus next waiting session (' + blockedCount + ' waiting)',
+        onclick: () => focusNextWaiting(),
+      }, '● ' + blockedCount + ' waiting'))
+    }
     if (workingCount > 0) stats.append(el('span', { class: 'stat-pill working' }, '↻ ' + workingCount + ' running'))
     if (blockedCount === 0 && workingCount === 0 && allRows.length > 0) {
       stats.append(el('span', { class: 'stat-pill' }, allRows.length + ' session' + (allRows.length === 1 ? '' : 's')))
@@ -869,15 +911,6 @@ const renderList = () => {
   }
 
   const q = ui.q
-  const needs = model.needs.filter(row => sessionMatches(row, q))
-  if (needs.length > 0) {
-    list.append(section('Attention Needed', needs.length, el('div', { class: 'needs' }, needs.map(row =>
-      el('div', { class: 'needs-card ' + row.state, onclick: () => send('attach', { id: row.id }), title: row.name },
-        el('span', { class: 'status-orb ' + row.state }),
-        row.ticket && el('span', { class: 'badge' }, row.ticket),
-        el('span', { class: 'grow', style: 'font-weight:600' }, row.name),
-        el('span', { class: 'cta' }, row.stateLabel))))))
-  }
   const folders = model.tickets.filter(c => passesFilter(c) && cardMatches(c, q))
   const looseSessions = model.loose.filter(row =>
     sessionMatches(row, q) &&
@@ -910,7 +943,7 @@ const renderList = () => {
     }
     list.append(histBlock)
   }
-  if (folders.length === 0 && !showLoose && needs.length === 0 && history.length === 0) {
+  if (folders.length === 0 && !showLoose && history.length === 0) {
     list.append(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-title' }, q ? 'No matching sessions or folders' : 'Your Claude Deck is ready'),
       el('div', {}, q ? 'Try a different filter or search query.' : 'Start a Claude session or create a topic/ticket folder to organize your work.'),
