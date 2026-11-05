@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.4](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.3...v0.5.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* **vscode:** scope PR search and issue lookup to local repository ([#28](https://github.com/kaiketsu-labs/agent-cockpit/issues/28)) ([9de98e2](https://github.com/kaiketsu-labs/agent-cockpit/commit/9de98e2192896fb5bf6863d53c3f61db911c1529))
+
 ## [0.5.3](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.2...v0.5.3) (2026-11-05)
 
 
