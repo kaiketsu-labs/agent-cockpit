@@ -309,7 +309,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
       key,
       ticketKey: ticketKey ?? null,
       isTicket,
-      title: titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? issue?.summary ?? '',
+      title: isTicket ? (titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? issue?.summary ?? '') : '',
       category: issue?.category ?? null,
       status: issue?.status ?? null,
       sessions,

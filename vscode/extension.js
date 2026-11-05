@@ -691,11 +691,11 @@ const search = async provider => {
       const folder = session.folder ?? session.ticket
       const tKey = folderTicket(folder, provider.pattern)
       const title =
-        folder &&
+        tKey &&
         (provider.titles[folder] ??
-          (tKey ? provider.titles[tKey] : undefined) ??
+          provider.titles[tKey] ??
           provider.issues[folder]?.summary ??
-          (tKey ? provider.issues[tKey]?.summary : undefined))
+          provider.issues[tKey]?.summary)
       const when = `${age(now - session.updatedAt)}${provider.isHidden(session) ? ' · hidden' : ''}`
       return {
         label: `$(${status.icon}) ${withoutTicketSuffix(session.name, provider.pattern) || session.name}`,
@@ -720,11 +720,14 @@ const moveToFolder = async (session, provider, refresh) => {
   ])
   const items = [
     { label: '$(add) New folder or ticket…', action: 'new' },
-    ...([...known].map(f => ({
-      label: `$(folder) ${f}`,
-      description: provider.titles[f] ?? provider.issues[folderTicket(f, provider.pattern)]?.summary ?? '',
-      folder: f,
-    }))),
+    ...([...known].map(f => {
+      const tKey = folderTicket(f, provider.pattern)
+      return {
+        label: `$(folder) ${f}`,
+        description: tKey ? (provider.titles[f] ?? provider.titles[tKey] ?? provider.issues[tKey]?.summary ?? '') : '',
+        folder: f,
+      }
+    })),
     ...(session.ticket ? [{ label: '$(close) Remove from folder (Ungrouped)', action: 'none' }] : []),
   ]
   const picked = await vscode.window.showQuickPick(items, {
