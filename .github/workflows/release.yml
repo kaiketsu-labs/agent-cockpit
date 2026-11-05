@@ -45,8 +45,9 @@ jobs:
         run: |
           python3 vscode/package.py
           VERSION=$(node -p "require('./vscode/package.json').version")
-          cp "vscode/claude-deck-${VERSION}.vsix" "vscode/claude-deck.vsix"
-          echo "vsix=vscode/claude-deck-${VERSION}.vsix" >> "$GITHUB_OUTPUT"
+          NAME=$(node -p "require('./vscode/package.json').name")
+          cp "vscode/${NAME}-${VERSION}.vsix" "vscode/claude-deck.vsix"
+          echo "vsix=vscode/${NAME}-${VERSION}.vsix" >> "$GITHUB_OUTPUT"
           echo "vsix_latest=vscode/claude-deck.vsix" >> "$GITHUB_OUTPUT"
 
       - name: Upload VSIX to GitHub Release
