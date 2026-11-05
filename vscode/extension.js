@@ -748,6 +748,17 @@ const activate = async context => {
     moveToFolder: ({ id }) => sessionById(id) && moveToFolder(sessionById(id), provider, refresh),
     refresh: () => refresh(true),
     shown: () => refresh(),
+    toggleKeepWarm: async ({ id }) => {
+      const session = sessionById(id)
+      if (!session) return
+      const next = !session.keepWarm
+      const durationMs = 30 * 60_000
+      await updateSessionRecord(session, {
+        keepWarm: next,
+        keepWarmUntil: next ? Date.now() + durationMs : null,
+      })
+      refresh(true)
+    },
     rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('claudeDeck.rename', { session: sessionById(id) }),
     hide: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), true),
     show: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), false),
@@ -888,6 +899,17 @@ const activate = async context => {
     }),
     vscode.commands.registerCommand('claudeDeck.hide', element => provider.setHidden(element.session, true)),
     vscode.commands.registerCommand('claudeDeck.show', element => provider.setHidden(element.session, false)),
+    vscode.commands.registerCommand('claudeDeck.toggleKeepWarm', async element => {
+      const session = element?.session ?? (element?.id ? sessionById(element.id) : undefined)
+      if (!session) return
+      const next = !session.keepWarm
+      const durationMs = 30 * 60_000
+      await updateSessionRecord(session, {
+        keepWarm: next,
+        keepWarmUntil: next ? Date.now() + durationMs : null,
+      })
+      refresh(true)
+    }),
   )
   refresh(true)
 }

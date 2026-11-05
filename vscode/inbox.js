@@ -492,6 +492,19 @@ h2.toggle:hover {
   padding: 0 5px;
   border-radius: 4px;
 }
+.cache-pill.warm {
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+}
+.keep-warm-badge {
+  font-size: 0.9em;
+  line-height: 1;
+}
+.icon-btn.active {
+  color: #f97316;
+  opacity: 1;
+}
 .cache-bar {
   position: absolute;
   left: 0;
@@ -722,6 +735,7 @@ const SHAPES = {
   restore: '<path d="M3.5 7.5 6.5 4.5M3.5 7.5l3 3M3.5 7.5H10a3 3 0 1 1 0 6H7.5"/>',
   external: '<path d="M9 3h4v4M13 3 7.5 8.5M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
   close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
+  flame: '<path d="M8 1.5c.5 1.5 2 3 2 5a3.5 3.5 0 0 1-5.5 2.9A3 3 0 0 0 8 5c-1.5 2-3 3.5-3 5.5A4.5 4.5 0 0 0 9.5 15a4.5 4.5 0 0 0 4.5-4.5c0-3-2.5-5.5-6-9z"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -732,7 +746,7 @@ const icon = (kind, extra = '') => {
 }
 
 const stop = fn => event => { event.stopPropagation(); fn(event) }
-const iconBtn = (kind, title, fn) => el('button', { class: 'icon-btn', title, onclick: stop(fn) }, icon(kind))
+const iconBtn = (kind, title, fn, extraClass = '') => el('button', { class: ('icon-btn ' + extraClass).trim(), title, onclick: stop(fn) }, icon(kind))
 
 const matches = (text, q) => text.toLowerCase().includes(q)
 const sessionMatches = (row, q) => !q || matches(row.name + ' ' + (row.ticket ?? ''), q)
@@ -752,9 +766,11 @@ const sessionRow = row =>
       el('span', { class: 'status-orb ' + row.state }),
       el('span', { class: 'session-name' }, row.name),
       el('span', { class: 'meta hide-on-hover' },
-        row.cache && el('span', { class: 'cache-pill', title: 'Prompt cache warm for ' + row.cache }, '⚡ ' + row.cache),
+        row.keepWarm && el('span', { class: 'keep-warm-badge', title: 'Prompt cache keepalive active' }, '🔥'),
+        row.cache && el('span', { class: 'cache-pill' + (row.keepWarm ? ' warm' : ''), title: 'Prompt cache warm for ' + row.cache + (row.keepWarm ? ' (keepalive active)' : '') }, '⚡ ' + row.cache),
         el('span', {}, row.age ?? row.activity)),
       el('span', { class: 'actions' },
+        row.state !== 'done' && iconBtn('flame', row.keepWarm ? 'Disable keepalive (cache warmhalten aktiv)' : 'Keep cache warm (auto-ping before cache expires)', () => send('toggleKeepWarm', { id: row.id }), row.keepWarm ? 'active' : ''),
         iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
         iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
         row.isHidden

@@ -7,7 +7,7 @@ Instructions and architectural overview for AI coding agents working on **Claude
 Claude Deck consists of two halves that communicate asynchronously via JSON files in `~/.claude/deck/` and Claude Code's native JSONL transcripts in `~/.claude/projects/`:
 
 1. **Claude Code Plugin (`plugin/`)** — Named `deck`. Runs inside each Claude Code session:
-   - [`plugin/hooks/register.tsx`](plugin/hooks/register.tsx) & [`plugin/hooks/group.ts`](plugin/hooks/group.ts): Session lifecycle hooks (`session.start`, `prompt.submit`, `tool.call`, `turn.complete`, `session.end`), silent background session naming & folder classification via `$.model.complete({ model: 'haiku' })` (with `$.model.fork` fallback), zero-cost regex ticket detection from prompts and CLI commands (`acli`, `jira`, `gh`, `git checkout`), direct `custom-title` JSONL writes, and MCP tools (`name_session`, `set_ticket_titles`).
+   - [`plugin/hooks/register.tsx`](plugin/hooks/register.tsx) & [`plugin/hooks/group.ts`](plugin/hooks/group.ts): Session lifecycle hooks (`session.start`, `prompt.submit`, `tool.call`, `turn.complete`, `session.end`), silent background session naming & folder classification via `$.model.complete({ model: 'haiku' })` (with `$.model.fork` fallback), zero-cost regex ticket detection from prompts and CLI commands (`acli`, `jira`, `gh`, `git checkout`), direct `custom-title` JSONL writes, and MCP tools (`name_session`, `set_ticket_titles`, `keep_warm`).
    - [`plugin/skills/`](plugin/skills/): Optional companion skills (`start-task`, `finish-task`, `cleanup-worktrees`).
    - [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) & [`plugin/.claude-plugin/plugin.json`](plugin/.claude-plugin/plugin.json): Claude Code plugin manifests.
 

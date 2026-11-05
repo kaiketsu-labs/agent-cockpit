@@ -15,6 +15,7 @@ import {
 
 const NAME_TOOL = 'mcp__deck__name_session'
 const TITLES_TOOL = 'mcp__deck__set_ticket_titles'
+const KEEP_WARM_TOOL = 'mcp__deck__keep_warm'
 
 // What the Claude Deck VS Code sidebar lists; it reads these files, never the transcripts.
 type SessionFile = {
@@ -27,6 +28,11 @@ type SessionFile = {
   ticket?: string
   prompt?: string
   lastTurnEndAt?: number
+  keepWarm?: boolean
+  keepWarmUntil?: number | null
+  lastKeepWarmAt?: number
+  contextTokens?: number
+  model?: string
 }
 
 const claudeDir = async ($: EngineInterface) => `${await $.env.get('HOME')}/.claude`
@@ -103,6 +109,8 @@ let kind: SessionFile['kind'] = 'interactive'
 let projects: string[] = []
 let suffix = ticketSuffix()
 let namingInFlight = false
+let turnActive = false
+let keepaliveInFlight = false
 
 const buildClassificationInstruction = (knownFolders: string[], presetFolder?: string) => {
   const folderRule = presetFolder
@@ -229,12 +237,69 @@ export const register: Register = on => {
         required: ['titles'],
       },
     })
+    await $.tool.register({
+      name: 'keep_warm',
+      description:
+        'Enables or disables prompt cache keepalive for this session in Claude Deck. ' +
+        'When enabled, Claude Deck periodically pings the session cache prefix before it expires so the cache stays warm while you step away or work in parallel sessions.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description: 'True to keep the cache warm, false to let it expire normally.',
+          },
+          durationMinutes: {
+            type: 'number',
+            description: 'Optional duration in minutes to keep warm (default: 30 minutes, max: 120 minutes).',
+          },
+        },
+        required: ['enabled'],
+      },
+    })
     // A job's directory is named after its session's first id, before any /clear.
     const jobId = (await $.env.get('CLAUDE_JOB_DIR'))?.split('/').pop()
     kind = jobId !== undefined && (await $.session.id()).startsWith(jobId) ? 'bg' : 'interactive'
     isListed = kind === 'bg' || e.isInteractive
     const folder = initialFolder ? normalizeFolder(initialFolder, projects) : undefined
     await save($, { cwd: e.cwd, ...(folder ? { folder, ticket: folder } : {}) })
+
+    const envTtl =
+      (await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL')) ??
+      ((await $.env.get('ENABLE_PROMPT_CACHING_1H')) || (await $.env.get('ENABLE_PROMPT_CACHING_1H_BEDROCK')) ? '1h' : '5m')
+    const ttlMs = envTtl === '1h' ? 60 * 60_000 : 5 * 60_000
+    const pingThresholdMs = ttlMs === 60 * 60_000 ? 55 * 60_000 : 4 * 60_000
+
+    $.clock.every(30_000, async () => {
+      if (!isListed || turnActive || namingInFlight || keepaliveInFlight) return
+      try {
+        const record = await storedRecord($)
+        if (!record?.keepWarm || !record.lastTurnEndAt) return
+        if (record.keepWarmUntil && Date.now() > record.keepWarmUntil) {
+          await save($, { keepWarm: false, keepWarmUntil: null })
+          return
+        }
+        const elapsed = Date.now() - record.lastTurnEndAt
+        if (elapsed >= pingThresholdMs) {
+          keepaliveInFlight = true
+          try {
+            const forked = await $.model.fork({
+              effort: 'low',
+              prompt: 'Keep warm',
+            })
+            if (forked.isAnswered) {
+              const now = Date.now()
+              await save($, {
+                lastTurnEndAt: now,
+                lastKeepWarmAt: now,
+              })
+            }
+          } finally {
+            keepaliveInFlight = false
+          }
+        }
+      } catch {}
+    })
 
     return next(e)
   })
@@ -243,6 +308,7 @@ export const register: Register = on => {
   // (including upgrading a generic topic folder to the specific ticket folder);
   // if the session has no name yet, classify and name it silently in the background via Haiku.
   on('prompt.submit', async ($, e, next) => {
+    turnActive = true
     const record = await storedRecord($)
     const fallback = promptName(e.text)
     const detectedTicket = extractTicket(e.text, projects)
@@ -313,6 +379,20 @@ export const register: Register = on => {
     return { result: `Stored ${Object.keys(normalized).length} titles.` }
   })
 
+  on('tool.call', { tool: KEEP_WARM_TOOL }, async ($, e) => {
+    const { enabled, durationMinutes = 30 } = e as unknown as { enabled: boolean; durationMinutes?: number }
+    const durationMs = Math.max(1, Math.min(durationMinutes, 120)) * 60_000
+    await save($, {
+      keepWarm: Boolean(enabled),
+      keepWarmUntil: enabled ? Date.now() + durationMs : null,
+    })
+    return {
+      result: enabled
+        ? `Prompt cache keepalive enabled for ${durationMinutes} minutes.`
+        : `Prompt cache keepalive disabled.`,
+    }
+  })
+
   // Automatically detect ticket keys in ticket-intent CLI commands (e.g. acli, jira, gh issue, git checkout -b feat/PROJ-123).
   on('tool.call', async ($, e, next) => {
     const call = e as unknown as Record<string, unknown>
@@ -336,9 +416,19 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    turnActive = false
     if (e.agentId !== undefined) return next(e)
+    const usage = e.usage
+    const contextTokens = usage
+      ? (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.input_tokens ?? 0)
+      : undefined
+    const model = usage?.model
     // The sidebar counts the prompt cache's lifetime from here.
-    await save($, { lastTurnEndAt: Date.now() })
+    await save($, {
+      lastTurnEndAt: Date.now(),
+      ...(contextTokens !== undefined ? { contextTokens } : {}),
+      ...(model ? { model } : {}),
+    })
     // Fallback if Haiku background naming didn't run or was unavailable: fork the warm session cache invisibly.
     const record = await storedRecord($)
     if (isListed && !record?.name && !namingInFlight && record?.prompt) {
