@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/kaiketsu-labs/claude-deck/compare/v0.3.0...v0.4.0) (2026-11-05)
+
+
+### Features
+
+* optimize installation for AI coding agents and add one-line installer ([#8](https://github.com/kaiketsu-labs/claude-deck/issues/8)) ([72678b7](https://github.com/kaiketsu-labs/claude-deck/commit/72678b7a96fc9ad5e3323eb6ee8b94ca88903939))
+* **vscode:** configure marketplace metadata, icon asset, and publishing workflow ([#11](https://github.com/kaiketsu-labs/claude-deck/issues/11)) ([f3bdeec](https://github.com/kaiketsu-labs/claude-deck/commit/f3bdeecba7400e3004f32371ecf6223a6e6c7ec3))
+
+
+### Bug Fixes
+
+* restrict folder subtitles to ticket folders only ([#7](https://github.com/kaiketsu-labs/claude-deck/issues/7)) ([3737bff](https://github.com/kaiketsu-labs/claude-deck/commit/3737bff82f263800e73a06039300e9cf993db617))
+
 ## [0.3.0](https://github.com/kaiketsu-labs/claude-deck/compare/v0.2.0...v0.3.0) (2026-11-05)
 
 

@@ -1,5 +1,5 @@
 {
   "name": "deck",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Silently names and organizes Claude Code sessions by folder and ticket for the Claude Deck VS Code sidebar"
 }
