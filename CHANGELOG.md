@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/kaiketsu-labs/claude-deck/compare/v0.4.1...v0.4.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **vscode:** ensure publisher ID is kaiketsu-labs ([ec46d35](https://github.com/kaiketsu-labs/claude-deck/commit/ec46d359f86461196f7091d41680f3846dcb3af6))
+
 ## [0.4.1](https://github.com/kaiketsu-labs/claude-deck/compare/v0.4.0...v0.4.1) (2026-11-05)
 
 
