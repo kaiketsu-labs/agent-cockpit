@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.2...v0.5.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* use absolute raw URLs and PNG for marketplace images ([#25](https://github.com/kaiketsu-labs/agent-cockpit/issues/25)) ([0efcbd4](https://github.com/kaiketsu-labs/agent-cockpit/commit/0efcbd48f12fa24c017204412f692d3a101bfd38))
+
 ## [0.5.2](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.1...v0.5.2) (2026-11-05)
 
 
