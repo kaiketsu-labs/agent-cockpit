@@ -2,7 +2,7 @@
   "name": "claude-deck",
   "displayName": "Claude Deck",
   "description": "Claude Code sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "kaiketsu-labs",
   "icon": "media/icon.png",
   "galleryBanner": {
