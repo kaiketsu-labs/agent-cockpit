@@ -48,6 +48,7 @@ bun test plugin/hooks/group.test.ts
 
 ## Releasing & Shipping
 
+- **NEVER merge or release autonomously**: Agents must NEVER run `gh pr merge`, push directly to `main`, or merge release PRs on their own. Merging PRs and cutting releases is strictly restricted to the user. Agents only prepare branches, run tests, and open PRs.
 - **Automated releases via Release Please**: Pushing Conventional Commits (`feat:`, `fix:`, etc.) to `main` causes [`.github/workflows/release.yml`](.github/workflows/release.yml) to open/update a Release PR that bumps [`vscode/package.json`](vscode/package.json), [`plugin/.claude-plugin/plugin.json`](plugin/.claude-plugin/plugin.json), [`README.md`](README.md), and `CHANGELOG.md` via [`release-please-config.json`](release-please-config.json). Merging that PR creates the GitHub Release, builds and attaches `agent-cockpit-<version>.vsix`, and publishes to VS Code Marketplace / Open VSX if tokens are configured.
 - **Plugin distribution**: Distributed directly from this GitHub repository via `.claude-plugin/marketplace.json` (`/plugin marketplace add kaiketsu-labs/agent-cockpit` and `/plugin install cockpit@agent-cockpit`).
 - **VS Code extension distribution**: Built into `vscode/agent-cockpit-<version>.vsix` via `python3 vscode/package.py` for GitHub Releases, VS Code Marketplace (`vsce publish --packagePath ...`), and Open VSX (`ovsx publish ...`).

@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/kaiketsu-labs/agent-cockpit/blob/main/LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-e8825a?style=flat-square"></a>
-  <img alt="VS Code extension" src="https://img.shields.io/badge/VS%20Code-extension-3794ff?style=flat-square">
+  <a href="https://marketplace.visualstudio.com/items?itemName=kaiketsu-labs.agent-cockpit"><img alt="VS Code Marketplace" src="https://img.shields.io/badge/VS%20Code-Marketplace-3794ff?style=flat-square"></a>
   <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-cc785c?style=flat-square">
   <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-zero-89d185?style=flat-square">
 </p>
@@ -76,7 +76,7 @@ You don't need to change how you use Claude Code or memorize slash commands:
 > ```text
 > Install Agent Cockpit for me:
 > 1. Run: claude plugin marketplace add kaiketsu-labs/agent-cockpit && claude plugin install cockpit@agent-cockpit
-> 2. Download and install the latest VS Code extension from https://github.com/kaiketsu-labs/agent-cockpit/releases/latest/download/agent-cockpit.vsix using `code --install-extension` (or `cursor` / `windsurf`).
+> 2. Install the VS Code extension: `code --install-extension kaiketsu-labs.agent-cockpit` (or download from https://marketplace.visualstudio.com/items?itemName=kaiketsu-labs.agent-cockpit).
 > ```
 
 ### 1. Install the Claude Code plugin
@@ -109,15 +109,24 @@ Add `CLAUDE_CODE_PLUGIN_DIRS` to the `env` block of `~/.claude/settings.json`:
 
 ### 2. Install the VS Code extension
 
-Install the latest release in one command:
+**From the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=kaiketsu-labs.agent-cockpit):**
+
+Search for **`Agent Cockpit`** in the Extensions view (`Cmd+Shift+X` / `Ctrl+Shift+X`), or install via CLI:
+
+```bash
+code --install-extension kaiketsu-labs.agent-cockpit
+```
+
+*(Replace `code` with `cursor` or `windsurf` if preferred).*
+
+<details>
+<summary><b>Alternative: Install directly from GitHub Releases (.vsix)</b></summary>
+
+Install the latest release directly:
 
 ```bash
 curl -fsSL https://github.com/kaiketsu-labs/agent-cockpit/releases/latest/download/agent-cockpit.vsix -o /tmp/agent-cockpit.vsix && code --install-extension /tmp/agent-cockpit.vsix --force
 ```
-*(Replace `code` with `cursor` or `windsurf` if preferred).*
-
-<details>
-<summary><b>Manual download & build options</b></summary>
 
 <!-- x-release-please-start-version -->
 Download `agent-cockpit-0.5.3.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/agent-cockpit/releases/latest) and install it:
