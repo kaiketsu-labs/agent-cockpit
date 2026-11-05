@@ -14,6 +14,7 @@ const {
   encodeProjectPath,
   customTitleLine,
   groupSessions,
+  moveBefore,
   searchQueries,
   prsByTicket,
   isClosed,
@@ -491,6 +492,26 @@ class SessionsProvider {
     if (folder === current) return
     await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null })
   }
+
+  async reorderSession(session, targetId, before, rawFolder) {
+    const folder = normalizeFolder(rawFolder, this.pattern) ?? undefined
+    const current = session.folder ?? session.ticket ?? undefined
+    if (folder !== current) {
+      await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null })
+      session.folder = folder
+      session.ticket = folder
+    }
+    const all = this.sessions.filter(s => !this.isHidden(s))
+    const dest = all.filter(s => (s.folder ?? s.ticket ?? undefined) === folder)
+    let siblingIds = dest.map(s => s.id)
+    if (!siblingIds.includes(session.id)) {
+      siblingIds.push(session.id)
+    }
+    const targetIdx = siblingIds.indexOf(targetId)
+    const insertBeforeId = targetIdx === -1 ? undefined : (before ? targetId : siblingIds[targetIdx + 1])
+    const newOrder = moveBefore(this.order, siblingIds, session.id, insertBeforeId)
+    await this.saveView({ order: newOrder })
+  }
 }
 
 // An exited interactive session can't be attached, only resumed.
@@ -766,6 +787,12 @@ const activate = async context => {
       const session = sessionById(id)
       if (!session) return
       await provider.assign(session, ticket ?? undefined)
+      refresh(true)
+    },
+    reorderSession: async ({ movedId, targetId, before, folder }) => {
+      const session = sessionById(movedId)
+      if (!session) return
+      await provider.reorderSession(session, targetId, before, folder)
       refresh(true)
     },
   })

@@ -112,27 +112,45 @@ let namingInFlight = false
 let turnActive = false
 let keepaliveInFlight = false
 
+const isTrivialPrompt = (text?: string): boolean => {
+  if (!text) return true
+  const clean = text.trim()
+  return clean.length < 4 || /^(hi|hey|hello|hallo|moin|test|ok|okay|yes|ja|nein|no)\b[!?.]*$/i.test(clean)
+}
+
 const buildClassificationInstruction = (knownFolders: string[], presetFolder?: string) => {
   const folderRule = presetFolder
-    ? `The session is already in folder "${presetFolder}". Keep "folder": "${presetFolder}" unless the prompt clearly switches to a different ticket.`
+    ? `The session is already in folder "${presetFolder}". Keep "folder": "${presetFolder}" unless the session clearly switches to a different ticket.`
     : knownFolders.length > 0
-      ? `Existing folders: ${JSON.stringify(knownFolders)}. Strongly prefer picking one of these existing folders if the prompt relates to it; otherwise create a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or use a ticket key if mentioned (e.g. "PROJ-123", "#42").`
+      ? `Existing folders: ${JSON.stringify(knownFolders)}. Strongly prefer picking one of these existing folders if the session relates to it; otherwise create a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or use a ticket key if mentioned (e.g. "PROJ-123", "#42").`
       : `Choose a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or a ticket key if mentioned (e.g. "PROJ-123", "#42").`
   return (
-    `You classify coding sessions for the Claude Deck sidebar. Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
-    `{"summary": "<3-6 word action summary in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>", "title": "<optional 3-5 word subtitle for the folder>"}. ` +
+    `You classify coding sessions for the Claude Deck sidebar. Determine the overarching goal or main objective of the entire session. ` +
+    `Focus on the high-level purpose (e.g. feature being built, bug being fixed, or component being refactored). ` +
+    `Do NOT name after temporary micro-steps, follow-ups, or routine actions (e.g. avoid naming after running tests, fixing a typo, inspecting files, or git commands). ` +
+    `Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
+    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>", "title": "<optional 3-5 word subtitle for the folder>"}. ` +
     folderRule
   )
 }
 
-const applyClassificationReply = async ($: EngineInterface, text: string, presetFolder?: string, force = false) => {
+const applyClassificationReply = async ($: EngineInterface, text: string, presetFolder?: string) => {
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return false
   const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; folder?: string; title?: string; skip?: boolean }
   if (parsed.skip || !parsed.summary?.trim()) return false
 
   const latest = await storedRecord($)
-  if (latest?.name && !force) return true
+  if (latest?.name) {
+    if (!latest.folder && !latest.ticket && (presetFolder ?? parsed.folder)) {
+      const rawFolder = (presetFolder ?? parsed.folder)?.trim()
+      const resolvedFolder = rawFolder ? normalizeFolder(rawFolder, projects) : undefined
+      if (resolvedFolder) {
+        await save($, { folder: resolvedFolder, ticket: resolvedFolder })
+      }
+    }
+    return true
+  }
   const rawFolder = (presetFolder ?? parsed.folder)?.trim()
   const resolvedFolder = rawFolder
     ? normalizeFolder(rawFolder, projects)
@@ -152,25 +170,29 @@ const applyClassificationReply = async ($: EngineInterface, text: string, preset
 }
 
 // Silently names and classifies the session in the background via Haiku so no tool call or system-reminder clutters the transcript.
-const autoNameInBackground = async ($: EngineInterface, userPrompt: string, presetFolder?: string, force = false) => {
+const autoNameInBackground = async ($: EngineInterface, userPrompt: string, presetFolder?: string) => {
   if (namingInFlight) return
   const clean = userPrompt.trim()
-  if (clean.length < 4 || /^(hi|hey|hello|hallo|moin|test|ok|okay|yes|ja|nein|no)\b[!?.]*$/i.test(clean)) return
+  if (isTrivialPrompt(clean)) return
   namingInFlight = true
   try {
     const existing = await storedRecord($)
-    if (existing?.name && !force) return
+    if (existing?.name) return
     const knownFolders = await listKnownFolders($)
+    const contextPrompt =
+      existing?.prompt && existing.prompt !== clean && !isTrivialPrompt(existing.prompt)
+        ? `Initial task prompt: ${existing.prompt}\nCurrent prompt: ${clean}`
+        : clean
     const reply = await $.model.complete({
       model: 'haiku',
       effort: 'low',
       maxTokens: 160,
       timeoutMs: 8_000,
       system: buildClassificationInstruction(knownFolders, presetFolder),
-      prompt: clean.slice(0, 1500),
+      prompt: contextPrompt.slice(0, 1500),
     })
     if (reply.isAnswered) {
-      await applyClassificationReply($, reply.text, presetFolder, force)
+      await applyClassificationReply($, reply.text, presetFolder)
     }
   } catch {
     // Ignore background classification errors silently.
@@ -196,14 +218,16 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'name_session',
       description:
-        `Names or renames this session and moves it into a folder or ticket in the Claude Deck sidebar. ` +
-        `Call this when the user asks to rename/move the session, when starting a task skill, or when the session's topic shifts significantly.${foldersHint}`,
+        `Sets or renames this session's name and moves it into a folder or ticket in the Claude Deck sidebar. ` +
+        `Call this ONLY when the user explicitly asks to rename or move the session (e.g. "/rename", "rename this session"), or during initial task setup (e.g. /start-task). ` +
+        `NEVER call this autonomously on routine turns, temporary subtasks (e.g. testing, fixing a bug, reviewing), or topic shifts.${foldersHint}`,
       inputSchema: {
         type: 'object',
         properties: {
           summary: {
             type: 'string',
-            description: 'Short 3-6 word summary of what this session does (clean title without repeating the folder or ticket key)',
+            description:
+              'Concise 3-6 word summary representing the overarching goal of the entire session in the user\'s language (clean title without repeating the folder or ticket key, e.g. "Implement OAuth flow")',
           },
           folder: {
             type: 'string',
@@ -314,7 +338,9 @@ export const register: Register = on => {
     const detectedTicket = extractTicket(e.text, projects)
     const currentFolder = record?.folder ?? record?.ticket
     const updates: Partial<SessionFile> = {}
-    if (fallback && !record?.prompt) updates.prompt = fallback
+    if (fallback && (!record?.prompt || isTrivialPrompt(record.prompt))) {
+      updates.prompt = fallback
+    }
     if (detectedTicket && (!currentFolder || !isTicketKey(currentFolder, projects))) {
       updates.folder = detectedTicket
       updates.ticket = detectedTicket
@@ -322,10 +348,9 @@ export const register: Register = on => {
     if (Object.keys(updates).length > 0) {
       await save($, updates).catch(err => $.ui.log(`deck: ${err}`))
     }
-    const ticketNewlyBound = Boolean(updates.folder && updates.folder !== currentFolder)
-    if (isListed && (!record?.name || ticketNewlyBound) && !(e as { isMeta?: boolean }).isMeta) {
+    if (isListed && !record?.name && !(e as { isMeta?: boolean }).isMeta) {
       const activeFolder = updates.folder ?? currentFolder
-      $.clock.after(10, () => autoNameInBackground($, e.text, activeFolder, ticketNewlyBound))
+      $.clock.after(10, () => autoNameInBackground($, e.text, activeFolder))
     }
     return next(e)
   })
