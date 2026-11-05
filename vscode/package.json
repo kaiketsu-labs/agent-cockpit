@@ -132,6 +132,23 @@
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "claudeDeck.newSession",
+          "when": "view == claudeDeck.inbox",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeDeck.newFolder",
+          "when": "view == claudeDeck.inbox",
+          "group": "navigation@2"
+        },
+        {
+          "command": "claudeDeck.refresh",
+          "when": "view == claudeDeck.inbox",
+          "group": "navigation@3"
+        }
+      ],
       "commandPalette": [
         {
           "command": "claudeDeck.attach",
