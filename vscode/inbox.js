@@ -72,50 +72,13 @@ button:hover { background: var(--vscode-toolbar-hoverBackground); }
   background: color-mix(in srgb, var(--vscode-sideBar-background) 88%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  padding: 10px 10px 8px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   border-bottom: 1px solid var(--card-border);
 }
 
-/* Top Hero / Stats Strip */
-.hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-weight: 700;
-  font-size: 0.92em;
-  letter-spacing: 0.02em;
-}
-.brand-logo {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  background: linear-gradient(135deg, #e8825a 0%, #c96442 100%);
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 6px rgba(232, 130, 90, 0.3);
-}
-.brand-logo svg { width: 12px; height: 12px; stroke: #fff; stroke-width: 1.8; fill: none; }
-
-.hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.hero-actions .icon-btn {
-  width: 24px;
-  height: 24px;
-}
 .btn-primary {
   height: 24px;
   background: linear-gradient(135deg, #e8825a 0%, #d46b43 100%);
@@ -329,9 +292,9 @@ h2.toggle:hover {
 }
 
 .card > .head {
-  height: 34px;
-  min-height: 34px;
-  padding: 0 9px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 8px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -464,13 +427,25 @@ h2.toggle:hover {
   align-items: center;
   height: 16px;
   line-height: 1;
-  gap: 4px;
+  gap: 3px;
   font-size: 0.85em;
   font-family: var(--vscode-editor-font-family, monospace);
   color: var(--claude-accent);
   background: var(--claude-accent-soft);
+  border: 1px solid transparent;
   padding: 0 5px;
   border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+.cache-pill:hover {
+  border-color: var(--claude-accent-border);
+}
+.cache-pill.keep-warm {
+  border-color: var(--claude-accent);
+  background: color-mix(in srgb, var(--claude-accent) 22%, transparent);
+  box-shadow: 0 0 6px var(--claude-accent-soft);
+  font-weight: 600;
 }
 .cache-bar {
   position: absolute;
@@ -736,7 +711,11 @@ const sessionRow = row => {
       el('span', { class: 'status-orb ' + row.state }),
       el('span', { class: 'session-name' }, row.name),
       el('span', { class: 'meta hide-on-hover' },
-        row.cache && el('span', { class: 'cache-pill', title: 'Prompt cache warm for ' + row.cache }, '⚡ ' + row.cache),
+        row.cache && el('span', {
+          class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
+          title: 'Prompt cache warm for ' + row.cache + (row.keepWarm ? ' (auto-ping active)' : ' · click to toggle keepalive'),
+          onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
+        }, '⚡ ' + row.cache),
         el('span', {}, row.age ?? row.activity)),
       el('span', { class: 'actions' },
         iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
@@ -777,10 +756,13 @@ const prRow = pr =>
     pr.isDraft && el('span', { class: 'badge' }, 'draft'))
 
 const counts = card => {
-  const byState = {}
-  for (const row of card.sessions) byState[row.state] = (byState[row.state] ?? 0) + 1
-  return Object.entries(byState).map(([state, n]) =>
-    el('span', { class: 'badge' + (state === 'blocked' ? ' warn' : state === 'working' ? ' working' : ''), title: state }, n + ' ' + state))
+  const blocked = card.sessions.filter(s => s.state === 'blocked' || s.state === 'failed').length
+  const working = card.sessions.filter(s => s.state === 'working').length
+  const badges = []
+  if (blocked > 0) badges.push(el('span', { class: 'badge warn', title: blocked + ' waiting for input' }, '● ' + blocked))
+  if (working > 0) badges.push(el('span', { class: 'badge working', title: working + ' running' }, '↻ ' + working))
+  if (card.prs.length > 0) badges.push(el('span', { class: 'badge pr', title: card.prs.length + ' PR' + (card.prs.length === 1 ? '' : 's') }, '⎇ ' + card.prs.length))
+  return badges
 }
 
 const dropTarget = (node, ticket) => {
@@ -805,7 +787,7 @@ const card = (c, isLoose, isHistory = false) => {
     folderIcon,
     el('span', { class: keyClass }, c.key ?? 'Ungrouped'),
     el('span', { class: 'grow title' }, c.title),
-    el('span', { class: 'meta hide-on-hover' }, counts(c), c.prs.length > 0 && el('span', { class: 'badge pr' }, '⎇ ' + c.prs.length)),
+    el('span', { class: 'meta hide-on-hover' }, counts(c)),
     c.key && el('span', { class: 'actions' },
       iconBtn('plus', 'New session in ' + c.key, () => send('newSession', { folder: c.key })),
       c.isTicket && iconBtn('external', 'Open ticket in browser', () => send('openTicket', { ticket: c.ticketKey || c.key })),
@@ -837,14 +819,6 @@ const render = () => {
   })
   const chip = (id, label) => el('button', { class: 'chip' + (ui.filter === id ? ' on' : ''), onclick: () => { ui.filter = id; save(); render() } }, label)
   root.append(el('div', { class: 'bar' },
-    el('div', { class: 'hero' },
-      el('div', { class: 'brand' },
-        el('span', { class: 'brand-logo' }, icon('logo')),
-        el('span', {}, 'Claude Deck')),
-      el('div', { class: 'hero-actions' },
-        el('button', { class: 'btn-primary', title: 'Start a new Claude session', onclick: () => send('newSession') }, icon('plus'), 'Session'),
-        el('button', { class: 'btn-ghost', title: 'Create a folder or add a ticket', onclick: () => send('newFolder') }, icon('newFolder'), 'Folder'),
-        iconBtn('refresh', 'Refresh', () => send('refresh')))),
     el('div', { class: 'search-wrap' },
       el('span', { class: 'search-ico' }, icon('search')),
       search),
