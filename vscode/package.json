@@ -129,6 +129,12 @@
         "command": "claudeDeck.rename",
         "title": "Rename",
         "icon": "$(edit)"
+      },
+      {
+        "command": "claudeDeck.toggleKeepWarm",
+        "title": "Toggle Keep Warm (Prompt Cache Keepalive)",
+        "icon": "$(zap)",
+        "category": "Claude Deck"
       }
     ],
     "menus": {

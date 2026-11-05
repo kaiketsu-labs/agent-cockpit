@@ -436,6 +436,7 @@ h2.toggle:hover {
   padding: 0 5px;
   border-radius: 4px;
   cursor: pointer;
+  user-select: none;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 .cache-pill:hover {
@@ -711,11 +712,13 @@ const sessionRow = row => {
       el('span', { class: 'status-orb ' + row.state }),
       el('span', { class: 'session-name' }, row.name),
       el('span', { class: 'meta hide-on-hover' },
-        row.cache && el('span', {
+        (row.cache || row.keepWarm) && el('span', {
           class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
-          title: 'Prompt cache warm for ' + row.cache + (row.keepWarm ? ' (auto-ping active)' : ' · click to toggle keepalive'),
+          title: row.keepWarm
+            ? 'Prompt cache keepalive active' + (row.cache ? ' (' + row.cache + ' remaining)' : '') + ' · Click to disable'
+            : 'Prompt cache warm for ' + row.cache + ' · Click to keep warm automatically',
           onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-        }, '⚡ ' + row.cache),
+        }, '⚡ ' + (row.cache || 'warm')),
         el('span', {}, row.age ?? row.activity)),
       el('span', { class: 'actions' },
         iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),

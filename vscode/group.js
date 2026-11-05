@@ -208,6 +208,7 @@ const mergeSessions = (agents, files, pattern) => {
   const live = agents.map(agent => {
     const file = fileOf.get(agent.sessionId) ?? {}
     const isBg = agent.id !== undefined
+    const keepWarm = Boolean(file.keepWarm && (!file.keepWarmUntil || file.keepWarmUntil > Date.now()))
     return withFolder(
       {
         id: isBg ? agent.id : agent.sessionId,
@@ -220,6 +221,9 @@ const mergeSessions = (agents, files, pattern) => {
         lastWriteAt: file.lastTurnEndAt,
         cwd: agent.cwd ?? file.cwd,
         interactive: !isBg,
+        keepWarm,
+        contextTokens: file.contextTokens,
+        model: file.model,
       },
       file.folder ?? file.ticket,
     )
@@ -274,6 +278,7 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden }) => {
   const ageStr = age(now - session.updatedAt)
   return {
     id: session.id,
+    sessionId: session.sessionId,
     name: withoutTicketSuffix(session.name, pattern) || session.name,
     folder,
     ticket: folder,
@@ -283,6 +288,9 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden }) => {
     activity: ageStr,
     cache: left > 0 ? clock(left) : null,
     cachePct: left > 0 && cacheTtl > 0 ? Math.min(100, Math.round((left / cacheTtl) * 100)) : 0,
+    keepWarm: Boolean(session.keepWarm),
+    contextTokens: session.contextTokens,
+    model: session.model,
     isHidden,
   }
 }

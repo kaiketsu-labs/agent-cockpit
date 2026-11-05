@@ -251,3 +251,14 @@ test('inbox lists sessions that need the person first and one card per folder or
   assert.equal(model.tickets[1].sessions[0].name, 'work a')
   assert.deepEqual(model.loose.map(row => row.id), ['d'])
 })
+
+test('sessions preserve keepWarm status and honor expiration', () => {
+  const agents = [{ sessionId: 's1', pid: 1, status: 'idle' }, { sessionId: 's2', pid: 2, status: 'idle' }]
+  const files = [
+    { sessionId: 's1', keepWarm: true, keepWarmUntil: Date.now() + 60_000, name: 'warm session' },
+    { sessionId: 's2', keepWarm: true, keepWarmUntil: Date.now() - 1_000, name: 'expired warm session' },
+  ]
+  const merged = mergeSessions(agents, files, proj)
+  assert.equal(merged[0].keepWarm, true)
+  assert.equal(merged[1].keepWarm, false)
+})
