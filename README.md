@@ -120,10 +120,10 @@ curl -fsSL https://github.com/kaiketsu-labs/claude-deck/releases/latest/download
 <summary><b>Manual download & build options</b></summary>
 
 <!-- x-release-please-start-version -->
-Download `claude-deck-0.4.2.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
+Download `claude-deck-0.4.3.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
 
 ```bash
-code --install-extension claude-deck-0.4.2.vsix --force
+code --install-extension claude-deck-0.4.3.vsix --force
 ```
 
 Or build and install from source (zero npm dependencies — `package.py` packages the `.vsix` directly):
@@ -131,7 +131,7 @@ Or build and install from source (zero npm dependencies — `package.py` package
 ```bash
 git clone https://github.com/kaiketsu-labs/claude-deck
 cd claude-deck/vscode
-python3 package.py && code --install-extension claude-deck-0.4.2.vsix --force
+python3 package.py && code --install-extension claude-deck-0.4.3.vsix --force
 ```
 <!-- x-release-please-end -->
 </details>
