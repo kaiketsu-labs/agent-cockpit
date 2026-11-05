@@ -1,5 +1,5 @@
 {
-  "name": "deck",
+  "name": "cockpit",
   "version": "0.4.3",
-  "description": "Silently names and organizes Claude Code sessions by folder and ticket for the Claude Deck VS Code sidebar"
+  "description": "Silently names and organizes Claude Code sessions by folder and ticket for the Agent Cockpit VS Code sidebar"
 }

@@ -187,7 +187,7 @@ const worktreeTicket = (cwd, pattern) => {
   return segment ? firstTicket([segment], pattern) : undefined
 }
 
-// Live sessions come from claude agents, the rest from the files the claude-deck plugin writes for every session.
+// Live sessions come from claude agents, the rest from the files the agent-cockpit plugin writes for every session.
 // A bg session that left claude agents was deleted with claude rm; an interactive one ended and can be resumed.
 const mergeSessions = (agents, files, pattern) => {
   const fileOf = new Map(files.map(file => [file.sessionId, file]))

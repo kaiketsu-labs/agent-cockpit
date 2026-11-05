@@ -45,7 +45,7 @@
     <!-- VS Code Sidebar View Header (Native Title Bar) -->
     <rect x="48" y="0" width="432" height="35" fill="#18181b"/>
     <line x1="48" y1="35" x2="480" y2="35" stroke="#27272b"/>
-    <text x="58" y="22" fill="#a1a1aa" font-size="11" font-weight="600" letter-spacing="0.5">CLAUDE DECK</text>
+    <text x="58" y="22" fill="#a1a1aa" font-size="11" font-weight="600" letter-spacing="0.5">AGENT COCKPIT</text>
 
     <!-- Header Actions (view/title) -->
     <!-- + Session -->

@@ -28,11 +28,12 @@ const {
 const { InboxView } = require('./inbox')
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude')
-// The claude-deck plugin writes one file per session; order, folders and hide flags sit beside them for every window.
+// The agent-cockpit plugin writes one file per session; order, folders and hide flags sit beside them for every window.
+const COCKPIT_DIR = path.join(CLAUDE_DIR, 'cockpit')
 const DECK_DIR = path.join(CLAUDE_DIR, 'deck')
-const SESSIONS_DIR = path.join(DECK_DIR, 'sessions')
-const VIEW_FILE = path.join(DECK_DIR, 'view.json')
-const TITLES_FILE = path.join(DECK_DIR, 'ticket-titles.json')
+const SESSIONS_DIR = path.join(COCKPIT_DIR, 'sessions')
+const VIEW_FILE = path.join(COCKPIT_DIR, 'view.json')
+const TITLES_FILE = path.join(COCKPIT_DIR, 'ticket-titles.json')
 const REFRESH_MS = 5_000
 const TRACKER_MS = 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
@@ -84,24 +85,45 @@ const loadEnv = async () => {
   return Object.assign({}, process.env, ...envs)
 }
 
-const getDeckConfig = env => {
-  const cfg = vscode.workspace.getConfiguration('claudeDeck')
+const getCockpitConfig = env => {
+  const cfg = vscode.workspace.getConfiguration('agentCockpit')
+  const legacyCfg = vscode.workspace.getConfiguration('claudeDeck')
+  const get = (key, fallback) => {
+    const val = cfg.get(key)
+    if (val !== undefined && val !== null && val !== '') return val
+    const legacyVal = legacyCfg.get(key)
+    if (legacyVal !== undefined && legacyVal !== null && legacyVal !== '') return legacyVal
+    return fallback
+  }
   return {
-    tracker: cfg.get('tracker', 'auto'),
-    trackerCommand: cfg.get('trackerCommand', '') || env.DECK_TRACKER_COMMAND || '',
-    pullRequests: cfg.get('pullRequests', 'auto'),
-    ticketProjects: cfg.get('ticketProjects', '') || env.TICKET_PROJECTS || '',
-    ticketPattern: cfg.get('ticketPattern', ''),
-    closeTerminalOnArchive: cfg.get('closeTerminalOnArchive', true),
+    tracker: get('tracker', 'auto'),
+    trackerCommand: get('trackerCommand', '') || env.COCKPIT_TRACKER_COMMAND || env.DECK_TRACKER_COMMAND || '',
+    pullRequests: get('pullRequests', 'auto'),
+    ticketProjects: get('ticketProjects', '') || env.TICKET_PROJECTS || '',
+    ticketPattern: get('ticketPattern', ''),
+    closeTerminalOnArchive: get('closeTerminalOnArchive', true),
   }
 }
 
 const listAgents = async () => JSON.parse(await run(CLAUDE, ['agents', '--json', '--all']))
 
 const readSessionFiles = async () => {
-  const names = await fs.promises.readdir(SESSIONS_DIR).catch(() => [])
-  const files = await Promise.all(names.filter(name => name.endsWith('.json')).map(name => readJson(path.join(SESSIONS_DIR, name))))
-  return files.filter(Boolean)
+  const readDir = async dir => {
+    const names = await fs.promises.readdir(dir).catch(() => [])
+    return Promise.all(names.filter(name => name.endsWith('.json')).map(name => readJson(path.join(dir, name))))
+  }
+  const [cockpitFiles, legacyFiles] = await Promise.all([
+    readDir(SESSIONS_DIR),
+    readDir(path.join(DECK_DIR, 'sessions')),
+  ])
+  const map = new Map()
+  for (const f of legacyFiles) {
+    if (f?.sessionId) map.set(f.sessionId, f)
+  }
+  for (const f of cockpitFiles) {
+    if (f?.sessionId) map.set(f.sessionId, f)
+  }
+  return [...map.values()]
 }
 
 const loadSessions = async pattern => {
@@ -109,7 +131,7 @@ const loadSessions = async pattern => {
   return mergeSessions(agents, files, pattern)
 }
 
-// Writes session metadata directly to ~/.claude/deck/sessions/<sessionId>.json and optionally updates the JSONL custom-title.
+// Writes session metadata directly to ~/.claude/cockpit/sessions/<sessionId>.json and optionally updates the JSONL custom-title.
 const updateSessionRecord = async (session, change) => {
   await fs.promises.mkdir(SESSIONS_DIR, { recursive: true })
   const file = path.join(SESSIONS_DIR, `${session.sessionId}.json`)
@@ -332,7 +354,7 @@ class SessionsProvider {
     this.prs = {}
     this.fetchedAt = { sessions: 0, issues: 0, prs: 0 }
     this.env = {}
-    this.config = getDeckConfig({})
+    this.config = getCockpitConfig({})
     this.pattern = ticketPattern()
     this.errors = {}
     this.view = {}
@@ -384,7 +406,7 @@ class SessionsProvider {
 
   async saveView(change) {
     this.view = { ...(await readJson(VIEW_FILE, {})), ...change }
-    await fs.promises.mkdir(DECK_DIR, { recursive: true })
+    await fs.promises.mkdir(COCKPIT_DIR, { recursive: true })
     await fs.promises.writeFile(VIEW_FILE, JSON.stringify(this.view, null, 2))
     this.regroup()
     this.changed.fire()
@@ -419,7 +441,7 @@ class SessionsProvider {
   // Resolves to the sessions that started needing input since the last refresh.
   async refresh({ force = false, withRemote = true } = {}) {
     this.env = await loadEnv()
-    this.config = getDeckConfig(this.env)
+    this.config = getCockpitConfig(this.env)
     this.view = await readJson(VIEW_FILE, {})
     this.cacheTtl = cacheTtlMs(this.env)
     const before = new Map(this.sessions.map(session => [session.id, session.state]))
@@ -675,7 +697,7 @@ const newSession = folder =>
       name: folder || 'Claude',
       shellPath: CLAUDE,
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-      env: folder ? { CLAUDE_DECK_FOLDER: folder } : undefined,
+      env: folder ? { AGENT_COCKPIT_FOLDER: folder, CLAUDE_DECK_FOLDER: folder } : undefined,
       iconPath: new vscode.ThemeIcon('comment-discussion'),
       location: vscode.TerminalLocation.Editor,
     })
@@ -698,23 +720,32 @@ const attach = async (session, provider) => {
       shellPath: CLAUDE,
       shellArgs: attachArgs(session),
       cwd: session.cwd,
-      env: session.ticket ? { CLAUDE_DECK_FOLDER: session.ticket } : undefined,
+      env: session.ticket ? { AGENT_COCKPIT_FOLDER: session.ticket, CLAUDE_DECK_FOLDER: session.ticket } : undefined,
       iconPath: new vscode.ThemeIcon('hubot'),
       location: vscode.TerminalLocation.Editor,
     })
     .show()
 }
 
-// claude-tickets, the predecessor, kept its files in ~/.claude/tickets and ~/.claude/ticket-titles.json.
-const migrateFromClaudeTickets = async () => {
-  if (fs.existsSync(DECK_DIR)) return
+// Migrate from legacy claude-tickets and claude-deck
+const migrateLegacyData = async () => {
   const copy = (from, to) => fs.existsSync(from) && fs.promises.cp(from, to, { recursive: true })
-  await fs.promises.mkdir(DECK_DIR, { recursive: true })
-  await Promise.all([
-    copy(path.join(CLAUDE_DIR, 'tickets', 'sessions'), SESSIONS_DIR),
-    copy(path.join(CLAUDE_DIR, 'tickets', 'view.json'), VIEW_FILE),
-    copy(path.join(CLAUDE_DIR, 'ticket-titles.json'), TITLES_FILE),
-  ]).catch(() => {})
+  if (!fs.existsSync(DECK_DIR) && fs.existsSync(path.join(CLAUDE_DIR, 'tickets'))) {
+    await fs.promises.mkdir(DECK_DIR, { recursive: true })
+    await Promise.all([
+      copy(path.join(CLAUDE_DIR, 'tickets', 'sessions'), path.join(DECK_DIR, 'sessions')),
+      copy(path.join(CLAUDE_DIR, 'tickets', 'view.json'), path.join(DECK_DIR, 'view.json')),
+      copy(path.join(CLAUDE_DIR, 'ticket-titles.json'), path.join(DECK_DIR, 'ticket-titles.json')),
+    ]).catch(() => {})
+  }
+  if (!fs.existsSync(COCKPIT_DIR) && fs.existsSync(DECK_DIR)) {
+    await fs.promises.mkdir(COCKPIT_DIR, { recursive: true })
+    await Promise.all([
+      copy(path.join(DECK_DIR, 'sessions'), SESSIONS_DIR),
+      copy(path.join(DECK_DIR, 'view.json'), VIEW_FILE),
+      copy(path.join(DECK_DIR, 'ticket-titles.json'), TITLES_FILE),
+    ]).catch(() => {})
+  }
 }
 
 const search = async provider => {
@@ -794,15 +825,15 @@ const moveToFolder = async (session, provider, refresh) => {
 
 const activate = async context => {
   const provider = new SessionsProvider()
-  await migrateFromClaudeTickets()
+  await migrateLegacyData()
   const sessionById = id => provider.sessions.find(session => session.id === id || session.sessionId === id)
   const inbox = new InboxView(provider, {
     attach: ({ id }) => sessionById(id) && attach(sessionById(id), provider),
     openUrl: ({ url }) => vscode.env.openExternal(vscode.Uri.parse(url)),
     openTicket: ({ ticket }) => openJira({ group: { ticket } }),
-    newSession: ({ folder } = {}) => vscode.commands.executeCommand('claudeDeck.newSession', folder && { group: { ticket: folder } }),
-    newFolder: () => vscode.commands.executeCommand('claudeDeck.newFolder'),
-    renameFolder: ({ folder }) => vscode.commands.executeCommand('claudeDeck.renameFolder', { folder }),
+    newSession: ({ folder } = {}) => vscode.commands.executeCommand('agentCockpit.newSession', folder && { group: { ticket: folder } }),
+    newFolder: () => vscode.commands.executeCommand('agentCockpit.newFolder'),
+    renameFolder: ({ folder }) => vscode.commands.executeCommand('agentCockpit.renameFolder', { folder }),
     removeFolder: ({ folder }) => provider.removeFolder(folder),
     moveToFolder: ({ id }) => sessionById(id) && moveToFolder(sessionById(id), provider, refresh),
     refresh: () => refresh(true),
@@ -818,7 +849,7 @@ const activate = async context => {
       })
       refresh(true)
     },
-    rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('claudeDeck.rename', { session: sessionById(id) }),
+    rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('agentCockpit.rename', { session: sessionById(id) }),
     hide: ({ id }) => sessionById(id) && hideSession(sessionById(id), provider),
     show: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), false),
     assign: async ({ id, ticket }) => {
@@ -835,11 +866,14 @@ const activate = async context => {
     },
   })
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('claudeDeck.inbox', inbox),
+    vscode.window.registerWebviewViewProvider('agentCockpit.inbox', inbox),
     provider.onDidChange(() => inbox.post()),
   )
+  try {
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider('claudeDeck.inbox', inbox))
+  } catch {}
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10)
-  statusBar.command = 'claudeDeck.focus'
+  statusBar.command = 'agentCockpit.focus'
   context.subscriptions.push(statusBar)
 
   const updateStatusBar = () => {
@@ -854,12 +888,12 @@ const activate = async context => {
     } else if (working.length > 0) {
       statusBar.text = `$(sync~spin) Claude (${working.length} running)`
       statusBar.backgroundColor = undefined
-      statusBar.tooltip = `${working.length} session${working.length > 1 ? 's' : ''} working · click to open deck`
+      statusBar.tooltip = `${working.length} session${working.length > 1 ? 's' : ''} working · click to open cockpit`
       statusBar.show()
     } else if (live.length > 0) {
       statusBar.text = `$(hubot) Claude (${live.length})`
       statusBar.backgroundColor = undefined
-      statusBar.tooltip = `${live.length} Claude session${live.length > 1 ? 's' : ''} · click to open deck`
+      statusBar.tooltip = `${live.length} Claude session${live.length > 1 ? 's' : ''} · click to open cockpit`
       statusBar.show()
     } else {
       statusBar.hide()
@@ -885,7 +919,12 @@ const activate = async context => {
   // Sessions refresh while the view is hidden too, so a session needing input still notifies.
   const timer = setInterval(() => refresh(), REFRESH_MS)
   fs.mkdirSync(SESSIONS_DIR, { recursive: true })
-  const watcher = fs.watch(SESSIONS_DIR, () => refresh())
+  const watchers = [fs.watch(SESSIONS_DIR, () => refresh())]
+  if (fs.existsSync(path.join(DECK_DIR, 'sessions'))) {
+    try {
+      watchers.push(fs.watch(path.join(DECK_DIR, 'sessions'), () => refresh()))
+    } catch {}
+  }
   const openJira = async element => {
     const raw = element?.group?.ticket ?? element?.ticket
     const ticket = folderTicket(raw, provider.pattern)
@@ -907,27 +946,38 @@ const activate = async context => {
       run(JIRA_CLI, ['open', ticket], undefined, { cwd }).catch(() => {}),
     )
   }
+
+  const registerCmd = (name, handler) => [
+    vscode.commands.registerCommand(`agentCockpit.${name}`, handler),
+    vscode.commands.registerCommand(`claudeDeck.${name}`, handler),
+  ]
+
   context.subscriptions.push(
     { dispose: () => clearInterval(timer) },
-    { dispose: () => watcher.close() },
+    ...watchers.map(w => ({ dispose: () => w.close() })),
     vscode.window.onDidChangeActiveTerminal(() => void syncTerminalTitles(provider)),
-    vscode.workspace.onDidChangeConfiguration(e => e.affectsConfiguration('claudeDeck') && refresh(true)),
-    vscode.commands.registerCommand('claudeDeck.focus', () => {
+    vscode.workspace.onDidChangeConfiguration(
+      e => (e.affectsConfiguration('agentCockpit') || e.affectsConfiguration('claudeDeck')) && refresh(true),
+    ),
+    ...registerCmd('focus', () => {
       const blocked = provider.sessions.find(s => s.state === 'blocked' && !provider.isHidden(s))
       if (blocked) return attach(blocked, provider)
-      vscode.commands.executeCommand('claudeDeck.inbox.focus')
+      vscode.commands.executeCommand('agentCockpit.inbox.focus').then(
+        () => {},
+        () => vscode.commands.executeCommand('claudeDeck.inbox.focus'),
+      )
     }),
-    vscode.commands.registerCommand('claudeDeck.refresh', () => refresh(true)),
-    vscode.commands.registerCommand('claudeDeck.attach', session => attach(session, provider)),
-    vscode.commands.registerCommand('claudeDeck.openJira', openJira),
-    vscode.commands.registerCommand('claudeDeck.search', () => search(provider)),
-    vscode.commands.registerCommand('claudeDeck.rename', async ({ session }) => {
+    ...registerCmd('refresh', () => refresh(true)),
+    ...registerCmd('attach', session => attach(session, provider)),
+    ...registerCmd('openJira', openJira),
+    ...registerCmd('search', () => search(provider)),
+    ...registerCmd('rename', async ({ session }) => {
       const name = (await vscode.window.showInputBox({ title: 'Rename session', value: session.name }))?.trim()
       if (!name || name === session.name) return
       await rename(session, name, provider.pattern)
       refresh()
     }),
-    vscode.commands.registerCommand('claudeDeck.newFolder', async () => {
+    ...registerCmd('newFolder', async () => {
       const input = (
         await vscode.window.showInputBox({
           title: 'New folder or ticket',
@@ -939,7 +989,7 @@ const activate = async context => {
       await provider.addFolder(input)
       refresh(true)
     }),
-    vscode.commands.registerCommand('claudeDeck.renameFolder', async ({ folder } = {}) => {
+    ...registerCmd('renameFolder', async ({ folder } = {}) => {
       if (!folder) return
       const input = (
         await vscode.window.showInputBox({
@@ -951,23 +1001,23 @@ const activate = async context => {
       await provider.renameFolder(folder, input)
       refresh(true)
     }),
-    vscode.commands.registerCommand('claudeDeck.newSession', async element => {
+    ...registerCmd('newSession', async element => {
       const folder = element?.group?.ticket ?? (typeof element === 'string' ? element : undefined)
       newSession(folder)
       // claude takes a moment to register itself.
       setTimeout(() => refresh(), 2_500)
     }),
-    vscode.commands.registerCommand('claudeDeck.startTask', async element => {
+    ...registerCmd('startTask', async element => {
       const folder = element?.group?.ticket
       newSession(folder)
       setTimeout(() => refresh(), 2_500)
     }),
-    vscode.commands.registerCommand('claudeDeck.hide', async element => {
+    ...registerCmd('hide', async element => {
       const session = element?.session ?? (element?.id || element?.sessionId ? sessionById(element.id ?? element.sessionId) : element)
       if (session) await hideSession(session, provider)
     }),
-    vscode.commands.registerCommand('claudeDeck.show', element => provider.setHidden(element.session, false)),
-    vscode.commands.registerCommand('claudeDeck.toggleKeepWarm', async element => {
+    ...registerCmd('show', element => provider.setHidden(element.session, false)),
+    ...registerCmd('toggleKeepWarm', async element => {
       const session = element?.session ?? (element?.id ? sessionById(element.id) : undefined)
       if (!session) return
       const next = !session.keepWarm

@@ -13,11 +13,15 @@ import {
   ticketSuffix,
 } from './group'
 
-const NAME_TOOL = 'mcp__deck__name_session'
-const TITLES_TOOL = 'mcp__deck__set_ticket_titles'
-const KEEP_WARM_TOOL = 'mcp__deck__keep_warm'
+const NAME_TOOL = 'mcp__cockpit__name_session'
+const TITLES_TOOL = 'mcp__cockpit__set_ticket_titles'
+const KEEP_WARM_TOOL = 'mcp__cockpit__keep_warm'
 
-// What the Claude Deck VS Code sidebar lists; it reads these files, never the transcripts.
+const LEGACY_NAME_TOOL = 'mcp__deck__name_session'
+const LEGACY_TITLES_TOOL = 'mcp__deck__set_ticket_titles'
+const LEGACY_KEEP_WARM_TOOL = 'mcp__deck__keep_warm'
+
+// What the Agent Cockpit VS Code sidebar lists; it reads these files, never the transcripts.
 type SessionFile = {
   sessionId: string
   kind: 'bg' | 'interactive'
@@ -37,9 +41,9 @@ type SessionFile = {
 
 const claudeDir = async ($: EngineInterface) => `${await $.env.get('HOME')}/.claude`
 
-const titlesFile = async ($: EngineInterface) => `${await claudeDir($)}/deck/ticket-titles.json`
+const titlesFile = async ($: EngineInterface) => `${await claudeDir($)}/cockpit/ticket-titles.json`
 
-const viewFile = async ($: EngineInterface) => `${await claudeDir($)}/deck/view.json`
+const viewFile = async ($: EngineInterface) => `${await claudeDir($)}/cockpit/view.json`
 
 const storedTitles = async ($: EngineInterface) =>
   JSON.parse(await $.fs.read(await titlesFile($)).catch(() => '{}')) as Record<string, string>
@@ -47,26 +51,39 @@ const storedTitles = async ($: EngineInterface) =>
 const storeTitles = async ($: EngineInterface, added: Record<string, string>) =>
   $.fs.write(await titlesFile($), JSON.stringify({ ...(await storedTitles($)), ...added }, null, 2))
 
-const sessionFile = async ($: EngineInterface, sessionId: string) => `${await claudeDir($)}/deck/sessions/${sessionId}.json`
+const sessionFile = async ($: EngineInterface, sessionId: string) => `${await claudeDir($)}/cockpit/sessions/${sessionId}.json`
 
-const storedRecord = async ($: EngineInterface) =>
-  $.fs
-    .read(await sessionFile($, await $.session.id()))
-    .then(text => JSON.parse(text) as SessionFile)
+const legacySessionFile = async ($: EngineInterface, sessionId: string) => `${await claudeDir($)}/deck/sessions/${sessionId}.json`
+
+const storedRecord = async ($: EngineInterface) => {
+  const id = await $.session.id()
+  const text = await $.fs
+    .read(await sessionFile($, id))
+    .catch(() => $.fs.read(await legacySessionFile($, id)))
     .catch(() => undefined)
+  if (!text) return undefined
+  try {
+    return JSON.parse(text) as SessionFile
+  } catch {
+    return undefined
+  }
+}
 
 // Discover all existing folders from view.json and active/recent sessions so Claude can auto-group into them.
 const listKnownFolders = async ($: EngineInterface): Promise<string[]> => {
   try {
     const view = JSON.parse(await $.fs.read(await viewFile($)).catch(() => '{}')) as { folders?: string[] }
     const folders = new Set<string>(view.folders ?? [])
-    const dir = `${await claudeDir($)}/deck/sessions`
-    const entries = await $.fs.list(dir).catch(() => [])
-    for (const entry of entries) {
-      if (entry.kind === 'file' && entry.name.endsWith('.json')) {
-        const rec = JSON.parse(await $.fs.read(`${dir}/${entry.name}`).catch(() => '{}')) as SessionFile
-        const f = rec.folder ?? rec.ticket
-        if (f) folders.add(f)
+    const dir = `${await claudeDir($)}/cockpit/sessions`
+    const legacyDir = `${await claudeDir($)}/deck/sessions`
+    for (const d of [dir, legacyDir]) {
+      const entries = await $.fs.list(d).catch(() => [])
+      for (const entry of entries) {
+        if (entry.kind === 'file' && entry.name.endsWith('.json')) {
+          const rec = JSON.parse(await $.fs.read(`${d}/${entry.name}`).catch(() => '{}')) as SessionFile
+          const f = rec.folder ?? rec.ticket
+          if (f) folders.add(f)
+        }
       }
     }
     return [...folders]
@@ -125,7 +142,7 @@ const buildClassificationInstruction = (knownFolders: string[], presetFolder?: s
       ? `Existing folders: ${JSON.stringify(knownFolders)}. Strongly prefer picking one of these existing folders if the session relates to it; otherwise create a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or use a ticket key if mentioned (e.g. "PROJ-123", "#42").`
       : `Choose a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or a ticket key if mentioned (e.g. "PROJ-123", "#42").`
   return (
-    `You classify coding sessions for the Claude Deck sidebar. Determine the overarching goal or main objective of the entire session. ` +
+    `You classify coding sessions for the Agent Cockpit sidebar. Determine the overarching goal or main objective of the entire session. ` +
     `Focus on the high-level purpose (e.g. feature being built, bug being fixed, or component being refactored). ` +
     `Do NOT name after temporary micro-steps, follow-ups, or routine actions (e.g. avoid naming after running tests, fixing a typo, inspecting files, or git commands). ` +
     `Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
@@ -208,7 +225,7 @@ export const register: Register = on => {
       .map(project => project.trim())
       .filter(Boolean)
     suffix = ticketSuffix(projects)
-    const initialFolder = (await $.env.get('CLAUDE_DECK_FOLDER'))?.trim()
+    const initialFolder = ((await $.env.get('AGENT_COCKPIT_FOLDER')) || (await $.env.get('CLAUDE_DECK_FOLDER')))?.trim()
     const knownFolders = await listKnownFolders($)
     const foldersHint =
       knownFolders.length > 0
@@ -218,7 +235,7 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'name_session',
       description:
-        `Sets or renames this session's name and moves it into a folder or ticket in the Claude Deck sidebar. ` +
+        `Sets or renames this session's name and moves it into a folder or ticket in the Agent Cockpit sidebar. ` +
         `Call this ONLY when the user explicitly asks to rename or move the session (e.g. "/rename", "rename this session"), or during initial task setup (e.g. /start-task). ` +
         `NEVER call this autonomously on routine turns, temporary subtasks (e.g. testing, fixing a bug, reviewing), or topic shifts.${foldersHint}`,
       inputSchema: {
@@ -248,7 +265,7 @@ export const register: Register = on => {
     })
     await $.tool.register({
       name: 'set_ticket_titles',
-      description: 'Stores short subtitles for folders or tickets shown beside their headers in the Claude Deck sidebar.',
+      description: 'Stores short subtitles for folders or tickets shown beside their headers in the Agent Cockpit sidebar.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -264,8 +281,8 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'keep_warm',
       description:
-        'Enables or disables prompt cache keepalive for this session in Claude Deck. ' +
-        'When enabled, Claude Deck periodically pings the session cache prefix before it expires so the cache stays warm while you step away or work in parallel sessions.',
+        'Enables or disables prompt cache keepalive for this session in Agent Cockpit. ' +
+        'When enabled, Agent Cockpit periodically pings the session cache prefix before it expires so the cache stays warm while you step away or work in parallel sessions.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -346,7 +363,7 @@ export const register: Register = on => {
       updates.ticket = detectedTicket
     }
     if (Object.keys(updates).length > 0) {
-      await save($, updates).catch(err => $.ui.log(`deck: ${err}`))
+      await save($, updates).catch(err => $.ui.log(`cockpit: ${err}`))
     }
     if (isListed && !record?.name && !(e as { isMeta?: boolean }).isMeta) {
       const activeFolder = updates.folder ?? currentFolder
@@ -363,12 +380,12 @@ export const register: Register = on => {
       const extracted = ticketOf(raw, suffix) ?? extractTicket(raw, projects)
       const cleaned = extracted ? raw.replace(new RegExp(`^${escapeRegExp(extracted)}\\s*[:·\\-–—]?\\s*`, 'i'), '').trim() || raw : raw
       const name = sessionName(cleaned, extracted, suffix)
-      await save($, { name, ...(extracted ? { folder: extracted, ticket: extracted } : {}) }).catch(err => $.ui.log(`deck: ${err}`))
+      await save($, { name, ...(extracted ? { folder: extracted, ticket: extracted } : {}) }).catch(err => $.ui.log(`cockpit: ${err}`))
     }
     return result
   })
 
-  on('tool.call', { tool: NAME_TOOL }, async ($, e) => {
+  const handleNameTool = async ($: EngineInterface, e: unknown) => {
     const { summary, folder, ticket, title } = e as unknown as {
       summary: string
       folder?: string
@@ -392,9 +409,11 @@ export const register: Register = on => {
         ? `Named session "${name}" in folder "${resolvedFolder}". Continue with the user's request.`
         : `Named session "${name}". Continue with the user's request.`,
     }
-  })
+  }
+  on('tool.call', { tool: NAME_TOOL }, handleNameTool)
+  on('tool.call', { tool: LEGACY_NAME_TOOL }, handleNameTool)
 
-  on('tool.call', { tool: TITLES_TOOL }, async ($, e) => {
+  const handleTitlesTool = async ($: EngineInterface, e: unknown) => {
     const { titles: given } = e as unknown as { titles: Record<string, string> }
     const normalized = Object.fromEntries(
       Object.entries(given).map(([key, title]) => [normalizeFolder(key, projects) || normalizeTicket(key), title]),
@@ -402,9 +421,11 @@ export const register: Register = on => {
     await storeTitles($, normalized)
 
     return { result: `Stored ${Object.keys(normalized).length} titles.` }
-  })
+  }
+  on('tool.call', { tool: TITLES_TOOL }, handleTitlesTool)
+  on('tool.call', { tool: LEGACY_TITLES_TOOL }, handleTitlesTool)
 
-  on('tool.call', { tool: KEEP_WARM_TOOL }, async ($, e) => {
+  const handleKeepWarmTool = async ($: EngineInterface, e: unknown) => {
     const { enabled, durationMinutes = 30 } = e as unknown as { enabled: boolean; durationMinutes?: number }
     const durationMs = Math.max(1, Math.min(durationMinutes, 120)) * 60_000
     await save($, {
@@ -416,7 +437,9 @@ export const register: Register = on => {
         ? `Prompt cache keepalive enabled for ${durationMinutes} minutes.`
         : `Prompt cache keepalive disabled.`,
     }
-  })
+  }
+  on('tool.call', { tool: KEEP_WARM_TOOL }, handleKeepWarmTool)
+  on('tool.call', { tool: LEGACY_KEEP_WARM_TOOL }, handleKeepWarmTool)
 
   // Automatically detect ticket keys in ticket-intent CLI commands (e.g. acli, jira, gh issue, git checkout -b feat/PROJ-123).
   on('tool.call', async ($, e, next) => {

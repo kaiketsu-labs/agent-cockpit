@@ -922,8 +922,8 @@ const renderList = () => {
   }
   if (folders.length === 0 && !showLoose && history.length === 0) {
     list.append(el('div', { class: 'empty-state' },
-      el('div', { class: 'empty-title' }, q ? 'No matching sessions or folders' : 'Your Claude Deck is ready'),
-      el('div', {}, q ? 'Try a different filter or search query.' : 'Start a Claude session or create a topic/ticket folder to organize your work.'),
+      el('div', { class: 'empty-title' }, q ? 'No matching sessions or folders' : 'Your Agent Cockpit is ready'),
+      el('div', {}, q ? 'Try a different filter or search query.' : 'Start an agent session or create a topic/ticket folder to organize your work.'),
       !q && el('div', { class: 'empty-actions' },
         el('button', { class: 'btn-primary', onclick: () => send('newSession') }, icon('plus'), 'New Session'),
         el('button', { class: 'btn-ghost', onclick: () => send('newFolder') }, icon('newFolder'), 'New Folder'))))

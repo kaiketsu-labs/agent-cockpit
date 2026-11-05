@@ -55,7 +55,7 @@ test('normalizeFolder uppercases ticket keys and preserves free-form topic folde
 })
 
 test('encodeProjectPath and customTitleLine match Claude Code transcript storage', () => {
-  expect(encodeProjectPath('/Users/david/Developer/claude-deck')).toBe('-Users-david-Developer-claude-deck')
+  expect(encodeProjectPath('/Users/david/Developer/agent-cockpit')).toBe('-Users-david-Developer-agent-cockpit')
   expect(customTitleLine('s-1', 'Auth Refactor')).toBe('{"type":"custom-title","customTitle":"Auth Refactor","sessionId":"s-1"}\n')
 })
 

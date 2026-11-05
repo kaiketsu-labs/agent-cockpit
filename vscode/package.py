@@ -1,4 +1,4 @@
-"""Builds claude-deck-<version>.vsix without npm: a VSIX is a zip with a manifest."""
+"""Builds agent-cockpit-<version>.vsix without npm: a VSIX is a zip with a manifest."""
 
 import json
 import zipfile
