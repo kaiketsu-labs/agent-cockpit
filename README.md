@@ -37,8 +37,8 @@ Claude Code makes parallel agent workflows effortless to start — and chaotic t
 **Claude Deck is your mission control:** one sidebar that automatically names your sessions and terminal tabs, organizes them into topic or ticket folders, shows live status and open PRs, and takes you to the right terminal in a single click.
 
 <p align="center">
-  <img src="assets/sidebar.svg" alt="The Claude Deck sidebar: Attention Needed alert, sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, prompt cache countdowns, and History" width="480">
-  <br><sub>Live sidebar overview — ticket folders, custom topic folders, ungrouped sessions, live status orbs, and prompt cache TTL</sub>
+  <img src="assets/sidebar.svg" alt="The Claude Deck sidebar: sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, live status orbs, prompt cache countdowns and keepalive, and History" width="480">
+  <br><sub>Live sidebar overview — ticket folders with issue summaries, clean topic folders, ungrouped sessions, live status orbs, and prompt cache TTL / keepalive</sub>
 </p>
 
 ## How a session flows
@@ -48,23 +48,23 @@ You don't need to change how you use Claude Code or memorize slash commands:
 1. **Start working anywhere** — launch `claude` in a terminal, `claude --bg` in the background, or click **`+ Session`** inside any folder in the sidebar.
 2. **Silent background classification** — ~10 seconds after your first prompt, Claude Deck's hook silently asks Haiku (`$.model.complete`) for a concise 3–6 word title and topic folder, writes it to `~/.claude/deck/sessions/`, and syncs your active VS Code terminal tab title directly to `<Session Name>` without touching your conversation context.
 3. **Automatic ticket upgrades** — mention `PROJ-123` or `#42` in a prompt, or run `acli`, `jira`, `gh issue`, or `git checkout -b feat/PROJ-123`, and the session automatically binds to a smart ticket folder with live Jira/GitHub status and open PRs.
-4. **Stay in flow** — see at a glance which sessions are working or idle, monitor warm prompt-cache TTL (`⚡ 4:12`), and click any **`Attention Needed`** alert or the VS Code status bar pill (`Claude (1 waiting)`) to jump straight to the session waiting on you.
+4. **Stay in flow** — see at a glance which sessions are working or idle, monitor warm prompt-cache TTL (`⚡ 4:12`), keep caches alive on demand, and click the header **`● 1 waiting`** pill or the VS Code status bar pill (`Claude (1 waiting)`) to jump straight to the session waiting on you.
 
 ## Features
 
 | Feature | What it does |
 |---|---|
-| 🗂️ **Folders & smart tickets** | Group sessions into free-form project/topic folders (`Auth Refactor`, `Release Prep`) or smart ticket folders (`PROJ-123`, `#42`, `owner/repo#42`). Unassigned sessions appear as clean standalone cards under **Ungrouped**. |
+| 🗂️ **Folders & smart tickets** | Group sessions into free-form project/topic folders (`Auth Refactor`, `Release Prep`) or smart ticket folders (`PROJ-123`, `#42`, `owner/repo#42`). Ticket folders show live issue summaries from Jira or GitHub, while project folders stay clean and concise. |
 | ✨ **Silent auto-naming** | Unnamed sessions automatically receive a concise title and folder in the background (~10s after your first prompt via Haiku) without polluting your prompt or transcript, and sync back to `claude --resume`. |
 | 🎫 **Automatic ticket detection** | Detects ticket keys in user prompts and CLI commands (`acli`, `jira`, `gh issue`, `git switch/checkout`) and binds the session to that ticket folder automatically. |
 | 🖥️ **VS Code terminal tab sync** | Automatically syncs your interactive VS Code terminal tab to your concise `<Session Name>` as soon as a session is classified or renamed. |
 | 🚦 **Live session status** | Real-time status orbs (`working`, `needs input`, `idle`, `failed`, `done`) show at a glance which sessions are actively working and what topic they are working on. |
-| 🔔 **Needs-input spotlight** | Pins blocked or failed sessions to an **Attention Needed** spotlight at the top of the sidebar and triggers a VS Code toast notification with an **Open** action. |
+| 🔔 **Needs-input spotlight** | Highlights blocked or failed sessions with in-place accent borders and a pulsing status orb. Clicking the header **`● X waiting`** pill or the VS Code status bar navigates directly to the session with a smooth pulse animation, alongside VS Code toast notifications. |
 | 📊 **Status bar telemetry** | Shows `Claude (1 waiting)` or `Claude (2 running)` in the VS Code status bar; clicking it immediately focuses the session needing input or opens the deck. |
 | ⏱️ **Prompt cache countdown** | Tracks each session's 5m / 1h prompt cache TTL with a countdown badge (`⚡ 4:12`) and micro progress bar so you can reply before a warm cache goes cold. |
 | ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Claude Deck pings the session prefix before cache expiry so you never lose your warm cache while switching tasks or stepping away. |
 | 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and open PRs via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
-| 🧹 **Self-tidying & drag-and-drop** | Closed tickets and sessions inactive for 7 days automatically archive to **History**. Drag and drop sessions between folders, or use inline hover actions to rename, move, or archive. |
+| 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use inline hover actions to rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
 
 ## Install
 
@@ -151,6 +151,7 @@ All actions are available directly from the sidebar or via the VS Code Command P
 | `Claude Deck: New Session` | Opens a new interactive Claude Code terminal in the editor area (optionally pre-bound to a folder). |
 | `Claude Deck: New Folder or Ticket` | Creates a custom topic folder (e.g. `Auth Refactor`) or pins a ticket folder (e.g. `PROJ-123`, `#42`). |
 | `Claude Deck: Rename Folder` | Renames a folder and migrates all assigned sessions to the new folder name. |
+| `Claude Deck: Toggle Keep Warm (Prompt Cache Keepalive)` | Toggles automatic prompt cache keepalive for a session so warm cache stays alive while switching tasks. |
 | `Claude Deck: Refresh` | Forces an immediate refresh of sessions, tracker statuses, and open pull requests. |
 
 ## Optional ticket workflow skills
