@@ -3,64 +3,689 @@
 const crypto = require('crypto')
 
 const STYLE = `
-:root { --gap: 6px; }
-body { padding: 0; margin: 0; font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+:root {
+  --claude-accent: #e8825a;
+  --claude-accent-soft: rgba(232, 130, 90, 0.14);
+  --claude-accent-border: rgba(232, 130, 90, 0.38);
+  --card-bg: color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-sideBar-background)) 75%, rgba(255, 255, 255, 0.04));
+  --card-border: color-mix(in srgb, var(--vscode-panel-border, #888) 45%, transparent);
+  --card-hover: color-mix(in srgb, var(--vscode-list-hoverBackground) 80%, rgba(255, 255, 255, 0.03));
+  --row-bg: color-mix(in srgb, var(--vscode-sideBar-background) 85%, rgba(0, 0, 0, 0.15));
+  --radius-lg: 9px;
+  --radius-md: 6px;
+  --radius-sm: 4px;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  padding: 0 0 18px;
+  margin: 0;
+  overflow-x: hidden;
+  font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  line-height: 1.35;
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  line-height: 1;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
 button:hover { background: var(--vscode-toolbar-hoverBackground); }
-.bar { position: sticky; top: 0; z-index: 1; background: var(--vscode-sideBar-background); padding: 6px 8px; display: flex; flex-direction: column; gap: var(--gap); }
-.bar .row { display: flex; gap: 4px; align-items: center; }
-input { flex: 1; min-width: 0; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); padding: 3px 6px; border-radius: 3px; }
-input:focus { outline: 1px solid var(--vscode-focusBorder); }
-.chip { border: 1px solid var(--vscode-panel-border, #888); border-radius: 10px; padding: 0 8px; font-size: 0.9em; }
-.chip.on { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-color: transparent; }
-h2 { margin: 10px 8px 2px; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--vscode-descriptionForeground); font-weight: 600; display: flex; gap: 6px; align-items: center; }
-h2 .count { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); border-radius: 8px; padding: 0 6px; font-size: 0.95em; }
-h2.toggle { cursor: pointer; }
-.item { display: flex; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; min-height: 22px; }
-.item:hover { background: var(--vscode-list-hoverBackground); }
-.item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item .meta { color: var(--vscode-descriptionForeground); font-size: 0.9em; white-space: nowrap; }
-.item .actions { display: none; gap: 0; }
-.item:hover .actions { display: flex; }
-.item:hover .meta.hide-on-hover { display: none; }
-.card.drop > .head { outline: 1px dashed var(--vscode-focusBorder); background: var(--vscode-list-dropBackground); }
-.card { margin: 4px 0 6px; }
-.card > .head { background: var(--vscode-sideBarSectionHeader-background, #ffffff0d); border-top: 1px solid var(--vscode-sideBarSectionHeader-border, transparent); padding-top: 5px; padding-bottom: 5px; }
-.head .key { font-weight: 700; }
-.head .title { color: var(--vscode-descriptionForeground); }
-.ico { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+
+.icon-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  color: var(--vscode-descriptionForeground);
+  flex: none;
+}
+.icon-btn:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+/* Sticky Dashboard Header */
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 10px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+/* Top Hero / Stats Strip */
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  font-size: 0.92em;
+  letter-spacing: 0.02em;
+}
+.brand-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, #e8825a 0%, #c96442 100%);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(232, 130, 90, 0.3);
+}
+.brand-logo svg { width: 12px; height: 12px; stroke: #fff; stroke-width: 1.8; fill: none; }
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.hero-actions .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+.btn-primary {
+  height: 24px;
+  background: linear-gradient(135deg, #e8825a 0%, #d46b43 100%);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85em;
+  padding: 0 9px;
+  border-radius: 5px;
+  box-shadow: 0 1px 4px rgba(232, 130, 90, 0.25);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #f08e67 0%, #de744c 100%);
+  color: #fff;
+}
+.btn-ghost {
+  height: 24px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}
+.btn-ghost:hover {
+  color: var(--vscode-foreground);
+  border-color: var(--claude-accent-border);
+}
+
+/* Search Input */
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-wrap .search-ico {
+  position: absolute;
+  left: 8px;
+  width: 13px;
+  height: 13px;
+  color: var(--vscode-descriptionForeground);
+  pointer-events: none;
+}
+input[type="search"] {
+  width: 100%;
+  font: inherit;
+  font-size: 0.92em;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--card-border));
+  padding: 5px 8px 5px 27px;
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="search"]:focus {
+  outline: none;
+  border-color: var(--claude-accent);
+  box-shadow: 0 0 0 2px var(--claude-accent-soft);
+}
+
+/* Segmented Filter Pills + Live Telemetry */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.segmented {
+  display: inline-flex;
+  background: color-mix(in srgb, var(--vscode-input-background) 70%, transparent);
+  border: 1px solid var(--card-border);
+  padding: 2px;
+  border-radius: 7px;
+  gap: 2px;
+}
+.chip {
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 0.82em;
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground);
+  border: none;
+}
+.chip:hover { color: var(--vscode-foreground); background: transparent; }
+.chip.on {
+  background: var(--claude-accent-soft);
+  color: var(--claude-accent);
+  font-weight: 600;
+}
+
+.stats-pills {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78em;
+}
+.stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  color: var(--vscode-descriptionForeground);
+  font-weight: 600;
+}
+.stat-pill.working {
+  color: var(--vscode-charts-blue, #3794ff);
+  border-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 40%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 12%, transparent);
+}
+.stat-pill.blocked {
+  color: var(--vscode-charts-yellow, #cca700);
+  border-color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 45%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 14%, transparent);
+}
+
+/* Section Headers */
+.section-block {
+  padding: 0 8px;
+  margin-top: 10px;
+}
+.section-block.drop {
+  outline: 1.5px dashed var(--claude-accent);
+  border-radius: var(--radius-lg);
+  background: var(--claude-accent-soft);
+}
+.loose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.loose-list > .session-card {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  padding: 7px 9px;
+}
+h2 {
+  margin: 0 0 6px;
+  padding: 0 4px;
+  height: 24px;
+  min-height: 24px;
+  font-size: 0.74em;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--vscode-descriptionForeground);
+  font-weight: 700;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-radius: var(--radius-md);
+}
+h2 .count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  background: var(--claude-accent-soft);
+  color: var(--claude-accent);
+  border: 1px solid var(--claude-accent-border);
+  border-radius: 99px;
+  padding: 0 6px;
+  font-size: 0.92em;
+  line-height: 1;
+  font-weight: 700;
+}
+h2.toggle {
+  cursor: pointer;
+  padding: 0 6px;
+  margin: 0 0 6px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+h2.toggle:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+}
+
+/* Needs You Spotlight Cards */
+.needs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.needs-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 16%, var(--card-bg)) 0%, var(--card-bg) 100%);
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 45%, var(--card-border));
+  border-left: 3px solid var(--vscode-charts-yellow, #cca700);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+.needs-card.failed {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 16%, var(--card-bg)) 0%, var(--card-bg) 100%);
+  border-color: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 45%, var(--card-border));
+  border-left-color: var(--vscode-charts-red, #f14c4c);
+}
+.needs-card:hover {
+  border-color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 70%, var(--card-border));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.needs-card.failed:hover {
+  border-color: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 70%, var(--card-border));
+}
+.needs-card .cta {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  line-height: 1;
+  font-size: 0.78em;
+  font-weight: 600;
+  padding: 0 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 22%, transparent);
+  color: var(--vscode-charts-yellow, #cca700);
+}
+.needs-card.failed .cta {
+  background: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 22%, transparent);
+  color: var(--vscode-charts-red, #f14c4c);
+}
+
+/* Folder & Ticket Cards */
+.card {
+  margin: 0 0 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  border-color: color-mix(in srgb, var(--vscode-panel-border, #888) 75%, transparent);
+}
+.card.busy {
+  border-color: color-mix(in srgb, var(--claude-accent) 42%, var(--card-border));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+}
+.card.drop {
+  outline: 1.5px dashed var(--claude-accent);
+  background: var(--claude-accent-soft);
+}
+
+.card > .head {
+  height: 34px;
+  min-height: 34px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--vscode-sideBarSectionHeader-background, transparent) 60%, transparent);
+  transition: background 0.12s ease;
+}
+.card > .head:hover {
+  background: var(--card-hover);
+}
+.head .key {
+  font-weight: 700;
+  font-size: 0.95em;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.head .key.ticket-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  line-height: 1;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.86em;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-purple, #b180d7) 35%, transparent);
+  color: var(--vscode-foreground);
+}
+.head .key.ticket-pill.t-indeterminate {
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 15%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 38%, transparent);
+}
+.head .key.ticket-pill.t-done {
+  background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 15%, transparent);
+  border-color: color-mix(in srgb, var(--vscode-charts-green, #89d185) 38%, transparent);
+}
+.head .title {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.88em;
+  line-height: 1.2;
+}
+
+.body {
+  padding: 4px 6px 6px;
+  border-top: 1px solid var(--card-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Sub-section labels inside a card */
+.sub {
+  margin: 3px 4px 1px;
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.75;
+}
+
+/* Session Agent Cards inside a Folder */
+.session-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  background: var(--row-bg);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  overflow: hidden;
+}
+.session-card:hover {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--card-border);
+}
+.session-card.working {
+  border-left: 2.5px solid var(--vscode-charts-blue, #3794ff);
+}
+.session-card.blocked {
+  border-left: 2.5px solid var(--vscode-charts-yellow, #cca700);
+}
+.session-card.failed {
+  border-left: 2.5px solid var(--vscode-charts-red, #f14c4c);
+}
+
+.session-top {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 20px;
+  min-height: 20px;
+}
+.session-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  line-height: 20px;
+}
+.session-card.done .session-name {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Cache TTL micro-bar & badge */
+.cache-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  line-height: 1;
+  gap: 4px;
+  font-size: 0.85em;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--claude-accent);
+  background: var(--claude-accent-soft);
+  padding: 0 5px;
+  border-radius: 4px;
+}
+.cache-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--claude-accent), #f2a97e);
+  opacity: 0.7;
+  transition: width 0.4s linear;
+}
+
+/* PR Rows */
+.pr-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 7%, var(--row-bg));
+  border: 1px solid color-mix(in srgb, var(--vscode-charts-green, #89d185) 22%, transparent);
+  cursor: pointer;
+  font-size: 0.9em;
+}
+.pr-row.draft {
+  background: var(--row-bg);
+  border-color: var(--card-border);
+}
+.pr-row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.pr-row .ref {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-weight: 600;
+  font-size: 0.92em;
+  color: var(--vscode-charts-green, #89d185);
+}
+.pr-row.draft .ref { color: var(--vscode-descriptionForeground); }
+
+/* Common utilities */
+.grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.84em;
+  line-height: 1;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  flex: none;
+}
+.actions {
+  display: none;
+  gap: 2px;
+  align-items: center;
+  height: 20px;
+  flex: none;
+}
+.head:hover .actions, .session-card:hover .actions { display: inline-flex; }
+.head:hover .meta.hide-on-hover, .session-card:hover .meta.hide-on-hover { display: none; }
+
+/* Icons */
+.ico { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.ico.folder { color: var(--claude-accent); fill: var(--claude-accent-soft); }
 .ico.ticket { color: var(--vscode-charts-purple, #b180d7); }
 .ico.ticket.t-new { color: var(--vscode-disabledForeground); }
-.ico.ticket.t-indeterminate { color: var(--vscode-charts-blue); }
-.ico.ticket.t-done { color: var(--vscode-charts-green); }
-.ico.pr { color: var(--vscode-charts-green); }
+.ico.ticket.t-indeterminate { color: var(--vscode-charts-blue, #3794ff); }
+.ico.ticket.t-done { color: var(--vscode-charts-green, #89d185); }
+.ico.pr { color: var(--vscode-charts-green, #89d185); }
 .ico.pr.draft { color: var(--vscode-disabledForeground); }
-.ico.session { color: var(--vscode-disabledForeground); }
-.ico.session.blocked { color: var(--vscode-charts-yellow); }
-.ico.session.failed { color: var(--vscode-charts-red); }
-.ico.session.working { color: var(--vscode-charts-blue); animation: pulse 1.4s ease-in-out infinite; }
-.ico.session.done { color: var(--vscode-charts-green); opacity: 0.5; }
-.sub { margin: 6px 8px 0; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--vscode-descriptionForeground); opacity: 0.8; }
-.pr-row .ref { font-weight: 600; }
-.ico.chev { width: 16px; height: 16px; stroke-width: 1.8; color: var(--vscode-icon-foreground, var(--vscode-foreground)); transition: transform 0.1s; }
+.ico.chev { width: 14px; height: 14px; stroke-width: 1.8; color: var(--vscode-descriptionForeground); transition: transform 0.14s ease; }
 .ico.chev.open { transform: rotate(90deg); }
-.body { margin-left: 14px; border-left: 1px solid var(--vscode-tree-indentGuidesStroke, #8884); }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--vscode-disabledForeground); }
-.dot.blocked { background: var(--vscode-charts-yellow); }
-.dot.failed { background: var(--vscode-charts-red); }
-.dot.working { background: var(--vscode-charts-blue); animation: pulse 1.4s ease-in-out infinite; }
-.dot.done { background: var(--vscode-charts-green); opacity: 0.5; }
-.dot.ticket-new { background: none; border: 1px solid var(--vscode-disabledForeground); }
-.dot.ticket-indeterminate { background: var(--vscode-charts-blue); }
-.dot.ticket-done { background: var(--vscode-charts-green); }
+
+/* Status Orbs for Sessions */
+.status-orb {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  position: relative;
+}
+.status-orb::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vscode-disabledForeground);
+}
+.status-orb.working::before {
+  background: var(--vscode-charts-blue, #3794ff);
+  box-shadow: 0 0 6px var(--vscode-charts-blue, #3794ff);
+  animation: pulse 1.3s ease-in-out infinite;
+}
+.status-orb.working::after {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--vscode-charts-blue, #3794ff);
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+}
+.status-orb.blocked::before {
+  background: var(--vscode-charts-yellow, #cca700);
+  box-shadow: 0 0 6px var(--vscode-charts-yellow, #cca700);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.status-orb.failed::before {
+  background: var(--vscode-charts-red, #f14c4c);
+}
+.status-orb.done::before {
+  background: var(--vscode-charts-green, #89d185);
+  opacity: 0.55;
+}
+
 @keyframes pulse { 50% { opacity: 0.35; } }
-.badge { font-size: 0.85em; padding: 0 5px; border-radius: 8px; border: 1px solid var(--vscode-panel-border, #888); color: var(--vscode-descriptionForeground); white-space: nowrap; }
-.badge.warn { border-color: var(--vscode-charts-yellow); color: var(--vscode-charts-yellow); }
-.badge.pr { color: var(--vscode-charts-green); border-color: var(--vscode-charts-green); }
-.needs .item { border-left: 3px solid var(--vscode-charts-yellow); padding-left: 5px; }
-.needs .item.failed { border-left-color: var(--vscode-charts-red); }
-.empty { padding: 16px 12px; color: var(--vscode-descriptionForeground); }
-.error { padding: 4px 8px; color: var(--vscode-errorForeground); font-size: 0.9em; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  line-height: 1;
+  font-size: 0.78em;
+  font-weight: 600;
+  padding: 0 6px;
+  border-radius: 99px;
+  border: 1px solid var(--card-border);
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 60%, transparent);
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+}
+.badge.warn {
+  border-color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 50%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 14%, transparent);
+  color: var(--vscode-charts-yellow, #cca700);
+}
+.badge.working {
+  border-color: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 50%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 14%, transparent);
+  color: var(--vscode-charts-blue, #3794ff);
+}
+.badge.pr {
+  color: var(--vscode-charts-green, #89d185);
+  border-color: color-mix(in srgb, var(--vscode-charts-green, #89d185) 45%, transparent);
+  background: color-mix(in srgb, var(--vscode-charts-green, #89d185) 12%, transparent);
+}
+
+.empty-folder {
+  padding: 8px 10px;
+  text-align: center;
+  font-size: 0.84em;
+  color: var(--vscode-descriptionForeground);
+  border: 1px dashed var(--card-border);
+  border-radius: var(--radius-md);
+  margin: 2px;
+}
+
+.empty-state {
+  margin: 28px 14px;
+  padding: 22px 16px;
+  text-align: center;
+  background: var(--card-bg);
+  border: 1px dashed var(--card-border);
+  border-radius: var(--radius-lg);
+  color: var(--vscode-descriptionForeground);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.empty-state .empty-title {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+  font-size: 0.96em;
+}
+.empty-state .empty-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.error {
+  margin: 8px 8px 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 35%, transparent);
+  color: var(--vscode-errorForeground);
+  font-size: 0.86em;
+}
 `
 
 const SCRIPT = `
@@ -82,21 +707,32 @@ const el = (tag, props = {}, ...children) => {
 }
 
 const SHAPES = {
+  logo: '<path d="m4.5 5.5 3 2.5-3 2.5M9 10.5h2.5"/>',
+  search: '<circle cx="6.5" cy="6.5" r="4.5"/><path d="m10 10 3.5 3.5"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  newFolder: '<path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.2l1.4 1.6H13A1.5 1.5 0 0 1 14.5 5.6v6.9A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5V4z"/><path d="M8 6.8v4.4M5.8 9h4.4"/>',
+  refresh: '<path d="M13 6.5A5 5 0 1 0 11.8 11M13 3v3.5H9.5"/>',
+  folder: '<path d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3.3l1.5 1.8H13A1.5 1.5 0 0 1 14.5 5.3v7.2A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5v-9z"/>',
   ticket: '<path d="M3 2h10v12l-5-3-5 3z"/>',
   pr: '<circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="12.5" r="1.6"/><path d="M4 5.1v5.8M12 10.9V7a2 2 0 0 0-2-2H8M9.5 3.5 8 5l1.5 1.5"/>',
   chev: '<path d="m6 3.5 4.5 4.5L6 12.5"/>',
-  session: '<rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="m4.5 6 2.3 2-2.3 2M8.5 10.5h3"/>',
+  edit: '<path d="M11.2 2.5a1.5 1.5 0 0 1 2.1 2.1L5.5 12.4l-3 .7.7-3 8-7.6z"/>',
+  move: '<path d="M2 4a1.5 1.5 0 0 1 1.5-1.5h3l1.3 1.5h4.7A1.5 1.5 0 0 1 14 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5V4z"/><path d="m7.5 7 2 2-2 2M5.5 9h4"/>',
+  archive: '<rect x="2" y="3" width="12" height="3" rx="1"/><path d="M3 6v6.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6M6.5 9h3"/>',
+  restore: '<path d="M3.5 7.5 6.5 4.5M3.5 7.5l3 3M3.5 7.5H10a3 3 0 1 1 0 6H7.5"/>',
+  external: '<path d="M9 3h4v4M13 3 7.5 8.5M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
+  close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('viewBox', '0 0 16 16')
   svg.setAttribute('class', 'ico ' + kind + ' ' + extra)
-  svg.innerHTML = SHAPES[kind]
+  svg.innerHTML = SHAPES[kind] || ''
   return svg
 }
 
 const stop = fn => event => { event.stopPropagation(); fn(event) }
-const btn = (label, title, fn) => el('button', { title, onclick: stop(fn) }, label)
+const iconBtn = (kind, title, fn) => el('button', { class: 'icon-btn', title, onclick: stop(fn) }, icon(kind))
 
 const matches = (text, q) => text.toLowerCase().includes(q)
 const sessionMatches = (row, q) => !q || matches(row.name + ' ' + (row.ticket ?? ''), q)
@@ -105,19 +741,29 @@ const cardMatches = (card, q) =>
 const passesFilter = card => ui.filter === 'all' || (ui.filter === 'active' && card.isBusy) || (ui.filter === 'prs' && card.prs.length > 0)
 
 const sessionRow = row =>
-  el('div', { class: 'item', draggable: 'true', title: row.name + '\\n' + row.stateLabel,
+  el('div', {
+      class: 'session-card ' + row.state,
+      draggable: 'true',
+      title: row.name + ' · ' + row.stateLabel,
       onclick: () => send('attach', { id: row.id }),
-      ondragstart: event => { event.dataTransfer.setData('text/plain', row.id); event.dataTransfer.effectAllowed = 'move' } },
-    icon('session', row.state),
-    el('span', { class: 'grow' }, row.name),
-    row.isRenaming && el('span', { class: 'badge' }, 'renaming'),
-    el('span', { class: 'meta hide-on-hover' }, [row.activity, row.cache && 'cache ' + row.cache].filter(Boolean).join(' · ')),
-    el('span', { class: 'actions' },
-      btn('✎', 'Rename', () => send('rename', { id: row.id })),
-      row.isHidden ? btn('↩', 'Back to the list', () => send('show', { id: row.id })) : btn('▣', 'Move to history', () => send('hide', { id: row.id }))))
+      ondragstart: event => { event.dataTransfer.setData('text/plain', row.id); event.dataTransfer.effectAllowed = 'move' },
+    },
+    el('div', { class: 'session-top' },
+      el('span', { class: 'status-orb ' + row.state }),
+      el('span', { class: 'session-name' }, row.name),
+      el('span', { class: 'meta hide-on-hover' },
+        row.cache && el('span', { class: 'cache-pill', title: 'Prompt cache warm for ' + row.cache }, '⚡ ' + row.cache),
+        el('span', {}, row.age ?? row.activity)),
+      el('span', { class: 'actions' },
+        iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
+        iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
+        row.isHidden
+          ? iconBtn('restore', 'Restore from history', () => send('show', { id: row.id }))
+          : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id })))),
+    row.cachePct > 0 && el('div', { class: 'cache-bar', style: 'width:' + row.cachePct + '%' }))
 
 const prRow = pr =>
-  el('div', { class: 'item pr-row', title: pr.title + '\\n' + pr.url, onclick: () => send('openUrl', { url: pr.url }) },
+  el('div', { class: 'pr-row' + (pr.isDraft ? ' draft' : ''), title: pr.title + '\\n' + pr.url, onclick: () => send('openUrl', { url: pr.url }) },
     icon('pr', pr.isDraft ? 'draft' : ''),
     el('span', { class: 'grow' }, el('span', { class: 'ref' }, pr.repo + '#' + pr.number), ' ' + pr.title),
     pr.isDraft && el('span', { class: 'badge' }, 'draft'))
@@ -125,7 +771,8 @@ const prRow = pr =>
 const counts = card => {
   const byState = {}
   for (const row of card.sessions) byState[row.state] = (byState[row.state] ?? 0) + 1
-  return Object.entries(byState).map(([state, n]) => el('span', { class: 'badge' + (state === 'blocked' ? ' warn' : ''), title: state }, n + ' ' + state))
+  return Object.entries(byState).map(([state, n]) =>
+    el('span', { class: 'badge' + (state === 'blocked' ? ' warn' : state === 'working' ? ' working' : ''), title: state }, n + ' ' + state))
 }
 
 const dropTarget = (node, ticket) => {
@@ -141,75 +788,146 @@ const dropTarget = (node, ticket) => {
 const card = (c, isLoose, isHistory = false) => {
   const id = (isHistory ? 'history:' : '') + (c.key ?? 'none')
   const forced = ui.q !== ''
-  const isOpen = forced || (ui.open[id] ?? (c.isBusy || isLoose))
+  const isOpen = forced || (ui.open[id] ?? (c.isBusy || isLoose || c.sessions.length > 0))
   const sessions = c.sessions.filter(row => sessionMatches(row, ui.q) || (c.key && matches(c.key + c.title, ui.q)))
-  const head = el('div', { class: 'item head', onclick: () => { ui.open[id] = !isOpen; save(); render() } },
+  const folderIcon = c.key ? (c.isTicket ? icon('ticket', 't-' + (c.category ?? 'none')) : icon('folder')) : false
+  const keyClass = 'key' + (c.isTicket ? ' ticket-pill t-' + (c.category ?? 'none') : '')
+  const head = el('div', { class: 'head', onclick: () => { ui.open[id] = !isOpen; save(); renderList() } },
     icon('chev', isOpen ? 'open' : ''),
-    c.key && icon('ticket', 't-' + (c.category ?? 'none')),
-    el('span', { class: 'key' }, c.key ?? 'No ticket'),
+    folderIcon,
+    el('span', { class: keyClass }, c.key ?? 'Ungrouped'),
     el('span', { class: 'grow title' }, c.title),
     el('span', { class: 'meta hide-on-hover' }, counts(c), c.prs.length > 0 && el('span', { class: 'badge pr' }, '⎇ ' + c.prs.length)),
     c.key && el('span', { class: 'actions' },
-      btn('+', 'Start task', () => send('startTask', { ticket: c.key })),
-      btn('↗', 'Open ticket', () => send('openTicket', { ticket: c.key }))))
-  const node = el('div', { class: 'card' }, head)
+      iconBtn('plus', 'New session in ' + c.key, () => send('newSession', { folder: c.key })),
+      c.isTicket && iconBtn('external', 'Open ticket in browser', () => send('openTicket', { ticket: c.ticketKey || c.key })),
+      iconBtn('edit', 'Rename folder', () => send('renameFolder', { folder: c.key })),
+      c.sessions.length === 0 && iconBtn('close', 'Remove empty folder', () => send('removeFolder', { folder: c.key }))))
+  const node = el('div', { class: 'card' + (c.isBusy ? ' busy' : '') }, head)
   if (isOpen) {
     const prs = c.prs.filter(pr => !ui.q || matches(pr.title + pr.repo, ui.q) || matches(c.key + c.title, ui.q))
     node.append(el('div', { class: 'body' },
       prs.length > 0 && [el('div', { class: 'sub' }, 'Pull requests'), prs.map(prRow)],
-      sessions.length > 0 && [el('div', { class: 'sub' }, 'Sessions'), sessions.map(sessionRow)]))
+      sessions.length > 0 && [prs.length > 0 && el('div', { class: 'sub' }, 'Sessions'), sessions.map(sessionRow)],
+      sessions.length === 0 && prs.length === 0 && el('div', { class: 'empty-folder' }, 'Drop a session here or click + to start one')))
   }
   if (!isHistory) dropTarget(node, c.key)
   return node
 }
 
 const section = (title, count, ...children) =>
-  el('div', {}, el('h2', {}, title, count > 0 && el('span', { class: 'count' }, count)), children)
+  el('div', { class: 'section-block' }, el('h2', {}, title, count > 0 && el('span', { class: 'count' }, count)), children)
 
 const render = () => {
   const root = document.getElementById('root')
   root.replaceChildren()
-  const search = el('input', { type: 'search', placeholder: 'Filter tickets, sessions, PRs', value: ui.q, oninput: event => { ui.q = event.target.value.trim().toLowerCase(); save(); renderList() } })
+  const search = el('input', {
+    type: 'search',
+    placeholder: 'Search folders, tickets, sessions, PRs…',
+    value: ui.q,
+    oninput: event => { ui.q = event.target.value.trim().toLowerCase(); save(); renderList() },
+  })
   const chip = (id, label) => el('button', { class: 'chip' + (ui.filter === id ? ' on' : ''), onclick: () => { ui.filter = id; save(); render() } }, label)
   root.append(el('div', { class: 'bar' },
-    el('div', { class: 'row' }, search, btn('+', 'Start task', () => send('startTask')), btn('💬', 'New session (no ticket)', () => send('newSession')), btn('↻', 'Refresh', () => send('refresh'))),
-    el('div', { class: 'row' }, chip('all', 'All'), chip('active', 'Active'), chip('prs', 'With PRs'))))
+    el('div', { class: 'hero' },
+      el('div', { class: 'brand' },
+        el('span', { class: 'brand-logo' }, icon('logo')),
+        el('span', {}, 'Claude Deck')),
+      el('div', { class: 'hero-actions' },
+        el('button', { class: 'btn-primary', title: 'Start a new Claude session', onclick: () => send('newSession') }, icon('plus'), 'Session'),
+        el('button', { class: 'btn-ghost', title: 'Create a folder or add a ticket', onclick: () => send('newFolder') }, icon('newFolder'), 'Folder'),
+        iconBtn('refresh', 'Refresh', () => send('refresh')))),
+    el('div', { class: 'search-wrap' },
+      el('span', { class: 'search-ico' }, icon('search')),
+      search),
+    el('div', { class: 'filter-bar' },
+      el('div', { class: 'segmented' }, chip('all', 'All'), chip('active', 'Active'), chip('prs', 'PRs')),
+      el('div', { id: 'stats', class: 'stats-pills' }))))
   root.append(el('div', { id: 'list' }))
   renderList()
 }
 
 const renderList = () => {
   const list = document.getElementById('list')
+  const stats = document.getElementById('stats')
   const model = data.model
   list.replaceChildren()
+  if (stats) stats.replaceChildren()
   if (data.message) list.append(el('div', { class: 'error' }, data.message))
-  if (!model) return list.append(el('div', { class: 'empty' }, 'Loading…'))
+  if (!model) return list.append(el('div', { class: 'empty-state' }, 'Loading sessions…'))
+
+  // Compute live summary pills for the header bar
+  const allRows = [...model.tickets.flatMap(t => t.sessions), ...model.loose]
+  const workingCount = allRows.filter(r => r.state === 'working').length
+  const blockedCount = allRows.filter(r => r.state === 'blocked').length
+  if (stats) {
+    if (blockedCount > 0) stats.append(el('span', { class: 'stat-pill blocked' }, '● ' + blockedCount + ' waiting'))
+    if (workingCount > 0) stats.append(el('span', { class: 'stat-pill working' }, '↻ ' + workingCount + ' running'))
+    if (blockedCount === 0 && workingCount === 0 && allRows.length > 0) {
+      stats.append(el('span', { class: 'stat-pill' }, allRows.length + ' session' + (allRows.length === 1 ? '' : 's')))
+    }
+  }
+
   const q = ui.q
   const needs = model.needs.filter(row => sessionMatches(row, q))
   if (needs.length > 0) {
-    list.append(section('Needs you', needs.length, el('div', { class: 'needs' }, needs.map(row =>
-      el('div', { class: 'item ' + row.state, onclick: () => send('attach', { id: row.id }), title: row.name },
-        icon('session', row.state),
+    list.append(section('Attention Needed', needs.length, el('div', { class: 'needs' }, needs.map(row =>
+      el('div', { class: 'needs-card ' + row.state, onclick: () => send('attach', { id: row.id }), title: row.name },
+        el('span', { class: 'status-orb ' + row.state }),
         row.ticket && el('span', { class: 'badge' }, row.ticket),
-        el('span', { class: 'grow' }, row.name),
-        el('span', { class: 'meta' }, row.stateLabel))))))
+        el('span', { class: 'grow', style: 'font-weight:600' }, row.name),
+        el('span', { class: 'cta' }, row.stateLabel))))))
   }
-  const tickets = model.tickets.filter(c => passesFilter(c) && cardMatches(c, q))
-  const loose = { key: null, title: '', category: null, status: null, sessions: model.loose, prs: [], isBusy: model.loose.some(r => r.state === 'working' || r.state === 'blocked') }
-  const showLoose = model.loose.length > 0 && passesFilter(loose) && cardMatches(loose, q)
-  if (tickets.length > 0) list.append(section('Tickets', tickets.length, tickets.map(c => card(c, false))))
-  if (showLoose) list.append(section('Without ticket', model.loose.length, card(loose, true)))
+  const folders = model.tickets.filter(c => passesFilter(c) && cardMatches(c, q))
+  const looseSessions = model.loose.filter(row =>
+    sessionMatches(row, q) &&
+    (ui.filter === 'all' || (ui.filter === 'active' && (row.state === 'working' || row.state === 'blocked' || row.state === 'failed')))
+  )
+  const showLoose = looseSessions.length > 0
+  if (folders.length > 0) {
+    list.append(el('div', { class: 'section-block' }, folders.map(c => card(c, false))))
+  }
+  if (showLoose) {
+    const looseBlock = section('Ungrouped', looseSessions.length, el('div', { class: 'loose-list' }, looseSessions.map(sessionRow)))
+    dropTarget(looseBlock, null)
+    list.append(looseBlock)
+  }
   const history = model.history.filter(c => cardMatches(c, q))
   if (history.length > 0) {
+    const histTotal = history.reduce((sum, c) => sum + c.sessions.length, 0)
     const isOpen = ui.history || q !== ''
-    const heading = el('h2', { class: 'toggle', onclick: () => { ui.history = !ui.history; save(); renderList() } }, icon('chev', isOpen ? 'open' : ''), 'History', el('span', { class: 'count' }, history.length))
-    list.append(heading)
-    if (isOpen) list.append(...history.map(c => card(c, false, true)))
+    const heading = el('h2', { class: 'toggle', onclick: () => { ui.history = !ui.history; save(); renderList() } }, icon('chev', isOpen ? 'open' : ''), 'History', el('span', { class: 'count' }, histTotal))
+    const histBlock = el('div', { class: 'section-block' }, heading)
+    if (isOpen) {
+      for (const c of history) {
+        if (c.key) {
+          histBlock.append(card(c, false, true))
+        } else {
+          const rows = c.sessions.filter(row => sessionMatches(row, q))
+          if (rows.length > 0) histBlock.append(el('div', { class: 'loose-list' }, rows.map(sessionRow)))
+        }
+      }
+    }
+    list.append(histBlock)
   }
-  if (tickets.length === 0 && !showLoose && needs.length === 0 && history.length === 0) list.append(el('div', { class: 'empty' }, 'Nothing matches.'))
+  if (folders.length === 0 && !showLoose && needs.length === 0 && history.length === 0) {
+    list.append(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-title' }, q ? 'No matching sessions or folders' : 'Your Claude Deck is ready'),
+      el('div', {}, q ? 'Try a different filter or search query.' : 'Start a Claude session or create a topic/ticket folder to organize your work.'),
+      !q && el('div', { class: 'empty-actions' },
+        el('button', { class: 'btn-primary', onclick: () => send('newSession') }, icon('plus'), 'New Session'),
+        el('button', { class: 'btn-ghost', onclick: () => send('newFolder') }, icon('newFolder'), 'New Folder'))))
+  }
 }
 
-window.addEventListener('message', event => { data = event.data; renderList() })
+let lastPayload = ''
+window.addEventListener('message', event => {
+  const nextPayload = JSON.stringify(event.data)
+  if (nextPayload === lastPayload) return
+  lastPayload = nextPayload
+  data = event.data
+  renderList()
+})
 render()
 send('ready')
 `

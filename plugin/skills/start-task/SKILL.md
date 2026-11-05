@@ -1,6 +1,6 @@
 ---
 name: start-task
-description: Binds the session to a ticket or issue, names it "<summary> (KEY)" and sets up worktrees on demand. Runs only when the user calls /start-task.
+description: Binds the session to a ticket or issue, names it with a clean action summary and sets up worktrees on demand. Runs only when the user calls /start-task.
 disable-model-invocation: true
 argument-hint: [PROJ-123 | #42] <task>
 allowed-tools: [AskUserQuestion, Bash, Skill, EnterPlanMode, ExitPlanMode, EnterWorktree, mcp__deck__name_session]
@@ -19,7 +19,7 @@ Take the first ticket key (`[A-Z][A-Z0-9]+-\d+` for Jira/Linear, or `#\d+` / `ow
 Fetch the ticket's title, description, status and acceptance criteria using whatever tool is available:
 - A loaded tracker MCP tool or skill (Jira, Linear, GitHub, etc.)
 - For `#42` or `owner/repo#42`: `gh issue view <NUMBER> [--repo <owner/repo>] --json title,body,state,url`
-- For Jira keys when `$JIRA_URL` and `$JIRA_TOKEN` are set: `curl -s -H "Authorization: Bearer $JIRA_TOKEN" "$JIRA_URL/rest/api/2/issue/<TICKET>?fields=summary,description,status,issuetype"`
+- For Jira keys: `acli jira workitem view <TICKET> --json`, `jira issue view <TICKET>`, or when `$JIRA_URL` and `$JIRA_TOKEN` are set: `curl -s -H "Authorization: Bearer $JIRA_TOKEN" "$JIRA_URL/rest/api/2/issue/<TICKET>?fields=summary,description,status,issuetype"`
 
 Also check for open PRs if `gh` is available: `gh search prs <TICKET> --state open`. If a fetch fails or no tracker is configured, say so briefly and go on without its content.
 
@@ -29,9 +29,10 @@ Call `mcp__deck__name_session` right after the fetch (or right after step 1 when
 
 - `summary`: 3-6 English words on what this session does, written by you from the prompt's task, else from the ticket's content. Not the ticket summary verbatim.
 - `ticket`: the key (e.g. `PROJ-123`, `#42`, `owner/repo#42`). Omit when there is no ticket.
+- `folder`: optional project/topic folder name (2-4 words) when there is no ticket.
 - `title`: the ticket's summary shortened to at most 6 words, in English. The Claude Deck sidebar shows it beside the key. Leave it out when there is no ticket or the fetch failed.
 
-`mcp__deck__name_session` updates the Claude Deck sidebar immediately and schedules the CLI `/rename` for the end of the turn. **Do not end the turn after calling `name_session`** — continue directly with step 4 in the same turn. If the tool is missing (plugin not loaded), tell the user to run `/rename <summary> (<ticket>)` (or `/rename <summary>`) and go on.
+`mcp__deck__name_session` updates the Claude Deck sidebar and native Claude session title immediately. **Do not end the turn after calling `name_session`** — continue directly with step 4 in the same turn. If the tool is missing (plugin not loaded), tell the user to run `/rename <summary>` and go on.
 
 ## 4. Task
 

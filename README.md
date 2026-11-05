@@ -3,119 +3,94 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-e8825a"></a>
-  <img alt="VS Code extension" src="https://img.shields.io/badge/VS%20Code-extension-3794ff">
-  <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-cc785c">
-  <img alt="Status: early" src="https://img.shields.io/badge/status-early-yellow">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-e8825a?style=flat-square"></a>
+  <img alt="VS Code extension" src="https://img.shields.io/badge/VS%20Code-extension-3794ff?style=flat-square">
+  <img alt="Claude Code plugin" src="https://img.shields.io/badge/Claude%20Code-plugin-cc785c?style=flat-square">
+  <img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-zero-89d185?style=flat-square">
+</p>
+
+<h3 align="center">
+  Run five Claude Code sessions in parallel without losing track of a single one.
+</h3>
+
+<p align="center">
+  <b>Claude Deck</b> brings every background and interactive Claude Code session into one live VS Code sidebar —<br>
+  organized by project folders and smart tickets, with silent auto-naming, terminal tab sync, live status, prompt-cache countdowns, and instant alerts when a session needs you.
 </p>
 
 <p align="center">
-  <b>Run five Claude Code sessions at once without losing track of any of them.</b><br>
-  Claude Deck puts every background and interactive session in one VS Code sidebar, grouped by the ticket it works on,<br>
-  with live status, ticket status, open PRs and a ping when a session needs you.
+  <a href="#why-claude-deck">Why</a> ·
+  <a href="#how-a-session-flows">Zero-Friction Flow</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#install">Quick Start</a> ·
+  <a href="#commands--shortcuts">Commands</a> ·
+  <a href="#optional-ticket-workflow-skills">Skills</a> ·
+  <a href="#configuration">Configuration</a>
 </p>
 
 ---
 
-## Why
+## Why Claude Deck
 
-Claude Code is great at working in the background. Start a few `claude --bg` jobs, open a couple of interactive sessions, and twenty minutes later you have no idea which one is waiting for approval, which one is done, and which terminal tab belongs to which ticket.
+Claude Code makes parallel agent workflows effortless to start — and chaotic to track. Spin up a few `claude --bg` jobs, open a couple of interactive terminals across worktrees, and twenty minutes later you have no idea which session is blocked waiting for approval, which prompt cache is about to expire, and which terminal tab belongs to which topic or ticket.
 
-Claude Deck is the overview: **one list, grouped by ticket, that tells you what each session is doing and takes you there in one click.**
+**Claude Deck is your mission control:** one sidebar that automatically names your sessions and terminal tabs, organizes them into topic or ticket folders, shows live status and open PRs, and takes you to the right terminal in a single click.
 
 <p align="center">
-  <img src="assets/sidebar.svg" alt="The Claude Deck sidebar: sessions grouped by ticket with status icons, an open PR, a needs-input notification, and History and Legend sections" width="460">
-  <br><sub>Illustration with sample data</sub>
+  <img src="assets/sidebar.svg" alt="The Claude Deck sidebar: Attention Needed alert, sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, prompt cache countdowns, and History" width="480">
+  <br><sub>Live sidebar overview — ticket folders, custom topic folders, ungrouped sessions, live status orbs, and prompt cache TTL</sub>
 </p>
+
+## How a session flows
+
+You don't need to change how you use Claude Code or memorize slash commands:
+
+1. **Start working anywhere** — launch `claude` in a terminal, `claude --bg` in the background, or click **`+ Session`** inside any folder in the sidebar.
+2. **Silent background classification** — ~10 seconds after your first prompt, Claude Deck's hook silently asks Haiku (`$.model.complete`) for a concise 3–6 word title and topic folder, writes it to `~/.claude/deck/sessions/`, and syncs your active VS Code terminal tab title directly to `<Session Name>` without touching your conversation context.
+3. **Automatic ticket upgrades** — mention `PROJ-123` or `#42` in a prompt, or run `acli`, `jira`, `gh issue`, or `git checkout -b feat/PROJ-123`, and the session automatically binds to a smart ticket folder with live Jira/GitHub status and open PRs.
+4. **Stay in flow** — see at a glance which sessions are working or idle, monitor warm prompt-cache TTL (`⚡ 4:12`), and click any **`Attention Needed`** alert or the VS Code status bar pill (`Claude (1 waiting)`) to jump straight to the session waiting on you.
 
 ## Features
 
-| | |
+| Feature | What it does |
 |---|---|
-| 🗂️ **Grouped by ticket** | Sessions bound to `PROJ-123`, `#42` or `owner/repo#42` gather under their ticket; everything else sits below a divider. |
-| 🚦 **Live status & activity** | Working, needs input, idle, failed, done, plus active tool call (`npm test`, `Read auth.ts`, …) while running. |
-| 🔔 **Needs-input alerts** | A notification with an **Open** button the moment a session waits for you, even with the sidebar closed. |
-| 📊 **Status bar widget** | `$(bell-dot) Claude (1 waiting)` shows running/waiting sessions in your VS Code footer; one click jumps in. |
-| 🖱️ **One click to jump in** | Attaches a background job in an editor tab, focuses the terminal of an interactive one (macOS & Linux), or resumes an ended one. |
-| ⏱️ **Prompt cache countdown** | `cache 4:12` shows how long until a session's prompt cache goes cold, so you know when replying is cheap. |
-| 🎫 **Pluggable tracker & PRs** | Jira, GitHub Issues (`#42`), a custom shell command, or none; open GitHub PRs per ticket (optional). |
-| ✏️ **Instant session naming** | `name_session` updates the sidebar immediately without interrupting the turn, and `/rename` from the sidebar applies once idle. |
-| 🧹 **Self-tidying** | Closed tickets and sessions quiet for a week move to History. Drag to reorder; the order is shared across windows. |
-| 🔎 **Search** | Find any session, including History, by name, ticket key or title. |
-
-## How it works
-
-Claude Deck has two halves that talk through small files in `~/.claude/deck/`:
-
-```mermaid
-flowchart LR
-    subgraph CC["Claude Code"]
-        S1["session"]
-        S2["session"]
-        S3["background job"]
-        P["deck plugin"]
-    end
-    subgraph Files["~/.claude/deck/"]
-        F1["sessions/*.json"]
-        F2["renames/"]
-        F3["view.json"]
-    end
-    subgraph VS["VS Code"]
-        X["Claude Deck sidebar"]
-    end
-    S1 & S2 & S3 -.- P
-    P -- "records name, ticket, detail, cwd, last turn" --> F1
-    F1 --> X
-    X -- "rename request" --> F2
-    F2 -- "applied when idle" --> P
-    X <-- "order, hidden" --> F3
-    X -- "claude agents --json" --> CC
-    X -. "optional" .-> J["Jira / GitHub / Custom"]
-```
-
-- The **`deck` plugin** runs inside every Claude Code session. It writes one tiny JSON file per session (`name`, `ticket`, `detail`, `cwd`, `lastTurnEndAt`) and applies renames the sidebar asks for. It never touches transcripts.
-- The **VS Code extension** merges those files with `claude agents --json --all` and renders the deck.
-
-## The ticket workflow
-
-The plugin also ships three skills that make sessions ticket-aware. They're optional, and meant as a starting point for your own workflow.
-
-```mermaid
-sequenceDiagram
-    actor You
-    participant Deck as Claude Deck
-    participant S as Claude session
-    participant T as Tracker / GitHub
-    You->>Deck: + Start task "PROJ-142 add PDF export"
-    Deck->>S: claude --bg -n "add PDF export (PROJ-142)" "/start-task PROJ-142 …"
-    S->>T: fetch ticket, open PRs
-    S->>S: name_session → "PDF export endpoint (PROJ-142)"
-    Deck-->>You: session updates under PROJ-142 immediately
-    S->>You: how should I approach it? (needs input 🔔)
-    You->>Deck: Open
-    Note over S: works in its own git worktree
-    You->>S: /finish-task
-    S->>T: handoff comment (after your OK)
-```
-
-| Skill | What it does |
-|---|---|
-| `/start-task [KEY] <task>` | Fetches the ticket (via MCP, `gh` or Jira REST), names the session `<summary> (KEY)` without interrupting the turn, asks how to approach the task, creates git worktrees on demand |
-| `/finish-task [KEY]` | Drafts a handoff comment (status, acceptance criteria, PRs, tests) and posts it once you approve |
-| `/cleanup-worktrees` | Removes worktrees whose PR is merged or closed |
+| 🗂️ **Folders & smart tickets** | Group sessions into free-form project/topic folders (`Auth Refactor`, `Release Prep`) or smart ticket folders (`PROJ-123`, `#42`, `owner/repo#42`). Unassigned sessions appear as clean standalone cards under **Ungrouped**. |
+| ✨ **Silent auto-naming** | Unnamed sessions automatically receive a concise title and folder in the background (~10s after your first prompt via Haiku) without polluting your prompt or transcript, and sync back to `claude --resume`. |
+| 🎫 **Automatic ticket detection** | Detects ticket keys in user prompts and CLI commands (`acli`, `jira`, `gh issue`, `git switch/checkout`) and binds the session to that ticket folder automatically. |
+| 🖥️ **VS Code terminal tab sync** | Automatically syncs your interactive VS Code terminal tab to your concise `<Session Name>` as soon as a session is classified or renamed. |
+| 🚦 **Live session status** | Real-time status orbs (`working`, `needs input`, `idle`, `failed`, `done`) show at a glance which sessions are actively working and what topic they are working on. |
+| 🔔 **Needs-input spotlight** | Pins blocked or failed sessions to an **Attention Needed** spotlight at the top of the sidebar and triggers a VS Code toast notification with an **Open** action. |
+| 📊 **Status bar telemetry** | Shows `Claude (1 waiting)` or `Claude (2 running)` in the VS Code status bar; clicking it immediately focuses the session needing input or opens the deck. |
+| ⏱️ **Prompt cache countdown** | Tracks each session's 5m / 1h prompt cache TTL with a countdown badge (`⚡ 4:12`) and micro progress bar so you can reply before a warm cache goes cold. |
+| 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and open PRs via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
+| 🧹 **Self-tidying & drag-and-drop** | Closed tickets and sessions inactive for 7 days automatically archive to **History**. Drag and drop sessions between folders, or use inline hover actions to rename, move, or archive. |
 
 ## Install
 
-**1. The Claude Code plugin**
+### 1. Install the Claude Code plugin
+
+Inside Claude Code, add the marketplace and install the plugin:
 
 ```text
 /plugin marketplace add kaiketsu-labs/claude-deck
 /plugin install deck@claude-deck
 ```
 
-or load it from a checkout with `CLAUDE_CODE_PLUGIN_DIRS=/path/to/claude-deck/plugin`.
+<details>
+<summary><b>Alternative:</b> Load directly from a local checkout</summary>
 
-**2. The VS Code extension**
+Add `CLAUDE_CODE_PLUGIN_DIRS` to the `env` block of `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/claude-deck/plugin"
+  }
+}
+```
+</details>
+
+### 2. Install the VS Code extension
 
 <!-- x-release-please-start-version -->
 Download `claude-deck-0.1.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
@@ -124,7 +99,7 @@ Download `claude-deck-0.1.0.vsix` from the [latest GitHub Release](https://githu
 code --install-extension claude-deck-0.1.0.vsix --force
 ```
 
-Or build it from source (no npm needed — `package.py` zips the extension into a `.vsix`):
+Or build and install it from source in one command (zero npm dependencies — `package.py` packages the `.vsix` directly):
 
 ```bash
 git clone https://github.com/kaiketsu-labs/claude-deck
@@ -133,62 +108,57 @@ python3 package.py && code --install-extension claude-deck-0.1.0.vsix --force
 ```
 <!-- x-release-please-end -->
 
-**3. Open the deck** from the activity bar. That's it. Ticket status and PRs are optional, see below.
+### 3. Open the deck
+
+Click the **Claude Deck** icon in the VS Code Activity Bar. Sessions appear automatically as soon as you start Claude Code; tracker badges and PR links light up automatically when `gh`, `acli`, `jira`, or `JIRA_URL`/`JIRA_TOKEN` are available.
+
+## Commands & shortcuts
+
+All actions are available directly from the sidebar or via the VS Code Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
+
+| Command | Description |
+|---|---|
+| `Claude Deck: Focus / Open Session Needing Input` | Jumps straight to the first session waiting on input, or focuses the Claude Deck sidebar. Great for binding to a keyboard shortcut. |
+| `Claude Deck: Search Sessions` | Quick-pick across all active and archived sessions by name, folder, ticket key, or issue summary. |
+| `Claude Deck: New Session` | Opens a new interactive Claude Code terminal in the editor area (optionally pre-bound to a folder). |
+| `Claude Deck: New Folder or Ticket` | Creates a custom topic folder (e.g. `Auth Refactor`) or pins a ticket folder (e.g. `PROJ-123`, `#42`). |
+| `Claude Deck: Rename Folder` | Renames a folder and migrates all assigned sessions to the new folder name. |
+| `Claude Deck: Refresh` | Forces an immediate refresh of sessions, tracker statuses, and open pull requests. |
+
+## Optional ticket workflow skills
+
+Sessions are named and organized automatically without any slash commands. When you want structured ticket workflows with on-demand git worktrees and handoff comments, the plugin includes three skills:
+
+| Skill | What it does |
+|---|---|
+| `/start-task [KEY] <task>` | Fetches the ticket (via MCP, `gh`, `acli`, `jira`, or Jira REST), names the session via `name_session`, aligns on the approach, and creates git worktrees on demand. |
+| `/finish-task [KEY]` | Drafts a structured handoff comment (status, acceptance criteria, PRs, test results) and posts it to the ticket once you approve. |
+| `/cleanup-worktrees` | Cleans up local git worktrees whose associated pull request has been merged or closed. |
 
 ## Configuration
 
-Configure Claude Deck via **VS Code Settings** (`claudeDeck.*`) or via the `env` blocks of `~/.claude/settings.json` and `.claude/settings.json`:
+Configure Claude Deck via **VS Code Settings** (`claudeDeck.*`) or via the `env` block of `~/.claude/settings.json` / `.claude/settings.json`:
 
 | VS Code Setting | Env Fallback | Default | Effect |
 |---|---|---|---|
-| `claudeDeck.tracker` | — | `"auto"` | `"auto"` (Jira for `PROJ-123` when `JIRA_URL`/`JIRA_TOKEN` are set, GitHub Issues for `#42` / `owner/repo#42` via `gh`, silent when unconfigured), `"jira"`, `"github"`, `"command"`, or `"none"`. |
-| `claudeDeck.trackerCommand` | `DECK_TRACKER_COMMAND` | `""` | Shell command for `"command"` mode. Receives JSON array of keys on stdin and outputs `{ "KEY": { "status", "category", "summary", "url" } }`. |
+| `claudeDeck.tracker` | — | `"auto"` | `"auto"` (Jira for `PROJ-123` via REST API → `acli` → `jira-cli`, GitHub Issues for `#42` / `owner/repo#42` via `gh`, silent when unconfigured), `"jira"`, `"github"`, `"command"`, or `"none"`. |
+| `claudeDeck.trackerCommand` | `DECK_TRACKER_COMMAND` | `""` | Shell command for `"command"` mode. Receives a JSON array of keys on `stdin` and outputs `{ "KEY": { "status", "category", "summary", "url" } }`. |
 | `claudeDeck.pullRequests` | — | `"auto"` | `"auto"` (queries GitHub via `gh` when available, silent when unconfigured), `"github"`, or `"none"`. |
 | `claudeDeck.ticketProjects` | `TICKET_PROJECTS` | `""` | Comma-separated project keys, e.g. `PROJ,OPS`. Narrows Jira-style keys (case-insensitive). Default: any `ABC-123` or `#42` / `owner/repo#42` key. |
 | `claudeDeck.ticketPattern` | — | `""` | Custom regular expression override for matching ticket keys. |
-| `claudeDeck.startCommand` | — | `"/start-task"` | Slash command or prompt prefix passed to `claude --bg` when starting a task from the sidebar. |
-| — | `JIRA_URL`, `JIRA_TOKEN` | — | Base URL and PAT for Jira status and titles (one JQL search a minute). |
-| — | `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` | `5m` | Cache countdown uses one hour instead of five minutes (also honours `ENABLE_PROMPT_CACHING_1H`). |
-
-Without Jira or `gh` everything else still works; tickets just show no status and no error banner.
-
-## Make it yours
-
-- **Your own workflow:** copy the skills into `~/.claude/skills/` and change anything, or point `claudeDeck.startCommand` at your own command. The sidebar groups sessions by the `ticket` field written by `name_session` or the `<summary> (<KEY>)` suffix.
-- **No tickets at all?** Fine. Sessions without a key are listed below the divider, with status, live tool activity, alerts and the cache countdown.
-
-## Roadmap
-
-- [x] Pluggable trackers: Jira, GitHub Issues (`#42`, `owner/repo#42`), plus a `command` adapter for anything else
-- [x] Configurable start command, tracker mode and ticket pattern in VS Code settings
-- [x] macOS: focus the terminal of interactive sessions (`ps -o ppid=`)
-- [ ] Windows: focus the terminal of interactive sessions
-- [ ] VS Code Marketplace & Open VSX release
-
-## Files
-
-| Path | Written by | Contents |
-|---|---|---|
-| `~/.claude/deck/sessions/<id>.json` | plugin | name, ticket, first prompt, active tool detail, cwd, start and last turn time |
-| `~/.claude/deck/renames/<id>` | sidebar | pending rename, removed once applied |
-| `~/.claude/deck/view.json` | sidebar | manual order and History overrides |
-| `~/.claude/deck/ticket-titles.json` | plugin | short ticket titles shown beside keys |
+| — | `JIRA_URL`, `JIRA_TOKEN`, `JIRA_EMAIL` | — | Base URL and PAT/API token for Jira REST lookups (with `JIRA_EMAIL` uses Basic Auth for Jira Cloud; otherwise Bearer PAT). Automatically falls back to `acli` or `jira-cli` when unset. |
+| — | `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` | `5m` | Sets the prompt cache countdown to 1 hour instead of 5 minutes (also honours `ENABLE_PROMPT_CACHING_1H`). |
 
 ## Development
 
-```text
-claude-deck/
-├── plugin/          Claude Code plugin "deck": hooks + skills
-│   ├── hooks/       session recorder, name_session / set_ticket_titles tools
-│   └── skills/      start-task, finish-task, cleanup-worktrees
-└── vscode/          VS Code extension (plain JS, no build step)
-```
+The VS Code extension is written in dependency-free Node.js and uses Node's built-in test runner:
 
 ```bash
 cd vscode && node --test
+python3 package.py
 ```
 
-Issues and PRs welcome.
+Issues and pull requests are welcome.
 
 ## License
 

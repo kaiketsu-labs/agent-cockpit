@@ -1,8 +1,18 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { normalizeTicket, promptName, sessionName, ticketOf, ticketSuffix } from './group'
+import {
+  customTitleLine,
+  encodeProjectPath,
+  extractTicket,
+  isTicketKey,
+  normalizeFolder,
+  normalizeTicket,
+  promptName,
+  sessionName,
+  ticketOf,
+  ticketSuffix,
+} from './group'
 
-const RENAME_MS = 3_000
 const NAME_TOOL = 'mcp__deck__name_session'
 const TITLES_TOOL = 'mcp__deck__set_ticket_titles'
 
@@ -13,15 +23,17 @@ type SessionFile = {
   cwd: string
   startedAt: number
   name?: string
+  folder?: string
   ticket?: string
   prompt?: string
-  detail?: string
   lastTurnEndAt?: number
 }
 
 const claudeDir = async ($: EngineInterface) => `${await $.env.get('HOME')}/.claude`
 
 const titlesFile = async ($: EngineInterface) => `${await claudeDir($)}/deck/ticket-titles.json`
+
+const viewFile = async ($: EngineInterface) => `${await claudeDir($)}/deck/view.json`
 
 const storedTitles = async ($: EngineInterface) =>
   JSON.parse(await $.fs.read(await titlesFile($)).catch(() => '{}')) as Record<string, string>
@@ -37,15 +49,48 @@ const storedRecord = async ($: EngineInterface) =>
     .then(text => JSON.parse(text) as SessionFile)
     .catch(() => undefined)
 
-// Read before each write: the sidebar names ended sessions in the same file. The id moves on with /clear or /resume.
-// Serialized through saveQueue so concurrent tool calls cannot overwrite a name or ticket written at the same time.
+// Discover all existing folders from view.json and active/recent sessions so Claude can auto-group into them.
+const listKnownFolders = async ($: EngineInterface): Promise<string[]> => {
+  try {
+    const view = JSON.parse(await $.fs.read(await viewFile($)).catch(() => '{}')) as { folders?: string[] }
+    const folders = new Set<string>(view.folders ?? [])
+    const dir = `${await claudeDir($)}/deck/sessions`
+    const entries = await $.fs.list(dir).catch(() => [])
+    for (const entry of entries) {
+      if (entry.kind === 'file' && entry.name.endsWith('.json')) {
+        const rec = JSON.parse(await $.fs.read(`${dir}/${entry.name}`).catch(() => '{}')) as SessionFile
+        const f = rec.folder ?? rec.ticket
+        if (f) folders.add(f)
+      }
+    }
+    return [...folders]
+  } catch {
+    return []
+  }
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// Appends a custom-title entry to Claude Code's native JSONL transcript if the file exists.
+const writeTranscriptTitle = async ($: EngineInterface, sessionId: string, cwd: string, title: string) => {
+  try {
+    const file = `${await claudeDir($)}/projects/${encodeProjectPath(cwd)}/${sessionId}.jsonl`
+    const existing = await $.fs.read(file).catch(() => undefined)
+    if (existing !== undefined) {
+      await $.fs.write(file, existing + (existing.endsWith('\n') ? '' : '\n') + customTitleLine(sessionId, title))
+    }
+  } catch {}
+}
+
+// Serialized through saveQueue so concurrent tool calls cannot overwrite a name or folder written at the same time.
 let saveQueue: Promise<unknown> = Promise.resolve()
 
 const save = ($: EngineInterface, change: Partial<SessionFile>) => {
   if (!isListed) return Promise.resolve()
   const next = saveQueue.then(async () => {
     const sessionId = await $.session.id()
-    const record = { ...((await storedRecord($)) ?? { sessionId, kind, cwd: await $.session.cwd(), startedAt: Date.now() }), ...change }
+    const current = (await storedRecord($)) ?? { sessionId, kind, cwd: await $.session.cwd(), startedAt: Date.now() }
+    const record = { ...current, ...change }
     await $.fs.write(await sessionFile($, sessionId), JSON.stringify(record, null, 2))
   })
   saveQueue = next.catch(() => {})
@@ -55,58 +100,129 @@ const save = ($: EngineInterface, change: Partial<SessionFile>) => {
 // A -p run, a script's or a child of a background job's (it inherits CLAUDE_JOB_DIR), stays off the list.
 let isListed = false
 let kind: SessionFile['kind'] = 'interactive'
-let pendingName: string | undefined
-let isTurnRunning = false
-let appliedRename: string | undefined
+let projects: string[] = []
 let suffix = ticketSuffix()
+let namingInFlight = false
 
-// A plugin's own $.command.run skips its command.run hooks, so the name is saved here.
-const rename = async ($: EngineInterface, name: string) => {
-  await $.command.run({ command: 'rename', args: name })
-  await save($, { name, ticket: ticketOf(name, suffix) })
+const buildClassificationInstruction = (knownFolders: string[], presetFolder?: string) => {
+  const folderRule = presetFolder
+    ? `The session is already in folder "${presetFolder}". Keep "folder": "${presetFolder}" unless the prompt clearly switches to a different ticket.`
+    : knownFolders.length > 0
+      ? `Existing folders: ${JSON.stringify(knownFolders)}. Strongly prefer picking one of these existing folders if the prompt relates to it; otherwise create a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or use a ticket key if mentioned (e.g. "PROJ-123", "#42").`
+      : `Choose a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or a ticket key if mentioned (e.g. "PROJ-123", "#42").`
+  return (
+    `You classify coding sessions for the Claude Deck sidebar. Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
+    `{"summary": "<3-6 word action summary in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>", "title": "<optional 3-5 word subtitle for the folder>"}. ` +
+    folderRule
+  )
 }
 
-// The VS Code sidebar asks for a rename by writing the new name to a file named after the session.
-const applyRenameRequest = async ($: EngineInterface) => {
-  if (isTurnRunning) return
-  const file = `${await claudeDir($)}/deck/renames/${await $.session.id()}`
-  const name = (await $.fs.read(file).catch(() => '')).trim()
-  if (!name || name === appliedRename) return
-  appliedRename = name
-  await rename($, name).catch(err => $.ui.log(`rename: ${err}`))
+const applyClassificationReply = async ($: EngineInterface, text: string, presetFolder?: string, force = false) => {
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) return false
+  const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; folder?: string; title?: string; skip?: boolean }
+  if (parsed.skip || !parsed.summary?.trim()) return false
+
+  const latest = await storedRecord($)
+  if (latest?.name && !force) return true
+  const rawFolder = (presetFolder ?? parsed.folder)?.trim()
+  const resolvedFolder = rawFolder
+    ? normalizeFolder(rawFolder, projects)
+    : (ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
+  const name = sessionName(parsed.summary.trim(), resolvedFolder, suffix)
+  await save($, { name, ...(resolvedFolder ? { folder: resolvedFolder, ticket: resolvedFolder } : {}) })
+  if (resolvedFolder && parsed.title?.trim()) {
+    const titles = await storedTitles($)
+    if (!titles[resolvedFolder]) {
+      await storeTitles($, { [resolvedFolder]: parsed.title.trim() })
+    }
+  }
+  const sessionId = await $.session.id()
+  const cwd = latest?.cwd ?? (await $.session.cwd())
+  await writeTranscriptTitle($, sessionId, cwd, name)
+  return true
+}
+
+// Silently names and classifies the session in the background via Haiku so no tool call or system-reminder clutters the transcript.
+const autoNameInBackground = async ($: EngineInterface, userPrompt: string, presetFolder?: string, force = false) => {
+  if (namingInFlight) return
+  const clean = userPrompt.trim()
+  if (clean.length < 4 || /^(hi|hey|hello|hallo|moin|test|ok|okay|yes|ja|nein|no)\b[!?.]*$/i.test(clean)) return
+  namingInFlight = true
+  try {
+    const existing = await storedRecord($)
+    if (existing?.name && !force) return
+    const knownFolders = await listKnownFolders($)
+    const reply = await $.model.complete({
+      model: 'haiku',
+      effort: 'low',
+      maxTokens: 160,
+      timeoutMs: 8_000,
+      system: buildClassificationInstruction(knownFolders, presetFolder),
+      prompt: clean.slice(0, 1500),
+    })
+    if (reply.isAnswered) {
+      await applyClassificationReply($, reply.text, presetFolder, force)
+    }
+  } catch {
+    // Ignore background classification errors silently.
+  } finally {
+    namingInFlight = false
+  }
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    const projects = ((await $.env.get('TICKET_PROJECTS')) ?? '')
+    projects = ((await $.env.get('TICKET_PROJECTS')) ?? '')
       .split(',')
       .map(project => project.trim())
       .filter(Boolean)
     suffix = ticketSuffix(projects)
+    const initialFolder = (await $.env.get('CLAUDE_DECK_FOLDER'))?.trim()
+    const knownFolders = await listKnownFolders($)
+    const foldersHint =
+      knownFolders.length > 0
+        ? ` Existing folders: ${knownFolders.map(f => `"${f}"`).join(', ')} (always prefer assigning to an existing folder when the topic fits).`
+        : ''
+
     await $.tool.register({
       name: 'name_session',
       description:
-        'Names this session "<summary> (<ticket>)" (or "<summary>" when unticketed) and updates Claude Deck immediately. Call this proactively when starting work on a ticket or issue (e.g. PROJ-1234, #42, or owner/repo#42) so the session is grouped under its ticket in the sidebar.',
+        `Names or renames this session and moves it into a folder or ticket in the Claude Deck sidebar. ` +
+        `Call this when the user asks to rename/move the session, when starting a task skill, or when the session's topic shifts significantly.${foldersHint}`,
       inputSchema: {
         type: 'object',
         properties: {
-          summary: { type: 'string', description: 'A few words on what this session does' },
-          ticket: { type: 'string', description: 'Optional ticket or issue key, e.g. PROJ-1234, #42, or owner/repo#42. Omit when there is no ticket.' },
-          title: { type: 'string', description: 'The ticket summary shortened to at most 6 words, shown beside the key in the Claude Deck sidebar' },
+          summary: {
+            type: 'string',
+            description: 'Short 3-6 word summary of what this session does (clean title without repeating the folder or ticket key)',
+          },
+          folder: {
+            type: 'string',
+            description:
+              'Folder for this session: strongly prefer an existing folder name if related, otherwise a concise new project/topic folder (2-4 words, e.g. "Auth Refactor", "Sidebar UI") or a ticket/issue key (e.g. "PROJ-123", "#42", "owner/repo#42").',
+          },
+          ticket: {
+            type: 'string',
+            description: 'Alias for folder when binding to a ticket key (e.g. PROJ-123, #42).',
+          },
+          title: {
+            type: 'string',
+            description: 'Optional short subtitle (at most 6 words) shown beside the folder/ticket header in the sidebar.',
+          },
         },
         required: ['summary'],
       },
-      isDeferred: false,
     })
     await $.tool.register({
       name: 'set_ticket_titles',
-      description: 'Stores short ticket titles shown beside the keys in the Claude Deck sidebar, without renaming the session.',
+      description: 'Stores short subtitles for folders or tickets shown beside their headers in the Claude Deck sidebar.',
       inputSchema: {
         type: 'object',
         properties: {
           titles: {
             type: 'object',
-            description: 'Ticket key to its summary shortened to at most 6 words, e.g. {"PROJ-1234": "Add PDF endpoint"}',
+            description: 'Folder name or ticket key to its short subtitle (at most 6 words), e.g. {"PROJ-1234": "Add PDF endpoint", "Auth Refactor": "OAuth2 token flow"}',
             additionalProperties: { type: 'string' },
           },
         },
@@ -117,87 +233,135 @@ export const register: Register = on => {
     const jobId = (await $.env.get('CLAUDE_JOB_DIR'))?.split('/').pop()
     kind = jobId !== undefined && (await $.session.id()).startsWith(jobId) ? 'bg' : 'interactive'
     isListed = kind === 'bg' || e.isInteractive
-    await save($, { cwd: e.cwd })
-    $.clock.every(RENAME_MS, () => void applyRenameRequest($))
+    const folder = initialFolder ? normalizeFolder(initialFolder, projects) : undefined
+    await save($, { cwd: e.cwd, ...(folder ? { folder, ticket: folder } : {}) })
 
     return next(e)
   })
 
-  // The first non-empty prompt is a fallback display name until the session is named.
+  // The first non-empty prompt is a fallback display name; if a ticket key is mentioned in the prompt, bind immediately
+  // (including upgrading a generic topic folder to the specific ticket folder);
+  // if the session has no name yet, classify and name it silently in the background via Haiku.
   on('prompt.submit', async ($, e, next) => {
+    const record = await storedRecord($)
     const fallback = promptName(e.text)
-    if (fallback && !(await storedRecord($))?.prompt) {
-      await save($, { prompt: fallback }).catch(err => $.ui.log(`deck: ${err}`))
+    const detectedTicket = extractTicket(e.text, projects)
+    const currentFolder = record?.folder ?? record?.ticket
+    const updates: Partial<SessionFile> = {}
+    if (fallback && !record?.prompt) updates.prompt = fallback
+    if (detectedTicket && (!currentFolder || !isTicketKey(currentFolder, projects))) {
+      updates.folder = detectedTicket
+      updates.ticket = detectedTicket
+    }
+    if (Object.keys(updates).length > 0) {
+      await save($, updates).catch(err => $.ui.log(`deck: ${err}`))
+    }
+    const ticketNewlyBound = Boolean(updates.folder && updates.folder !== currentFolder)
+    if (isListed && (!record?.name || ticketNewlyBound) && !(e as { isMeta?: boolean }).isMeta) {
+      const activeFolder = updates.folder ?? currentFolder
+      $.clock.after(10, () => autoNameInBackground($, e.text, activeFolder, ticketNewlyBound))
     }
     return next(e)
   })
 
-  // A /rename the person types.
+  // A /rename the person types in the CLI.
   on('command.run', { command: 'rename' }, async ($, e, next) => {
     const result = await next(e)
-    const name = e.args.trim()
-    if (name) await save($, { name, ticket: ticketOf(name, suffix) }).catch(err => $.ui.log(`deck: ${err}`))
+    const raw = e.args.trim()
+    if (raw) {
+      const extracted = ticketOf(raw, suffix) ?? extractTicket(raw, projects)
+      const cleaned = extracted ? raw.replace(new RegExp(`^${escapeRegExp(extracted)}\\s*[:·\\-–—]?\\s*`, 'i'), '').trim() || raw : raw
+      const name = sessionName(cleaned, extracted, suffix)
+      await save($, { name, ...(extracted ? { folder: extracted, ticket: extracted } : {}) }).catch(err => $.ui.log(`deck: ${err}`))
+    }
     return result
   })
 
   on('tool.call', { tool: NAME_TOOL }, async ($, e) => {
-    const { summary, ticket, title } = e as unknown as { summary: string; ticket?: string; title?: string }
-    const key = ticket?.trim() ? normalizeTicket(ticket) : undefined
-    const name = sessionName(summary, key, suffix)
-    pendingName = name
-    await save($, { name, ticket: key })
-    if (key && title) await storeTitles($, { [key]: title })
+    const { summary, folder, ticket, title } = e as unknown as {
+      summary: string
+      folder?: string
+      ticket?: string
+      title?: string
+    }
+    const record = await storedRecord($)
+    const rawFolder = (folder ?? ticket)?.trim()
+    const resolvedFolder = rawFolder
+      ? normalizeFolder(rawFolder, projects)
+      : (ticketOf(summary, suffix) ?? record?.folder ?? record?.ticket)
+    const name = sessionName(summary, resolvedFolder, suffix)
+    await save($, { name, folder: resolvedFolder, ticket: resolvedFolder })
+    if (resolvedFolder && title) await storeTitles($, { [resolvedFolder]: title })
+    const sessionId = await $.session.id()
+    const cwd = record?.cwd ?? (await $.session.cwd())
+    await writeTranscriptTitle($, sessionId, cwd, name)
 
     return {
-      result: key
-        ? `Named session "${name}" and bound to ${key}. Continue with the next step.`
-        : `Named session "${name}". Continue with the next step.`,
+      result: resolvedFolder
+        ? `Named session "${name}" in folder "${resolvedFolder}". Continue with the user's request.`
+        : `Named session "${name}". Continue with the user's request.`,
     }
   })
 
   on('tool.call', { tool: TITLES_TOOL }, async ($, e) => {
     const { titles: given } = e as unknown as { titles: Record<string, string> }
-    const normalized = Object.fromEntries(Object.entries(given).map(([key, title]) => [normalizeTicket(key), title]))
+    const normalized = Object.fromEntries(
+      Object.entries(given).map(([key, title]) => [normalizeFolder(key, projects) || normalizeTicket(key), title]),
+    )
     await storeTitles($, normalized)
 
-    return { result: `Stored ${Object.keys(normalized).length} ticket titles.` }
+    return { result: `Stored ${Object.keys(normalized).length} titles.` }
   })
 
-  on('turn.start', async ($, e, next) => {
-    if (e.agentId === undefined) isTurnRunning = true
-    return next(e)
-  })
-
-  // Record active tool call so the sidebar shows live activity while working.
+  // Automatically detect ticket keys in ticket-intent CLI commands (e.g. acli, jira, gh issue, git checkout -b feat/PROJ-123).
   on('tool.call', async ($, e, next) => {
-    const call = e as { tool?: string; params?: Record<string, unknown> }
-    const tool = call.tool?.replace(/^mcp__[a-zA-Z0-9_-]+__/, '') ?? ''
-    if (tool && tool !== 'name_session' && tool !== 'set_ticket_titles') {
-      let detail = tool
-      const params = call.params
-      if (tool === 'Bash' && typeof params?.command === 'string') {
-        detail = params.command.trim().split('\n')[0]?.slice(0, 48) || 'Bash'
-      } else if ((tool === 'Read' || tool === 'View' || tool === 'Edit') && (params?.file_path || params?.path)) {
-        const file = String(params.file_path || params.path).split('/').pop()
-        detail = `${tool} ${file}`
+    const call = e as unknown as Record<string, unknown>
+    const tool = String(call.tool ?? '').replace(/^mcp__[a-zA-Z0-9_-]+__/, '')
+    const params = (call.params as Record<string, unknown> | undefined) ?? call
+    if (tool === 'Bash' && typeof params?.command === 'string') {
+      const cmd = params.command.trim()
+      const isTicketCommand = /^\s*(acli|jira|gh\s+issue|git\s+(checkout|switch)\s+-b)\b/i.test(cmd)
+      if (isTicketCommand) {
+        const cmdTicket = extractTicket(cmd, projects)
+        if (cmdTicket) {
+          const record = await storedRecord($)
+          const currentFolder = record?.folder ?? record?.ticket
+          if (!currentFolder || !isTicketKey(currentFolder, projects)) {
+            await save($, { folder: cmdTicket, ticket: cmdTicket }).catch(() => {})
+          }
+        }
       }
-      await save($, { detail }).catch(() => {})
     }
     return next(e)
   })
 
-  // A command queued mid-turn blocks subagents and is dropped on interrupt, so the CLI /rename waits for the turn's end.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
-    isTurnRunning = false
-    // The sidebar counts the prompt cache's lifetime from here; detail resets between turns.
-    await save($, { lastTurnEndAt: Date.now(), detail: undefined })
-    const name = pendingName
-    if (name === undefined) return next(e)
-    pendingName = undefined
-    // $.command.run is refused inside a hook the turn waits on; a timer runs outside it.
-    $.clock.after(0, () => void rename($, name).catch(err => $.ui.log(`rename: ${err}`)))
-
+    // The sidebar counts the prompt cache's lifetime from here.
+    await save($, { lastTurnEndAt: Date.now() })
+    // Fallback if Haiku background naming didn't run or was unavailable: fork the warm session cache invisibly.
+    const record = await storedRecord($)
+    if (isListed && !record?.name && !namingInFlight && record?.prompt) {
+      $.clock.after(10, async () => {
+        if (namingInFlight) return
+        namingInFlight = true
+        try {
+          const latest = await storedRecord($)
+          if (latest?.name) return
+          const knownFolders = await listKnownFolders($)
+          const presetFolder = latest?.folder ?? latest?.ticket
+          const forked = await $.model.fork({
+            effort: 'low',
+            prompt: buildClassificationInstruction(knownFolders, presetFolder),
+          })
+          if (forked.isAnswered) {
+            await applyClassificationReply($, forked.text, presetFolder)
+          }
+        } catch {} finally {
+          namingInFlight = false
+        }
+      })
+    }
     return next(e)
   })
 }

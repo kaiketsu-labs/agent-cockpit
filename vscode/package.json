@@ -1,7 +1,7 @@
 {
   "name": "claude-deck",
   "displayName": "Claude Deck",
-  "description": "Claude Code sessions grouped by ticket, with ticket status and open PRs; click a session to attach in a terminal tab.",
+  "description": "Claude Code sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
   "version": "0.1.0",
   "publisher": "kaiketsu-labs",
   "license": "MIT",
@@ -40,7 +40,7 @@
           "type": "string",
           "enum": ["auto", "jira", "github", "command", "none"],
           "default": "auto",
-          "description": "Issue tracker integration for ticket status and titles. 'auto' queries Jira for PROJ-123 keys (when JIRA_URL/JIRA_TOKEN are set) and GitHub Issues for #42 / owner/repo#42 keys (when gh is available), without showing error banners when unconfigured."
+          "description": "Issue tracker integration for ticket folders. 'auto' queries Jira for PROJ-123 keys (when JIRA_URL/JIRA_TOKEN are set) and GitHub Issues for #42 / owner/repo#42 keys (when gh is available), without showing error banners when unconfigured."
         },
         "claudeDeck.trackerCommand": {
           "type": "string",
@@ -51,7 +51,7 @@
           "type": "string",
           "enum": ["auto", "github", "none"],
           "default": "auto",
-          "description": "Pull request lookup mode. 'auto' queries GitHub via gh when available and stays silent when unconfigured; 'none' disables PR lookups."
+          "description": "Pull request lookup mode for ticket folders. 'auto' queries GitHub via gh when available and stays silent when unconfigured; 'none' disables PR lookups."
         },
         "claudeDeck.ticketProjects": {
           "type": "string",
@@ -62,15 +62,15 @@
           "type": "string",
           "default": "",
           "description": "Optional custom regular expression for matching ticket keys."
-        },
-        "claudeDeck.startCommand": {
-          "type": "string",
-          "default": "/start-task",
-          "description": "Slash command or prompt prefix passed to 'claude --bg' when starting a task from the sidebar."
         }
       }
     },
     "commands": [
+      {
+        "command": "claudeDeck.focus",
+        "title": "Focus / Open Session Needing Input",
+        "category": "Claude Deck"
+      },
       {
         "command": "claudeDeck.refresh",
         "title": "Refresh",
@@ -86,9 +86,19 @@
         "icon": "$(link-external)"
       },
       {
-        "command": "claudeDeck.startTask",
-        "title": "Start task",
+        "command": "claudeDeck.newSession",
+        "title": "New session",
         "icon": "$(add)"
+      },
+      {
+        "command": "claudeDeck.newFolder",
+        "title": "New folder or ticket",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "claudeDeck.renameFolder",
+        "title": "Rename folder",
+        "icon": "$(edit)"
       },
       {
         "command": "claudeDeck.search",
@@ -104,11 +114,6 @@
         "command": "claudeDeck.show",
         "title": "Back to the list",
         "icon": "$(inbox)"
-      },
-      {
-        "command": "claudeDeck.newSession",
-        "title": "New session (no ticket)",
-        "icon": "$(comment-discussion)"
       },
       {
         "command": "claudeDeck.rename",
@@ -136,6 +141,10 @@
         },
         {
           "command": "claudeDeck.rename",
+          "when": "false"
+        },
+        {
+          "command": "claudeDeck.renameFolder",
           "when": "false"
         }
       ]

@@ -8,9 +8,11 @@ const { execFile, execFileSync } = require('child_process')
 const {
   STATUS,
   ticketPattern,
-  firstTicket,
+  normalizeFolder,
+  folderTicket,
   withoutTicketSuffix,
-  assignTicket,
+  encodeProjectPath,
+  customTitleLine,
   groupSessions,
   searchQueries,
   prsByTicket,
@@ -19,32 +21,39 @@ const {
   ticketOf,
   mergeSessions,
   cacheTtlMs,
-  cacheLeft,
-  clock,
   age,
   inboxModel,
 } = require('./group')
 const { InboxView } = require('./inbox')
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude')
-// The claude-deck plugin writes one file per session; order and hide flags sit beside them for every window.
+// The claude-deck plugin writes one file per session; order, folders and hide flags sit beside them for every window.
 const DECK_DIR = path.join(CLAUDE_DIR, 'deck')
 const SESSIONS_DIR = path.join(DECK_DIR, 'sessions')
 const VIEW_FILE = path.join(DECK_DIR, 'view.json')
-// The claude-deck plugin in each running session polls here and runs /rename itself.
-const RENAMES_DIR = path.join(DECK_DIR, 'renames')
+const TITLES_FILE = path.join(DECK_DIR, 'ticket-titles.json')
 const REFRESH_MS = 5_000
 const TRACKER_MS = 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
 const PRS_MS = 120_000
 
-// The extension host's PATH often lacks ~/.local/bin, where the installers put claude and gh.
+// The extension host's PATH often lacks ~/.local/bin or Homebrew paths on macOS/Linux.
 const localBin = name => {
-  const file = path.join(os.homedir(), '.local', 'bin', name)
-  return fs.existsSync(file) ? file : name
+  const dirs = [
+    path.join(os.homedir(), '.local', 'bin'),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+  ]
+  for (const dir of dirs) {
+    const file = path.join(dir, name)
+    if (fs.existsSync(file)) return file
+  }
+  return name
 }
 const CLAUDE = localBin('claude')
 const GH = localBin('gh')
+const ACLI = localBin('acli')
+const JIRA_CLI = localBin('jira')
 
 const readJson = async (file, fallback) => {
   try {
@@ -82,7 +91,6 @@ const getDeckConfig = env => {
     pullRequests: cfg.get('pullRequests', 'auto'),
     ticketProjects: cfg.get('ticketProjects', '') || env.TICKET_PROJECTS || '',
     ticketPattern: cfg.get('ticketPattern', ''),
-    startCommand: cfg.get('startCommand', '/start-task') || '/start-task',
   }
 }
 
@@ -96,56 +104,160 @@ const readSessionFiles = async () => {
 
 const loadSessions = async pattern => {
   const [agents, files] = await Promise.all([listAgents(), readSessionFiles()])
-  return withPendingRenames(mergeSessions(agents, files, pattern), pattern)
+  return mergeSessions(agents, files, pattern)
 }
 
-// A requested name shows at once; the request goes once the session carries the name.
-const withPendingRenames = async (sessions, pattern) => {
-  const requested = await fs.promises.readdir(RENAMES_DIR).catch(() => [])
-  if (requested.length === 0) return sessions
-  const byId = new Map(sessions.map(session => [session.sessionId, session]))
-  for (const sessionId of requested) {
-    const file = path.join(RENAMES_DIR, sessionId)
-    const name = (await fs.promises.readFile(file, 'utf8').catch(() => '')).trim()
-    const session = byId.get(sessionId)
-    if (!session) continue
-    if (session.name === name) {
-      await fs.promises.rm(file, { force: true })
-      continue
+// Writes session metadata directly to ~/.claude/deck/sessions/<sessionId>.json and optionally updates the JSONL custom-title.
+const updateSessionRecord = async (session, change) => {
+  await fs.promises.mkdir(SESSIONS_DIR, { recursive: true })
+  const file = path.join(SESSIONS_DIR, `${session.sessionId}.json`)
+  const record = await readJson(file, {
+    sessionId: session.sessionId,
+    kind: session.interactive === false ? 'bg' : 'interactive',
+    cwd: session.cwd,
+    startedAt: session.updatedAt || Date.now(),
+  })
+  const updated = { ...record, ...change }
+  await fs.promises.writeFile(file, JSON.stringify(updated, null, 2))
+  if (change.name && updated.cwd) {
+    const transcript = path.join(CLAUDE_DIR, 'projects', encodeProjectPath(updated.cwd), `${session.sessionId}.jsonl`)
+    if (fs.existsSync(transcript)) {
+      await fs.promises.appendFile(transcript, customTitleLine(session.sessionId, change.name)).catch(() => {})
     }
-    Object.assign(session, { name, ticket: ticketOf(name, pattern), isRenaming: true })
   }
-  return sessions
 }
 
-// An ended session has no process to run /rename, so the sidebar names it in its file alone.
-const rename = async (session, name, pattern) => {
-  if (session.ended) {
-    const file = path.join(SESSIONS_DIR, `${session.sessionId}.json`)
-    const record = await readJson(file, {})
-    return fs.promises.writeFile(file, JSON.stringify({ ...record, name, ticket: ticketOf(name, pattern) }, null, 2))
+const rename = async (session, rawName, pattern) => {
+  const extracted = ticketOf(rawName, pattern) ?? folderTicket(rawName, pattern)
+  const strippedPrefix = extracted ? rawName.replace(new RegExp(`^${extracted}\\s*[:·\\-–—]?\\s*`, 'i'), '').trim() : rawName
+  const name = withoutTicketSuffix(strippedPrefix || rawName, pattern) || strippedPrefix || rawName
+  const change = { name }
+  if (extracted) {
+    change.folder = extracted
+    change.ticket = extracted
   }
-  await fs.promises.mkdir(RENAMES_DIR, { recursive: true })
-  await fs.promises.writeFile(path.join(RENAMES_DIR, session.sessionId), name)
+  await updateSessionRecord(session, change)
 }
 
-const loadJiraIssues = async (env, keys) => {
-  if (!env.JIRA_URL || !env.JIRA_TOKEN || keys.length === 0) return {}
-  const jql = encodeURIComponent(`key in (${keys.join(',')})`)
-  const url = `${env.JIRA_URL}/rest/api/2/search?validateQuery=warn&maxResults=${keys.length}&fields=status,summary&jql=${jql}`
-  // The token goes in on stdin, so it never shows in the process list.
-  const body = await run('curl', ['-s', '--fail', '-H', '@-', url], `Authorization: Bearer ${env.JIRA_TOKEN}\n`)
+const mapJiraCategory = status => {
+  const cat = status?.statusCategory?.key?.toLowerCase()
+  if (cat === 'done' || cat === 'new' || cat === 'indeterminate') return cat
+  const name = String(status?.name ?? status ?? '').toLowerCase()
+  if (/done|closed|resolved|complete/.test(name)) return 'done'
+  if (/to do|open|new|backlog/.test(name)) return 'new'
+  return 'indeterminate'
+}
+
+const parseJiraIssuePayload = (issue, baseUrl) => {
+  const key = issue?.key
+  const fields = issue?.fields ?? issue
+  const statusObj = fields?.status
+  const status = typeof statusObj === 'string' ? statusObj : (statusObj?.name ?? 'Open')
+  const summary = fields?.summary ?? ''
+  const selfUrl = issue?.self ? String(issue.self).split('/rest/')[0] : baseUrl
+  return key
+    ? {
+        key,
+        value: {
+          status,
+          category: mapJiraCategory(statusObj),
+          summary,
+          url: selfUrl ? `${selfUrl.replace(/\/$/, '')}/browse/${key}` : undefined,
+        },
+      }
+    : undefined
+}
+
+const loadJiraViaAcli = async (keys, baseUrl, cwd) => {
   const issues = {}
-  for (const issue of JSON.parse(body).issues) {
-    const { status, summary } = issue.fields
-    issues[issue.key] = {
-      status: status.name,
-      category: status.statusCategory.key,
-      summary,
-      url: `${env.JIRA_URL}/browse/${issue.key}`,
+  await Promise.all(
+    keys.map(async key => {
+      try {
+        const out = await run(ACLI, ['jira', 'workitem', 'view', key, '--json'], undefined, { cwd })
+        const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
+        if (parsed) issues[parsed.key] = parsed.value
+      } catch {}
+    }),
+  )
+  return issues
+}
+
+const loadJiraViaJiraCli = async (keys, baseUrl, cwd) => {
+  try {
+    const jql = `key in (${keys.join(',')})`
+    const out = await run(JIRA_CLI, ['issue', 'list', '--jql', jql, '--raw'], undefined, { cwd })
+    const data = JSON.parse(out)
+    const list = Array.isArray(data) ? data : (data.issues ?? [])
+    const issues = {}
+    for (const item of list) {
+      const parsed = parseJiraIssuePayload(item, baseUrl)
+      if (parsed) issues[parsed.key] = parsed.value
+    }
+    if (Object.keys(issues).length > 0) return issues
+  } catch {}
+  const issues = {}
+  await Promise.all(
+    keys.map(async key => {
+      try {
+        const out = await run(JIRA_CLI, ['issue', 'view', key, '--raw'], undefined, { cwd })
+        const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
+        if (parsed) issues[parsed.key] = parsed.value
+      } catch {}
+    }),
+  )
+  return issues
+}
+
+const loadJiraViaRest = async (env, keys) => {
+  const baseUrl = (env.JIRA_URL || '').replace(/\/$/, '')
+  const token = env.JIRA_TOKEN || env.JIRA_API_TOKEN
+  if (!baseUrl || !token || keys.length === 0) return {}
+  const email = env.JIRA_EMAIL || env.JIRA_USER || env.JIRA_USERNAME
+  const authHeader = email
+    ? `Authorization: Basic ${Buffer.from(`${email}:${token}`).toString('base64')}\n`
+    : `Authorization: Bearer ${token}\n`
+  const jql = encodeURIComponent(`key in (${keys.join(',')})`)
+  const endpoints = [
+    `${baseUrl}/rest/api/3/search/jql?maxResults=${keys.length}&fields=status,summary&jql=${jql}`,
+    `${baseUrl}/rest/api/2/search?validateQuery=warn&maxResults=${keys.length}&fields=status,summary&jql=${jql}`,
+  ]
+  let lastErr
+  for (const url of endpoints) {
+    try {
+      // The token goes in on stdin, so it never shows in the process list.
+      const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader)
+      const issues = {}
+      for (const issue of JSON.parse(body).issues ?? []) {
+        const parsed = parseJiraIssuePayload(issue, baseUrl)
+        if (parsed) issues[parsed.key] = parsed.value
+      }
+      return issues
+    } catch (err) {
+      lastErr = err
     }
   }
-  return issues
+  if (lastErr) throw lastErr
+  return {}
+}
+
+// Cascade for Jira issues: 1) REST when JIRA_URL + JIRA_TOKEN are set, 2) Atlassian CLI (acli), 3) jira-cli (jira).
+const loadJiraIssues = async (env, keys, cwd) => {
+  if (keys.length === 0) return {}
+  const baseUrl = env.JIRA_URL
+  if (baseUrl && (env.JIRA_TOKEN || env.JIRA_API_TOKEN)) {
+    try {
+      const rest = await loadJiraViaRest(env, keys)
+      if (Object.keys(rest).length > 0) return rest
+    } catch {}
+  }
+  const viaAcli = await loadJiraViaAcli(keys, baseUrl, cwd)
+  if (Object.keys(viaAcli).length > 0) return viaAcli
+  const viaJiraCli = await loadJiraViaJiraCli(keys, baseUrl, cwd)
+  if (Object.keys(viaJiraCli).length > 0) return viaJiraCli
+  if (baseUrl && (env.JIRA_TOKEN || env.JIRA_API_TOKEN)) {
+    return loadJiraViaRest(env, keys)
+  }
+  return {}
 }
 
 const loadGithubIssues = async (keys, cwd) => {
@@ -182,7 +294,7 @@ const loadIssues = async (env, keys, cfg, cwd) => {
   const results = {}
   if ((cfg.tracker === 'auto' || cfg.tracker === 'jira') && jiraKeys.length > 0) {
     try {
-      Object.assign(results, await loadJiraIssues(env, jiraKeys))
+      Object.assign(results, await loadJiraIssues(env, jiraKeys, cwd))
     } catch (err) {
       if (cfg.tracker === 'jira') throw err
     }
@@ -230,8 +342,42 @@ class SessionsProvider {
     return this.view.order ?? []
   }
 
+  get folders() {
+    return this.view.folders ?? []
+  }
+
   async setHidden(session, isHidden) {
     await this.saveView({ hidden: { ...this.view.hidden, [session.id]: isHidden } })
+  }
+
+  async addFolder(rawFolder) {
+    const folder = normalizeFolder(rawFolder, this.pattern)
+    if (!folder) return
+    const folders = [...new Set([...this.folders, folder])]
+    await this.saveView({ folders })
+    return folder
+  }
+
+  async removeFolder(folder) {
+    const folders = this.folders.filter(f => f !== folder)
+    const order = this.order.filter(f => f !== folder)
+    await this.saveView({ folders, order })
+  }
+
+  async renameFolder(oldFolder, rawNewFolder) {
+    const newFolder = normalizeFolder(rawNewFolder, this.pattern)
+    if (!newFolder || newFolder === oldFolder) return
+    const folders = [...new Set(this.folders.map(f => (f === oldFolder ? newFolder : f)))]
+    const order = this.order.map(item => (item === oldFolder ? newFolder : item))
+    const matching = this.sessions.filter(s => (s.folder ?? s.ticket) === oldFolder)
+    await Promise.all(matching.map(s => updateSessionRecord(s, { folder: newFolder, ticket: newFolder })))
+    if (this.titles[oldFolder] && !this.titles[newFolder]) {
+      const titles = { ...(await readJson(TITLES_FILE, {})), [newFolder]: this.titles[oldFolder] }
+      delete titles[oldFolder]
+      this.titles = titles
+      await fs.promises.writeFile(TITLES_FILE, JSON.stringify(titles, null, 2)).catch(() => {})
+    }
+    await this.saveView({ folders, order })
   }
 
   async saveView(change) {
@@ -242,14 +388,30 @@ class SessionsProvider {
     this.changed.fire()
   }
 
+  isFolderClosed(folder) {
+    if (!folder) return false
+    const tKey = folderTicket(folder, this.pattern)
+    return isClosed(this.issues[folder] ?? (tKey ? this.issues[tKey] : undefined))
+  }
+
   isHidden(session) {
-    const isTicketClosed = session.ticket !== undefined && isClosed(this.issues[session.ticket])
+    const folder = session.folder ?? session.ticket
+    const isTicketClosed = folder !== undefined && this.isFolderClosed(folder)
     return isHidden(session, Date.now(), isTicketClosed, this.view.hidden?.[session.id])
   }
 
   regroup() {
-    this.groups = groupSessions(this.sessions.filter(session => !this.isHidden(session)), this.order)
-    this.hidden = groupSessions(this.sessions.filter(session => this.isHidden(session)), this.order, { unticketedSort: 'age' })
+    const activeFolders = this.folders.filter(f => !this.isFolderClosed(f))
+    this.groups = groupSessions(
+      this.sessions.filter(session => !this.isHidden(session)),
+      this.order,
+      { folders: activeFolders },
+    )
+    this.hidden = groupSessions(
+      this.sessions.filter(session => this.isHidden(session)),
+      this.order,
+      { unticketedSort: 'age' },
+    )
   }
 
   // Resolves to the sessions that started needing input since the last refresh.
@@ -269,19 +431,22 @@ class SessionsProvider {
         this.sessions = await loadSessions(this.pattern)
         this.regroup()
       }, 'sessions'),
-      readJson(path.join(DECK_DIR, 'ticket-titles.json'), {}).then(titles => (this.titles = titles)),
+      readJson(TITLES_FILE, {}).then(titles => (this.titles = titles)),
     ])
-    const keysOf = groups => groups.map(group => group.ticket).filter(Boolean)
-    const keys = keysOf(this.groups)
-    const allKeys = [...new Set(this.sessions.map(session => session.ticket).filter(Boolean))]
+    const ticketKeysOf = items => [...new Set(items.map(k => folderTicket(k, this.pattern)).filter(Boolean))]
+    const activeTicketKeys = ticketKeysOf(this.groups.map(group => group.ticket))
+    const allTicketKeys = ticketKeysOf([
+      ...this.sessions.map(session => session.folder ?? session.ticket),
+      ...this.folders,
+    ])
     const isDue = (what, ms) => withRemote && (force || Date.now() - this.fetchedAt[what] > ms)
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
-    // PRs only for live tickets: each six keys cost one of GitHub's 30 searches a minute.
+    // PRs only for live ticket folders: each six keys cost one of GitHub's 30 searches a minute.
     await Promise.all([
       isDue('issues', TRACKER_MS) &&
-        this.track('tracker', async () => (this.issues = await loadIssues(this.env, allKeys, this.config, cwd)), 'issues'),
+        this.track('tracker', async () => (this.issues = await loadIssues(this.env, allTicketKeys, this.config, cwd)), 'issues'),
       isDue('prs', PRS_MS) &&
-        this.track('gh search', async () => (this.prs = await loadPrs(keys, this.config)), 'prs'),
+        this.track('gh search', async () => (this.prs = await loadPrs(activeTicketKeys, this.config)), 'prs'),
     ])
     this.regroup()
     this.changed.fire()
@@ -319,10 +484,12 @@ class SessionsProvider {
     })
   }
 
-  // A session dropped on a ticket is reassigned to it; dropped on "no ticket" it loses its ticket.
-  async assign(session, ticket) {
-    if ((ticket ?? undefined) === (session.ticket ?? undefined)) return
-    await rename(session, assignTicket(session.name, ticket, this.pattern), this.pattern)
+  // A session dropped on a folder/ticket is reassigned to it; dropped on "Ungrouped" it loses its folder.
+  async assign(session, rawFolder) {
+    const folder = normalizeFolder(rawFolder, this.pattern)
+    const current = session.folder ?? session.ticket ?? undefined
+    if (folder === current) return
+    await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null })
   }
 }
 
@@ -369,43 +536,113 @@ const findAncestors = pid => {
   return []
 }
 
-// claude attach takes background sessions only; an interactive one can just be shown where it runs.
-const focusInteractive = async session => {
+const terminalForPid = new Map()
+const appliedTerminalTitles = new WeakMap()
+
+const terminalTitleFor = (session, pattern) => {
+  const folder = session.folder ?? session.ticket
+  const short = withoutTicketSuffix(session.name, pattern) || session.name
+  if (session.hasCustomName && short && short !== 'Untitled') {
+    return short
+  }
+  if (folder) return folder
+  return short || undefined
+}
+
+const findTerminalForSession = async session => {
+  if (!session.interactive) {
+    return vscode.window.terminals.find(
+      terminal => terminal.exitStatus === undefined && isAttachTerminal(terminal, session),
+    )
+  }
+  if (!session.pid) return undefined
+  const cached = terminalForPid.get(session.pid)
+  if (cached && cached.exitStatus === undefined && vscode.window.terminals.includes(cached)) {
+    return cached
+  }
   let ancestors = []
   try {
     ancestors = findAncestors(session.pid)
   } catch {}
   for (const terminal of vscode.window.terminals) {
-    if (ancestors.includes(await terminal.processId)) return terminal.show()
+    if (terminal.exitStatus === undefined && ancestors.includes(await terminal.processId)) {
+      terminalForPid.set(session.pid, terminal)
+      return terminal
+    }
+  }
+  return undefined
+}
+
+const applyTerminalTitleIfActive = async (terminal, desired) => {
+  if (!terminal || !desired) return
+  if (vscode.window.activeTerminal !== terminal) return
+  if (appliedTerminalTitles.get(terminal) === desired || terminal.name === desired) return
+  appliedTerminalTitles.set(terminal, desired)
+  try {
+    await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg', { name: desired })
+  } catch {}
+}
+
+const syncTerminalTitles = async provider => {
+  const active = vscode.window.activeTerminal
+  if (!active || active.exitStatus !== undefined) return
+  for (const session of provider.sessions) {
+    if (session.ended) continue
+    const desired = terminalTitleFor(session, provider.pattern)
+    if (!desired) continue
+    const terminal = await findTerminalForSession(session)
+    if (terminal === active) {
+      await applyTerminalTitleIfActive(terminal, desired)
+      return
+    }
+  }
+}
+
+// claude attach takes background sessions only; an interactive one can just be shown where it runs.
+const focusInteractive = async (session, provider) => {
+  const terminal = await findTerminalForSession(session)
+  if (terminal) {
+    terminal.show()
+    const desired = provider && terminalTitleFor(session, provider.pattern)
+    if (desired) {
+      setTimeout(() => applyTerminalTitleIfActive(terminal, desired), 50)
+    }
+    return
   }
   vscode.window.showInformationMessage(`${session.name} runs outside VS Code's terminals (pid ${session.pid}).`)
 }
 
-const newSession = () =>
+// Opens an interactive Claude terminal directly in an editor tab, optionally pre-bound to a folder or ticket.
+const newSession = folder =>
   vscode.window
     .createTerminal({
-      name: 'Claude',
+      name: folder || 'Claude',
       shellPath: CLAUDE,
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      env: folder ? { CLAUDE_DECK_FOLDER: folder } : undefined,
       iconPath: new vscode.ThemeIcon('comment-discussion'),
       location: vscode.TerminalLocation.Editor,
     })
     .show()
 
-const attach = (session, provider) => {
-  if (session.interactive) return focusInteractive(session)
+const attach = async (session, provider) => {
+  if (session.interactive) return focusInteractive(session, provider)
   const pattern = provider.pattern
-  const open = vscode.window.terminals.find(
-    terminal => terminal.exitStatus === undefined && isAttachTerminal(terminal, session),
-  )
-  if (open) return open.show()
-  const short = withoutTicketSuffix(session.name, pattern)
+  const open = await findTerminalForSession(session)
+  if (open) {
+    open.show()
+    const desired = terminalTitleFor(session, pattern)
+    if (desired) setTimeout(() => applyTerminalTitleIfActive(open, desired), 50)
+    return
+  }
+  const short = withoutTicketSuffix(session.name, pattern) || session.name
   vscode.window
     .createTerminal({
-      name: session.ticket ? `${session.ticket} ${short}` : short,
+      name: short,
       shellPath: CLAUDE,
       shellArgs: attachArgs(session),
       cwd: session.cwd,
+      env: session.ticket ? { CLAUDE_DECK_FOLDER: session.ticket } : undefined,
       iconPath: new vscode.ThemeIcon('hubot'),
       location: vscode.TerminalLocation.Editor,
     })
@@ -420,39 +657,8 @@ const migrateFromClaudeTickets = async () => {
   await Promise.all([
     copy(path.join(CLAUDE_DIR, 'tickets', 'sessions'), SESSIONS_DIR),
     copy(path.join(CLAUDE_DIR, 'tickets', 'view.json'), VIEW_FILE),
-    copy(path.join(CLAUDE_DIR, 'ticket-titles.json'), path.join(DECK_DIR, 'ticket-titles.json')),
+    copy(path.join(CLAUDE_DIR, 'ticket-titles.json'), TITLES_FILE),
   ]).catch(() => {})
-}
-
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
-
-// The new session is the one id the list gains; --bg's printed text is not a stable interface.
-const startTask = async (element, provider) => {
-  const pattern = provider.pattern
-  const startCmd = provider.config.startCommand
-  const ticket = element?.group?.ticket
-  const args = await vscode.window.showInputBox({
-    title: 'Start task',
-    prompt: `Ticket and task, passed to ${startCmd}`,
-    placeHolder: 'PROJ-123 or #42 what to do',
-    value: ticket ? `${ticket} ` : '',
-  })
-  if (args === undefined) return
-  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
-  const detectedTicket = firstTicket([args], pattern)
-  const shortName = args.replace(pattern.key, '').trim() || 'task'
-  const initialName = detectedTicket ? `${shortName} (${detectedTicket})` : shortName
-  const before = new Set((await listAgents()).map(agent => agent.id))
-  await run(CLAUDE, ['--bg', '-n', initialName, `${startCmd} ${args}`.trim()], undefined, { cwd })
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const started = (await listAgents()).find(agent => !before.has(agent.id))
-    if (!started) {
-      await sleep(500)
-      continue
-    }
-    return attach({ id: started.id, name: initialName, ticket: detectedTicket }, provider)
-  }
-  vscode.window.showWarningMessage('Started the session, but it did not show up in claude agents; find it in the list.')
 }
 
 const search = async provider => {
@@ -461,22 +667,70 @@ const search = async provider => {
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map(session => {
       const status = STATUS[session.state] ?? { label: session.state, icon: 'circle-outline' }
-      const title = session.ticket && (provider.titles[session.ticket] ?? provider.issues[session.ticket]?.summary)
+      const folder = session.folder ?? session.ticket
+      const tKey = folderTicket(folder, provider.pattern)
+      const title =
+        folder &&
+        (provider.titles[folder] ??
+          (tKey ? provider.titles[tKey] : undefined) ??
+          provider.issues[folder]?.summary ??
+          (tKey ? provider.issues[tKey]?.summary : undefined))
       const when = `${age(now - session.updatedAt)}${provider.isHidden(session) ? ' · hidden' : ''}`
       return {
-        label: `$(${status.icon}) ${withoutTicketSuffix(session.name, provider.pattern)}`,
-        description: [session.ticket, title].filter(Boolean).join(' · '),
+        label: `$(${status.icon}) ${withoutTicketSuffix(session.name, provider.pattern) || session.name}`,
+        description: [folder, title].filter(Boolean).join(' · '),
         detail: [status.label, when].filter(Boolean).join(' · '),
         session,
       }
     })
   const picked = await vscode.window.showQuickPick(items, {
     title: 'Search sessions',
-    placeHolder: 'Session name, ticket key or title',
+    placeHolder: 'Session name, folder, ticket key or title',
     matchOnDescription: true,
     matchOnDetail: true,
   })
   if (picked) attach(picked.session, provider)
+}
+
+const moveToFolder = async (session, provider, refresh) => {
+  const known = new Set([
+    ...provider.folders,
+    ...provider.sessions.map(s => s.folder ?? s.ticket).filter(Boolean),
+  ])
+  const items = [
+    { label: '$(add) New folder or ticket…', action: 'new' },
+    ...([...known].map(f => ({
+      label: `$(folder) ${f}`,
+      description: provider.titles[f] ?? provider.issues[folderTicket(f, provider.pattern)]?.summary ?? '',
+      folder: f,
+    }))),
+    ...(session.ticket ? [{ label: '$(close) Remove from folder (Ungrouped)', action: 'none' }] : []),
+  ]
+  const picked = await vscode.window.showQuickPick(items, {
+    title: `Move "${session.name}" to folder`,
+    placeHolder: 'Choose a folder or ticket, or create a new one',
+  })
+  if (!picked) return
+  if (picked.action === 'none') {
+    await provider.assign(session, undefined)
+    return refresh(true)
+  }
+  if (picked.action === 'new') {
+    const input = (
+      await vscode.window.showInputBox({
+        title: 'New folder or ticket',
+        placeHolder: 'e.g. Auth Refactor, PROJ-123, or #42',
+      })
+    )?.trim()
+    if (!input) return
+    const folder = await provider.addFolder(input)
+    await provider.assign(session, folder)
+    return refresh(true)
+  }
+  if (picked.folder) {
+    await provider.assign(session, picked.folder)
+    return refresh(true)
+  }
 }
 
 const activate = async context => {
@@ -487,8 +741,11 @@ const activate = async context => {
     attach: ({ id }) => sessionById(id) && attach(sessionById(id), provider),
     openUrl: ({ url }) => vscode.env.openExternal(vscode.Uri.parse(url)),
     openTicket: ({ ticket }) => openJira({ group: { ticket } }),
-    startTask: ({ ticket }) => vscode.commands.executeCommand('claudeDeck.startTask', ticket && { group: { ticket } }),
-    newSession: () => vscode.commands.executeCommand('claudeDeck.newSession'),
+    newSession: ({ folder } = {}) => vscode.commands.executeCommand('claudeDeck.newSession', folder && { group: { ticket: folder } }),
+    newFolder: () => vscode.commands.executeCommand('claudeDeck.newFolder'),
+    renameFolder: ({ folder }) => vscode.commands.executeCommand('claudeDeck.renameFolder', { folder }),
+    removeFolder: ({ folder }) => provider.removeFolder(folder),
+    moveToFolder: ({ id }) => sessionById(id) && moveToFolder(sessionById(id), provider, refresh),
     refresh: () => refresh(true),
     shown: () => refresh(),
     rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('claudeDeck.rename', { session: sessionById(id) }),
@@ -534,9 +791,9 @@ const activate = async context => {
   }
 
   const notify = session => {
-    const name = withoutTicketSuffix(session.name, provider.pattern)
+    const name = withoutTicketSuffix(session.name, provider.pattern) || session.name
     vscode.window
-      .showWarningMessage(`${session.ticket ? `${session.ticket} ` : ''}${name} needs input`, 'Open')
+      .showWarningMessage(`${session.ticket ? `${session.ticket} · ` : ''}${name} needs input`, 'Open')
       .then(choice => choice && attach(session, provider))
   }
   let running
@@ -546,6 +803,7 @@ const activate = async context => {
       .then(blocked => {
         blocked.forEach(notify)
         updateStatusBar()
+        void syncTerminalTitles(provider)
       })
       .finally(() => (running = undefined)))
   // Sessions refresh while the view is hidden too, so a session needing input still notifies.
@@ -553,24 +811,30 @@ const activate = async context => {
   fs.mkdirSync(SESSIONS_DIR, { recursive: true })
   const watcher = fs.watch(SESSIONS_DIR, () => refresh())
   const openJira = async element => {
-    const ticket = element?.group?.ticket
+    const raw = element?.group?.ticket ?? element?.ticket
+    const ticket = folderTicket(raw, provider.pattern)
     if (!ticket) return
     const issueUrl = provider.issues[ticket]?.url
     if (issueUrl) return vscode.env.openExternal(vscode.Uri.parse(issueUrl))
-    if (!ticket.includes('#') && provider.env.JIRA_URL) {
-      return vscode.env.openExternal(vscode.Uri.parse(`${provider.env.JIRA_URL}/browse/${ticket}`))
-    }
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
     if (ticket.includes('#')) {
-      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
       const [repo, num] = ticket.startsWith('#') ? [undefined, ticket.slice(1)] : ticket.split('#')
       const args = ['issue', 'view', num, '--web']
       if (repo) args.push('-R', repo)
       await run(GH, args, undefined, { cwd }).catch(() => {})
+      return
     }
+    if (provider.env.JIRA_URL) {
+      return vscode.env.openExternal(vscode.Uri.parse(`${provider.env.JIRA_URL.replace(/\/$/, '')}/browse/${ticket}`))
+    }
+    await run(ACLI, ['jira', 'workitem', 'view', ticket, '--web'], undefined, { cwd }).catch(() =>
+      run(JIRA_CLI, ['open', ticket], undefined, { cwd }).catch(() => {}),
+    )
   }
   context.subscriptions.push(
     { dispose: () => clearInterval(timer) },
     { dispose: () => watcher.close() },
+    vscode.window.onDidChangeActiveTerminal(() => void syncTerminalTitles(provider)),
     vscode.workspace.onDidChangeConfiguration(e => e.affectsConfiguration('claudeDeck') && refresh(true)),
     vscode.commands.registerCommand('claudeDeck.focus', () => {
       const blocked = provider.sessions.find(s => s.state === 'blocked' && !provider.isHidden(s))
@@ -587,14 +851,40 @@ const activate = async context => {
       await rename(session, name, provider.pattern)
       refresh()
     }),
-    vscode.commands.registerCommand('claudeDeck.newSession', async () => {
-      newSession()
+    vscode.commands.registerCommand('claudeDeck.newFolder', async () => {
+      const input = (
+        await vscode.window.showInputBox({
+          title: 'New folder or ticket',
+          prompt: 'Enter a topic/project name (e.g. "Auth Refactor") or a ticket key (e.g. "PROJ-123" or "#42")',
+          placeHolder: 'Auth Refactor or PROJ-123',
+        })
+      )?.trim()
+      if (!input) return
+      await provider.addFolder(input)
+      refresh(true)
+    }),
+    vscode.commands.registerCommand('claudeDeck.renameFolder', async ({ folder } = {}) => {
+      if (!folder) return
+      const input = (
+        await vscode.window.showInputBox({
+          title: 'Rename folder',
+          value: folder,
+        })
+      )?.trim()
+      if (!input || input === folder) return
+      await provider.renameFolder(folder, input)
+      refresh(true)
+    }),
+    vscode.commands.registerCommand('claudeDeck.newSession', async element => {
+      const folder = element?.group?.ticket ?? (typeof element === 'string' ? element : undefined)
+      newSession(folder)
       // claude takes a moment to register itself.
-      setTimeout(() => refresh(), 3_000)
+      setTimeout(() => refresh(), 2_500)
     }),
     vscode.commands.registerCommand('claudeDeck.startTask', async element => {
-      await startTask(element, provider)
-      refresh(true)
+      const folder = element?.group?.ticket
+      newSession(folder)
+      setTimeout(() => refresh(), 2_500)
     }),
     vscode.commands.registerCommand('claudeDeck.hide', element => provider.setHidden(element.session, true)),
     vscode.commands.registerCommand('claudeDeck.show', element => provider.setHidden(element.session, false)),

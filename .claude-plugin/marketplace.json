@@ -7,7 +7,7 @@
     {
       "name": "deck",
       "source": "./plugin",
-      "description": "Records Claude Code sessions for the Claude Deck VS Code sidebar and adds a ticket workflow (start-task, finish-task, cleanup-worktrees)"
+      "description": "Silently names and groups Claude Code sessions into folders and tickets for the Claude Deck VS Code sidebar, with optional ticket workflow skills (start-task, finish-task, cleanup-worktrees)"
     }
   ]
 }

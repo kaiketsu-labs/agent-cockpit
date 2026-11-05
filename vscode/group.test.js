@@ -5,8 +5,13 @@ const assert = require('node:assert/strict')
 const {
   ticketPattern,
   firstTicket,
+  isTicketKey,
+  folderTicket,
+  normalizeFolder,
   withoutTicketSuffix,
   assignTicket,
+  encodeProjectPath,
+  customTitleLine,
   groupSessions,
   moveBefore,
   searchQueries,
@@ -40,24 +45,38 @@ test('with projects only their keys count, any case', () => {
   assert.equal(withoutTicketSuffix('Check nulls (PROJ-57)', proj), 'Check nulls')
 })
 
-test('assignTicket binds a session name to a new ticket or strips its ticket when unassigned', () => {
-  assert.equal(assignTicket('Explore auth flow', 'proj-42', proj), 'Explore auth flow (PROJ-42)')
-  assert.equal(assignTicket('Explore auth flow (PROJ-1)', 'PROJ-2', proj), 'Explore auth flow (PROJ-2)')
-  assert.equal(assignTicket('Explore auth flow (#10)', 'org/repo#12', anyKey), 'Explore auth flow (org/repo#12)')
-  assert.equal(assignTicket('Explore auth flow (PROJ-1)', undefined, anyKey), 'Explore auth flow')
+test('normalizeFolder and folderTicket distinguish free-form topic folders from ticket folders', () => {
+  assert.equal(isTicketKey('PROJ-42', proj), true)
+  assert.equal(isTicketKey('Auth Refactor', proj), false)
+  assert.equal(normalizeFolder('proj-42', proj), 'PROJ-42')
+  assert.equal(normalizeFolder('  Auth Refactor  ', proj), 'Auth Refactor')
+  assert.equal(folderTicket('PROJ-42', proj), 'PROJ-42')
+  assert.equal(folderTicket('PROJ-42 PDF Export', proj), 'PROJ-42')
+  assert.equal(folderTicket('Auth Refactor', proj), undefined)
+  assert.equal(assignTicket('Explore auth flow (PROJ-1)', 'PROJ-2', proj), 'Explore auth flow')
 })
 
-test('groups sort tickets and sessions alphabetically, unticketed last, whatever their status', () => {
-  const groups = groupSessions([
-    { id: 'a', name: 'zeta', state: 'working' },
-    { id: 'b', name: 'beta', state: 'done', ticket: 'PROJ-10' },
-    { id: 'c', name: 'Charlie', state: 'working', ticket: 'PROJ-9' },
-    { id: 'd', name: 'alpha', state: 'done', ticket: 'PROJ-9' },
-    { id: 'e', name: 'bravo', state: 'blocked', ticket: 'PROJ-9' },
-  ])
-  assert.deepEqual(groups.map(g => g.ticket), ['PROJ-9', 'PROJ-10', null])
+test('encodeProjectPath and customTitleLine match Claude Code JSONL format', () => {
+  assert.equal(encodeProjectPath('/Users/david/Developer/claude-deck'), '-Users-david-Developer-claude-deck')
+  assert.equal(customTitleLine('s1', 'Clean title'), '{"type":"custom-title","customTitle":"Clean title","sessionId":"s1"}\n')
+})
+
+test('groups sort folders/tickets and sessions alphabetically, including empty folders, and put ungrouped last', () => {
+  const groups = groupSessions(
+    [
+      { id: 'a', name: 'zeta', state: 'working' },
+      { id: 'b', name: 'beta', state: 'done', folder: 'PROJ-10' },
+      { id: 'c', name: 'Charlie', state: 'working', folder: 'Auth Refactor' },
+      { id: 'd', name: 'alpha', state: 'done', folder: 'Auth Refactor' },
+      { id: 'e', name: 'bravo', state: 'blocked', folder: 'Auth Refactor' },
+    ],
+    [],
+    { folders: ['Empty Folder'] },
+  )
+  assert.deepEqual(groups.map(g => g.ticket), ['Auth Refactor', 'Empty Folder', 'PROJ-10', null])
   assert.deepEqual(groups[0].sessions.map(s => s.id), ['d', 'e', 'c'])
   assert.deepEqual(groups[0].counts.map(c => c.label), ['needs input', 'working', 'done'])
+  assert.deepEqual(groups[1].sessions, [])
 })
 
 test('a manual order wins over the alphabet, unordered items follow alphabetically', () => {
@@ -131,7 +150,7 @@ test('a week without a turn or a closed ticket hides a session, a hand-set flag 
   assert.equal(isHidden({ state: 'blocked', updatedAt: 0 }, 10 * day, false), true)
 })
 
-test('only a ticket suffix binds a session to a ticket', () => {
+test('only a ticket suffix binds a session to a ticket when no folder is set', () => {
   assert.equal(ticketOf('Check nulls (proj-57)', proj), 'PROJ-57')
   assert.equal(ticketOf('compare with PROJ-1 approach', proj), undefined)
   assert.equal(ticketOf('Retry (OPS-1)', proj), undefined)
@@ -139,7 +158,7 @@ test('only a ticket suffix binds a session to a ticket', () => {
   assert.equal(ticketOf('Fix login (org/repo#42)', anyKey), 'org/repo#42')
 })
 
-test('sessions merge claude agents with the plugin files, keep ended interactive ones, drop deleted bg ones, and honor explicit file.ticket or worktree path', () => {
+test('sessions merge claude agents with plugin files, support free-form folders and tickets, and strip legacy suffixes', () => {
   const agents = [
     { id: 'job1', sessionId: 's1', name: 'bg job (PROJ-1)', state: 'working', startedAt: 1 },
     { sessionId: 's2', pid: 42, name: 'my-project', status: 'waiting', startedAt: 2, cwd: '/repo' },
@@ -147,19 +166,19 @@ test('sessions merge claude agents with the plugin files, keep ended interactive
   ]
   const files = [
     { sessionId: 's1', kind: 'bg', cwd: '/repo', startedAt: 1, lastTurnEndAt: 10 },
-    { sessionId: 's2', kind: 'interactive', cwd: '/repo', startedAt: 2, prompt: 'fix the nulls', ticket: 'proj-99' },
+    { sessionId: 's2', kind: 'interactive', cwd: '/repo', startedAt: 2, prompt: 'fix the nulls', folder: 'Auth Refactor' },
     { sessionId: 's3', kind: 'interactive', cwd: '/old', startedAt: 3, prompt: 'p', name: 'Old work (PROJ-2)', lastTurnEndAt: 30 },
     { sessionId: 's4', kind: 'bg', cwd: '/repo', startedAt: 4, name: 'deleted job' },
     { sessionId: 's5', kind: 'interactive', cwd: '/repo', startedAt: 5 },
   ]
   const sessions = mergeSessions(agents, files, proj)
   assert.deepEqual(
-    sessions.map(({ id, name, state, ticket, updatedAt }) => ({ id, name, state, ticket, updatedAt })),
+    sessions.map(({ id, name, state, folder, ticket, updatedAt }) => ({ id, name, state, folder, ticket, updatedAt })),
     [
-      { id: 'job1', name: 'bg job (PROJ-1)', state: 'working', ticket: 'PROJ-1', updatedAt: 10 },
-      { id: 's2', name: 'fix the nulls', state: 'blocked', ticket: 'PROJ-99', updatedAt: 2 },
-      { id: 's6', name: 'worktree-session', state: 'idle', ticket: 'PROJ-77', updatedAt: 6 },
-      { id: 's3', name: 'Old work (PROJ-2)', state: 'done', ticket: 'PROJ-2', updatedAt: 30 },
+      { id: 'job1', name: 'bg job', state: 'working', folder: 'PROJ-1', ticket: 'PROJ-1', updatedAt: 10 },
+      { id: 's2', name: 'fix the nulls', state: 'blocked', folder: 'Auth Refactor', ticket: 'Auth Refactor', updatedAt: 2 },
+      { id: 's6', name: 'worktree-session', state: 'idle', folder: 'PROJ-77', ticket: 'PROJ-77', updatedAt: 6 },
+      { id: 's3', name: 'Old work', state: 'done', folder: 'PROJ-2', ticket: 'PROJ-2', updatedAt: 30 },
     ],
   )
   assert.equal(sessions[3].ended, true)
@@ -190,24 +209,29 @@ test('the cache countdown runs from the last transcript write and stops at zero'
   assert.equal(clock(65_400), '1:06')
 })
 
-test('inbox lists sessions that need the person first and one card per ticket', () => {
-  const session = (id, state, ticket) => ({ id, name: `work ${id}${ticket ? ` (${ticket})` : ''}`, ticket, state, updatedAt: 0 })
-  const sessions = [session('a', 'working', 'PROJ-1'), session('b', 'blocked', 'PROJ-1'), session('c', 'idle', 'PROJ-2'), session('d', 'failed')]
+test('inbox lists sessions that need the person first and one card per folder or ticket (with PRs and Jira status on ticket folders)', () => {
+  const session = (id, state, folder) => ({ id, name: `work ${id}`, folder, ticket: folder, state, updatedAt: 0 })
+  const sessions = [
+    session('a', 'working', 'PROJ-1'),
+    session('b', 'blocked', 'PROJ-1'),
+    session('c', 'idle', 'Auth Refactor'),
+    session('d', 'failed'),
+  ]
   const model = inboxModel({
     groups: groupSessions(sessions),
     hidden: [],
     prs: { 'PROJ-1': [{ repo: 'r', number: 3 }] },
-    issues: { 'PROJ-2': { category: 'done', summary: 'Two', status: 'Done' } },
-    titles: { 'PROJ-1': 'One' },
+    issues: { 'PROJ-1': { category: 'indeterminate', summary: 'One Jira', status: 'In Progress' } },
+    titles: { 'Auth Refactor': 'OAuth2 Cleanup' },
     pattern: proj,
     cacheTtl: 300_000,
     now: 60_000,
   })
   assert.deepEqual(model.needs.map(row => row.id), ['b', 'd'])
-  assert.deepEqual(model.tickets.map(t => [t.key, t.title, t.isBusy, t.prs.length]), [
-    ['PROJ-1', 'One', true, 1],
-    ['PROJ-2', 'Two', false, 0],
+  assert.deepEqual(model.tickets.map(t => [t.key, t.isTicket, t.title, t.isBusy, t.prs.length]), [
+    ['Auth Refactor', false, 'OAuth2 Cleanup', false, 0],
+    ['PROJ-1', true, 'One Jira', true, 1],
   ])
-  assert.equal(model.tickets[0].sessions[0].name, 'work a')
+  assert.equal(model.tickets[1].sessions[0].name, 'work a')
   assert.deepEqual(model.loose.map(row => row.id), ['d'])
 })

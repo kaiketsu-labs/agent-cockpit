@@ -31,16 +31,25 @@ const ticketPattern = (projects = [], customPattern = '') => {
   if (customPattern) {
     return {
       key: new RegExp(customPattern),
+      exact: new RegExp(`^(?:${customPattern})$`),
       suffix: new RegExp(`\\s*\\((${customPattern})\\)\\s*$`),
     }
   }
   if (projects.length > 0) {
     const key = `(?:${projects.join('|')})-\\d+`
-    return { key: new RegExp(`\\b${key}\\b`, 'i'), suffix: new RegExp(`\\s*\\((${key})\\)\\s*$`, 'i') }
+    return {
+      key: new RegExp(`\\b${key}\\b`, 'i'),
+      exact: new RegExp(`^${key}$`, 'i'),
+      suffix: new RegExp(`\\s*\\((${key})\\)\\s*$`, 'i'),
+    }
   }
   const key = '(?:\\b[A-Z][A-Z0-9]+-\\d+\\b|\\b[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+#\\d+\\b|(?<![A-Za-z0-9_.-])#\\d+\\b)'
   const suffixKey = '(?:[A-Z][A-Z0-9]+-\\d+|(?:[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+)?#\\d+)'
-  return { key: new RegExp(key), suffix: new RegExp(`\\s*\\((${suffixKey})\\)\\s*$`) }
+  return {
+    key: new RegExp(key),
+    exact: new RegExp(`^${suffixKey}$`),
+    suffix: new RegExp(`\\s*\\((${suffixKey})\\)\\s*$`),
+  }
 }
 
 const firstTicket = (texts, pattern) => {
@@ -51,13 +60,27 @@ const firstTicket = (texts, pattern) => {
   return undefined
 }
 
-const withoutTicketSuffix = (name, pattern) => name.replace(pattern.suffix, '')
+const isTicketKey = (folder, pattern = ticketPattern()) =>
+  typeof folder === 'string' && Boolean(folder.trim()) && (pattern.exact ?? pattern.key).test(folder.trim())
 
-const assignTicket = (name, ticket, pattern) => {
-  const base = withoutTicketSuffix(name, pattern).trim()
-  const key = ticket ? normalizeTicket(ticket) : ''
-  return key ? `${base} (${key})` : base
+const folderTicket = (folder, pattern = ticketPattern()) =>
+  typeof folder === 'string' ? firstTicket([folder], pattern) : undefined
+
+const normalizeFolder = (folder, pattern = ticketPattern()) => {
+  if (!folder || typeof folder !== 'string') return undefined
+  const trimmed = folder.trim()
+  if (!trimmed) return undefined
+  return isTicketKey(trimmed, pattern) ? normalizeTicket(trimmed) : trimmed
 }
+
+const withoutTicketSuffix = (name, pattern) => (name ? name.replace(pattern.suffix, '').trim() : '')
+
+const assignTicket = (name, _folder, pattern) => withoutTicketSuffix(name, pattern)
+
+// Encodes an absolute working directory path the way Claude Code names directories under ~/.claude/projects/.
+const encodeProjectPath = cwd => String(cwd ?? '').replace(/[^a-zA-Z0-9-]/g, '-')
+
+const customTitleLine = (sessionId, customTitle) => `${JSON.stringify({ type: 'custom-title', customTitle, sessionId })}\n`
 
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare
 
@@ -82,13 +105,16 @@ const moveBefore = (order, siblings, moved, target) => {
 const groupSessions = (sessions, order = [], options = {}) => {
   const opts = Array.isArray(order) ? options : order
   const orderList = Array.isArray(order) ? order : []
-  const { unticketedSort } = opts
-  const byTicket = new Map()
-  for (const session of sessions) {
-    const key = session.ticket ?? null
-    byTicket.set(key, [...(byTicket.get(key) ?? []), session])
+  const { unticketedSort, folders = [] } = opts
+  const byFolder = new Map()
+  for (const folder of folders) {
+    if (folder) byFolder.set(folder, [])
   }
-  const groups = [...byTicket].map(([ticket, members]) => {
+  for (const session of sessions) {
+    const key = session.folder ?? session.ticket ?? null
+    byFolder.set(key, [...(byFolder.get(key) ?? []), session])
+  }
+  const groups = [...byFolder].map(([ticket, members]) => {
     const counts = Object.entries(STATUS)
       .map(([state, { label }]) => ({ label, count: members.filter(s => s.state === state).length }))
       .filter(({ count }) => count > 0)
@@ -98,13 +124,14 @@ const groupSessions = (sessions, order = [], options = {}) => {
         : sortByOrder(members, s => s.id, s => s.name, orderList)
     return {
       ticket,
+      folder: ticket,
       sessions: sorted,
       counts,
       isActive: members.some(s => s.state !== 'done'),
     }
   })
-  const ticketed = groups.filter(group => group.ticket !== null)
-  return [...sortByOrder(ticketed, g => g.ticket, g => g.ticket, orderList), ...groups.filter(group => group.ticket === null)]
+  const grouped = groups.filter(group => group.ticket !== null)
+  return [...sortByOrder(grouped, g => g.ticket, g => g.ticket, orderList), ...groups.filter(group => group.ticket === null)]
 }
 
 // GitHub search allows five OR operators, so six keys a query. Titles only: release PRs list every key in their body.
@@ -164,37 +191,44 @@ const worktreeTicket = (cwd, pattern) => {
 // A bg session that left claude agents was deleted with claude rm; an interactive one ended and can be resumed.
 const mergeSessions = (agents, files, pattern) => {
   const fileOf = new Map(files.map(file => [file.sessionId, file]))
-  const withTicket = (session, fileTicket) => ({
-    ...session,
-    ticket:
-      ticketOf(session.name, pattern) ??
-      (fileTicket ? normalizeTicket(fileTicket) : undefined) ??
-      worktreeTicket(session.cwd, pattern),
-  })
+  const withFolder = (session, fileFolder) => {
+    const resolved =
+      fileFolder === null
+        ? null
+        : (normalizeFolder(fileFolder, pattern) ??
+           ticketOf(session.name, pattern) ??
+           worktreeTicket(session.cwd, pattern))
+    return {
+      ...session,
+      name: withoutTicketSuffix(session.name, pattern) || session.name,
+      folder: resolved,
+      ticket: resolved,
+    }
+  }
   const live = agents.map(agent => {
     const file = fileOf.get(agent.sessionId) ?? {}
     const isBg = agent.id !== undefined
-    return withTicket(
+    return withFolder(
       {
         id: isBg ? agent.id : agent.sessionId,
         sessionId: agent.sessionId,
         pid: isBg ? undefined : agent.pid,
         name: (isBg ? file.name || agent.name : file.name || file.prompt || agent.name) || agent.sessionId.slice(0, 8),
+        hasCustomName: Boolean(file.name),
         state: isBg ? agent.state : interactiveState(agent.status),
-        detail: file.detail,
         updatedAt: file.lastTurnEndAt ?? agent.startedAt ?? 0,
         lastWriteAt: file.lastTurnEndAt,
         cwd: agent.cwd ?? file.cwd,
         interactive: !isBg,
       },
-      file.ticket,
+      file.folder ?? file.ticket,
     )
   })
   const liveIds = new Set(agents.map(agent => agent.sessionId))
   const ended = files
     .filter(file => file.kind === 'interactive' && !liveIds.has(file.sessionId) && (file.name || file.prompt))
     .map(file =>
-      withTicket(
+      withFolder(
         {
           id: file.sessionId,
           sessionId: file.sessionId,
@@ -204,7 +238,7 @@ const mergeSessions = (agents, files, pattern) => {
           cwd: file.cwd,
           ended: true,
         },
-        file.ticket,
+        file.folder ?? file.ticket,
       ),
     )
   return [...live, ...ended]
@@ -235,45 +269,55 @@ const IS_BUSY = new Set(['blocked', 'failed', 'working'])
 
 const inboxRow = (session, { pattern, now, cacheTtl, isHidden }) => {
   const status = STATUS[session.state] ?? { label: session.state }
-  const isLive = session.state === 'working' || session.state === 'blocked'
   const left = session.state !== 'working' && session.lastWriteAt ? cacheLeft(session.lastWriteAt, cacheTtl, now) : 0
+  const folder = session.folder ?? session.ticket ?? null
+  const ageStr = age(now - session.updatedAt)
   return {
     id: session.id,
-    name: withoutTicketSuffix(session.name, pattern),
-    ticket: session.ticket ?? null,
+    name: withoutTicketSuffix(session.name, pattern) || session.name,
+    folder,
+    ticket: folder,
     state: session.state,
     stateLabel: status.label,
-    activity: isLive && session.detail ? session.detail : age(now - session.updatedAt),
+    age: ageStr,
+    activity: ageStr,
     cache: left > 0 ? clock(left) : null,
+    cachePct: left > 0 && cacheTtl > 0 ? Math.min(100, Math.round((left / cacheTtl) * 100)) : 0,
     isHidden,
-    isRenaming: session.isRenaming === true,
   }
 }
 
-// What the Inbox webview draws: sessions that need the person first, then one card per ticket.
+// What the Inbox webview draws: sessions that need the person first, then one card per folder/ticket.
 const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now }) => {
   const options = { pattern, now, cacheTtl }
   const card = (group, isHidden) => {
-    const issue = issues[group.ticket]
+    const key = group.ticket
+    const ticketKey = folderTicket(key, pattern)
+    const isTicket = Boolean(ticketKey)
+    const issue = issues[key] ?? (ticketKey ? issues[ticketKey] : undefined)
     const sessions = group.sessions.map(session => inboxRow(session, { ...options, isHidden }))
+    const cardPrs = isHidden ? [] : (prs[key] ?? (ticketKey ? prs[ticketKey] : undefined) ?? [])
     return {
-      key: group.ticket,
-      title: titles[group.ticket] ?? issue?.summary ?? '',
+      key,
+      ticketKey: ticketKey ?? null,
+      isTicket,
+      title: titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? issue?.summary ?? '',
       category: issue?.category ?? null,
       status: issue?.status ?? null,
       sessions,
-      prs: isHidden ? [] : (prs[group.ticket] ?? []),
+      prs: cardPrs,
       isBusy: sessions.some(row => IS_BUSY.has(row.state)),
     }
   }
   const active = groups.filter(group => group.ticket !== null).map(group => card(group, false))
   const loose = (groups.find(group => group.ticket === null)?.sessions ?? []).map(session => inboxRow(session, { ...options, isHidden: false }))
-  const needs = [...active.flatMap(ticket => ticket.sessions), ...loose]
+  const needs = [...active.flatMap(folder => folder.sessions), ...loose]
     .filter(row => NEEDS_YOU.has(row.state))
     .sort((a, b) => STATUS[a.state].rank - STATUS[b.state].rank)
   return {
     needs,
     tickets: active,
+    folders: active,
     loose,
     history: hidden.map(group => card(group, true)),
   }
@@ -282,10 +326,15 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
 module.exports = {
   STATUS,
   normalizeTicket,
+  normalizeFolder,
+  isTicketKey,
+  folderTicket,
   ticketPattern,
   firstTicket,
   withoutTicketSuffix,
   assignTicket,
+  encodeProjectPath,
+  customTitleLine,
   sortByOrder,
   moveBefore,
   groupSessions,

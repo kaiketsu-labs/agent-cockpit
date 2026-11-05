@@ -4,25 +4,29 @@ Instructions and architectural overview for AI coding agents working on **Claude
 
 ## Project Overview
 
-Claude Deck consists of two halves that communicate asynchronously via JSON files in `~/.claude/deck/`:
+Claude Deck consists of two halves that communicate asynchronously via JSON files in `~/.claude/deck/` and Claude Code's native JSONL transcripts in `~/.claude/projects/`:
 
 1. **Claude Code Plugin (`plugin/`)** — Named `deck`. Runs inside each Claude Code session:
-   - [`plugin/hooks/register.tsx`](plugin/hooks/register.tsx) & [`plugin/hooks/group.ts`](plugin/hooks/group.ts): Session lifecycle hooks (`session.start`, `prompt.submit`, `tool.call`, `tool.result`, `turn.complete`, `session.end`) and MCP tools (`name_session`, `set_ticket_titles`).
+   - [`plugin/hooks/register.tsx`](plugin/hooks/register.tsx) & [`plugin/hooks/group.ts`](plugin/hooks/group.ts): Session lifecycle hooks (`session.start`, `prompt.submit`, `tool.call`, `turn.complete`, `session.end`), silent background session naming & folder classification via `$.model.complete({ model: 'haiku' })` (with `$.model.fork` fallback), zero-cost regex ticket detection from prompts and CLI commands (`acli`, `jira`, `gh`, `git checkout`), direct `custom-title` JSONL writes, and MCP tools (`name_session`, `set_ticket_titles`).
    - [`plugin/skills/`](plugin/skills/): Optional companion skills (`start-task`, `finish-task`, `cleanup-worktrees`).
    - [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) & [`plugin/.claude-plugin/plugin.json`](plugin/.claude-plugin/plugin.json): Claude Code plugin manifests.
 
-2. **VS Code Extension (`vscode/`)** — Named `kaiketsu-labs.claude-deck`. Renders the sidebar and status bar:
-   - [`vscode/extension.js`](vscode/extension.js): VS Code activation, `TreeDataProvider`, status bar item, file watchers on `~/.claude/deck/`, interactive terminal discovery (`ps -o ppid=` on macOS, `/proc/<pid>/stat` on Linux), and issue/PR polling (`Jira`, `GitHub Issues`, custom `trackerCommand`, `gh pr list`).
-   - [`vscode/group.js`](vscode/group.js): Pure grouping, ticket extraction (`PROJ-123`, `#42`, `owner/repo#42`, or custom regex), sorting, and state normalization logic.
+2. **VS Code Extension (`vscode/`)** — Named `kaiketsu-labs.claude-deck`. Renders the webview sidebar and status bar:
+   - [`vscode/extension.js`](vscode/extension.js): VS Code activation, `WebviewViewProvider`, status bar item, file watchers on `~/.claude/deck/`, interactive terminal discovery (`ps -o ppid=` on macOS, `/proc/<pid>/stat` on Linux), automatic VS Code terminal tab renaming (`workbench.action.terminal.renameWithArg`), folder & session management commands (`newFolder`, `renameFolder`, `moveToFolder`, `rename`), and issue/PR polling (3-stage Jira cascade: REST API -> `acli` -> `jira-cli`; GitHub Issues & PRs via `gh`; custom `trackerCommand`).
+   - [`vscode/inbox.js`](vscode/inbox.js): Self-contained Webview UI rendering top-level project/ticket folder cards, standalone ungrouped session cards, live status orbs, prompt cache progress bars, and drag-and-drop ordering.
+   - [`vscode/group.js`](vscode/group.js): Pure grouping, folder & ticket normalization (`normalizeFolder`, `normalizeTicket`, `folderOf`, `ticketOf`, `folderTicket`), JSONL `custom-title` helpers (`encodeProjectPath`, `customTitleLine`), sorting, and state normalization logic.
    - [`vscode/package.py`](vscode/package.py): Zero-dependency Python script that packages the extension into a `.vsix` archive.
 
 ## Key Design Constraints
 
-- **Zero npm dependencies in `vscode/`**: Keep the VS Code extension in plain CommonJS JavaScript (`extension.js`, `group.js`) using only built-in Node.js modules and the `vscode` API. Do not add a build step or `node_modules` to `vscode/`.
-- **Keep `group.ts` and `group.js` aligned**: Ticket parsing (`normalizeTicket`, `ticketOf`, `nameTicket`) and session state logic live in both [`plugin/hooks/group.ts`](plugin/hooks/group.ts) and [`vscode/group.js`](vscode/group.js). When updating ticket recognition rules or session schema fields, update both and their respective test suites.
-- **Non-intrusive `name_session`**: Calling `mcp__deck__name_session` writes `name` and `ticket` immediately to `~/.claude/deck/sessions/<id>.json` and queues `/rename` for `turn.complete`. Never abort the turn (`endTurn`) or inject synthetic resume prompts.
-- **Silent unconfigured trackers**: In `"auto"` mode (`claudeDeck.tracker` and `claudeDeck.pullRequests`), missing `JIRA_URL`/`JIRA_TOKEN` or unauthenticated `gh` CLI must fail silently without showing error banners in the sidebar.
-- **No scope creep**: Keep the plugin focused on session tracking, naming, and ticket grouping. Do not add generic security scanners, file-locking guards, or greedy regex extraction on normal conversation prompts.
+- **Zero npm dependencies in `vscode/`**: Keep the VS Code extension in plain CommonJS JavaScript (`extension.js`, `inbox.js`, `group.js`) using only built-in Node.js modules and the `vscode` API. Do not add a build step or `node_modules` to `vscode/`.
+- **Keep `group.ts` and `group.js` aligned**: Folder and ticket parsing (`normalizeFolder`, `normalizeTicket`, `folderOf`, `ticketOf`, `extractTicket`, `encodeProjectPath`, `customTitleLine`) and session state logic live in both [`plugin/hooks/group.ts`](plugin/hooks/group.ts) and [`vscode/group.js`](vscode/group.js). When updating folder/ticket recognition rules or session schema fields, update both and their respective test suites.
+- **Silent, non-intrusive session naming**:
+  - Never mutate `e.text` in `prompt.submit` (doing so alters the user's visible prompt in the terminal).
+  - Automatic naming runs silently in the background via `$.clock.after(10, ...)` and `$.model.complete({ model: 'haiku' })`, triggered once when a session is unnamed or once again when a ticket is newly bound (`ticketNewlyBound`).
+  - Both plugin and sidebar renames write `name`, `folder`, and `ticket` directly to `~/.claude/deck/sessions/<id>.json` and append a `{"type":"custom-title","customTitle":...,"sessionId":...}` line to `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`.
+- **Silent unconfigured trackers**: In `"auto"` mode (`claudeDeck.tracker` and `claudeDeck.pullRequests`), missing `JIRA_URL`/`JIRA_TOKEN` or unauthenticated `gh` / `acli` / `jira` CLIs must fail silently without showing error banners in the sidebar.
+- **No scope creep**: Keep the plugin focused on session tracking, naming, and folder/ticket grouping.
 
 ## Testing & Verification
 
