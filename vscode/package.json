@@ -10,9 +10,8 @@
     "theme": "dark"
   },
   "categories": [
-    "AI",
-    "Chat",
-    "Productivity"
+    "Machine Learning",
+    "Other"
   ],
   "keywords": [
     "agent",
@@ -20,6 +19,9 @@
     "cockpit",
     "claude",
     "claude code",
+    "ai",
+    "chat",
+    "productivity",
     "terminal",
     "session manager",
     "worktrees",
