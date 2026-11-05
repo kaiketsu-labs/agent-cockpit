@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.1...v0.5.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **vscode:** use valid VS Code Marketplace categories ([#23](https://github.com/kaiketsu-labs/agent-cockpit/issues/23)) ([30e8f79](https://github.com/kaiketsu-labs/agent-cockpit/commit/30e8f79f8aaebd282f52e3997833569c55a98336))
+
 ## [0.5.1](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.0...v0.5.1) (2026-11-05)
 
 
