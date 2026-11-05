@@ -2,7 +2,7 @@
   "name": "claude-deck",
   "displayName": "Claude Deck",
   "description": "Claude Code sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "kaiketsu-labs",
   "license": "MIT",
   "repository": {
@@ -38,7 +38,13 @@
       "properties": {
         "claudeDeck.tracker": {
           "type": "string",
-          "enum": ["auto", "jira", "github", "command", "none"],
+          "enum": [
+            "auto",
+            "jira",
+            "github",
+            "command",
+            "none"
+          ],
           "default": "auto",
           "description": "Issue tracker integration for ticket folders. 'auto' queries Jira for PROJ-123 keys (when JIRA_URL/JIRA_TOKEN are set) and GitHub Issues for #42 / owner/repo#42 keys (when gh is available), without showing error banners when unconfigured."
         },
@@ -49,7 +55,11 @@
         },
         "claudeDeck.pullRequests": {
           "type": "string",
-          "enum": ["auto", "github", "none"],
+          "enum": [
+            "auto",
+            "github",
+            "none"
+          ],
           "default": "auto",
           "description": "Pull request lookup mode for ticket folders. 'auto' queries GitHub via gh when available and stays silent when unconfigured; 'none' disables PR lookups."
         },
