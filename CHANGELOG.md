@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/kaiketsu-labs/claude-deck/compare/v0.2.0...v0.3.0) (2026-11-05)
+
+
+### Features
+
+* add drag-and-drop session reordering and in-place waiting focus ([#4](https://github.com/kaiketsu-labs/claude-deck/issues/4)) ([695adca](https://github.com/kaiketsu-labs/claude-deck/commit/695adca6882f7c58e18335b89be584c2f60af288))
+* add prompt cache keepalive and context cost tracking ([#1](https://github.com/kaiketsu-labs/claude-deck/issues/1)) ([d1ad0a7](https://github.com/kaiketsu-labs/claude-deck/commit/d1ad0a7a80b74af889cddfa3ad3e1e42843978d3))
+* streamline inbox header and folder badges for compact sidebar ([#6](https://github.com/kaiketsu-labs/claude-deck/issues/6)) ([78e1deb](https://github.com/kaiketsu-labs/claude-deck/commit/78e1deb48fb64628d4da5577d6467cc0aa4a7fb8))
+
+
+### Bug Fixes
+
+* stabilize session naming and focus on overarching goal ([#3](https://github.com/kaiketsu-labs/claude-deck/issues/3)) ([e5a1f77](https://github.com/kaiketsu-labs/claude-deck/commit/e5a1f7799d0bcb408bbf20e551c624cfa5c0e9d2))
+
 ## [0.2.0](https://github.com/kaiketsu-labs/claude-deck/compare/v0.1.0...v0.2.0) (2026-11-05)
 
 
