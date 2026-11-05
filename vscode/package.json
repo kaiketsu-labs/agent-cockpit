@@ -2,7 +2,7 @@
   "name": "agent-cockpit",
   "displayName": "Agent Cockpit",
   "description": "Coding agent sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "kaiketsu-labs",
   "icon": "media/icon.png",
   "galleryBanner": {
