@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.3](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.2...v0.5.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* use absolute raw URLs and PNG for marketplace images ([#25](https://github.com/kaiketsu-labs/agent-cockpit/issues/25)) ([0efcbd4](https://github.com/kaiketsu-labs/agent-cockpit/commit/0efcbd48f12fa24c017204412f692d3a101bfd38))
+
+## [0.5.2](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.1...v0.5.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **vscode:** use valid VS Code Marketplace categories ([#23](https://github.com/kaiketsu-labs/agent-cockpit/issues/23)) ([30e8f79](https://github.com/kaiketsu-labs/agent-cockpit/commit/30e8f79f8aaebd282f52e3997833569c55a98336))
+
+## [0.5.1](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.0...v0.5.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **vscode:** add GalleryFlags Public and metadata to VSIX manifest ([#19](https://github.com/kaiketsu-labs/agent-cockpit/issues/19)) ([7d14487](https://github.com/kaiketsu-labs/agent-cockpit/commit/7d1448739154211c5e05835692903be8ab6932f7))
+
 ## [0.5.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.4.3...v0.5.0) (2026-11-05)
 
 

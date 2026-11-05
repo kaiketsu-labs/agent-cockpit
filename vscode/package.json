@@ -2,7 +2,7 @@
   "name": "agent-cockpit",
   "displayName": "Agent Cockpit",
   "description": "Coding agent sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
-  "version": "0.5.0",
+  "version": "0.5.3",
   "publisher": "kaiketsu-labs",
   "icon": "media/icon.png",
   "galleryBanner": {
@@ -10,9 +10,8 @@
     "theme": "dark"
   },
   "categories": [
-    "AI",
-    "Chat",
-    "Productivity"
+    "Machine Learning",
+    "Other"
   ],
   "keywords": [
     "agent",
@@ -20,6 +19,9 @@
     "cockpit",
     "claude",
     "claude code",
+    "ai",
+    "chat",
+    "productivity",
     "terminal",
     "session manager",
     "worktrees",
