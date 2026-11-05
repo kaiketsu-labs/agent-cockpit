@@ -64,6 +64,7 @@ You don't need to change how you use Claude Code or memorize slash commands:
 | ⏱️ **Prompt cache countdown** | Tracks each session's 5m / 1h prompt cache TTL with a countdown badge (`⚡ 4:12`) and micro progress bar so you can reply before a warm cache goes cold. |
 | ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Agent Cockpit pings the session prefix before cache expiry so you never lose your warm cache while switching tasks or stepping away. |
 | 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and open PRs via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
+| 🎯 **Scoped PR & issue lookup** | Automatically scopes GitHub searches to your repository or organization (`agentCockpit.githubOrg`) so you never get false matches from unrelated public repositories. Click the `⚙️` gear icon to instantly toggle scope between Organization, specific Repositories, or Disabled. |
 | 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use inline hover actions to rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
 
 ## Install
@@ -160,6 +161,7 @@ All actions are available directly from the sidebar or via the VS Code Command P
 | `Agent Cockpit: New Session` | Opens a new interactive Claude Code terminal in the editor area (optionally pre-bound to a folder). |
 | `Agent Cockpit: New Folder or Ticket` | Creates a custom topic folder (e.g. `Auth Refactor`) or pins a ticket folder (e.g. `PROJ-123`, `#42`). |
 | `Agent Cockpit: Rename Folder` | Renames a folder and migrates all assigned sessions to the new folder name. |
+| `Agent Cockpit: Configure GitHub PR Search Scope` | Configures GitHub pull request search scope (Organization, specific Repositories, or Disabled) via interactive QuickPick. |
 | `Agent Cockpit: Toggle Keep Warm (Prompt Cache Keepalive)` | Toggles automatic prompt cache keepalive for a session so warm cache stays alive while switching tasks. |
 | `Agent Cockpit: Refresh` | Forces an immediate refresh of sessions, tracker statuses, and open pull requests. |
 
@@ -182,6 +184,8 @@ Configure Agent Cockpit via **VS Code Settings** (`agentCockpit.*`) or via the `
 | `agentCockpit.tracker` | — | `"auto"` | `"auto"` (Jira for `PROJ-123` via REST API → `acli` → `jira-cli`, GitHub Issues for `#42` / `owner/repo#42` via `gh`, silent when unconfigured), `"jira"`, `"github"`, `"command"`, or `"none"`. |
 | `agentCockpit.trackerCommand` | `COCKPIT_TRACKER_COMMAND` (or `DECK_TRACKER_COMMAND`) | `""` | Shell command for `"command"` mode. Receives a JSON array of keys on `stdin` and outputs `{ "KEY": { "status", "category", "summary", "url" } }`. |
 | `agentCockpit.pullRequests` | — | `"auto"` | `"auto"` (queries GitHub via `gh` when available, silent when unconfigured), `"github"`, or `"none"`. |
+| `agentCockpit.githubOrg` | — | `""` | GitHub organization (e.g. `"kaiketsu-labs"`) to scope pull request searches to enterprise-wide in a single API call. |
+| `agentCockpit.githubRepositories` | — | `[]` | Specific GitHub repositories (array of `"owner/repo"` strings) to search for pull requests when scoping searches without an organization. |
 | `agentCockpit.ticketProjects` | `TICKET_PROJECTS` | `""` | Comma-separated project keys, e.g. `PROJ,OPS`. Narrows Jira-style keys (case-insensitive). Default: any `ABC-123` or `#42` / `owner/repo#42` key. |
 | `agentCockpit.ticketPattern` | — | `""` | Custom regular expression override for matching ticket keys. |
 | `agentCockpit.closeTerminalOnArchive` | — | `true` | Automatically close the associated VS Code terminal tab when archiving a session (moving to history). |

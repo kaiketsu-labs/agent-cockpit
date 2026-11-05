@@ -529,6 +529,7 @@ h2.toggle:hover {
 .ico.ticket.t-done { color: var(--vscode-charts-green, #89d185); }
 .ico.pr { color: var(--vscode-charts-green, #89d185); }
 .ico.pr.draft { color: var(--vscode-disabledForeground); }
+.ico.gear { fill: currentColor; stroke: none; fill-rule: evenodd; }
 .ico.chev { width: 14px; height: 14px; stroke-width: 1.8; color: var(--vscode-descriptionForeground); transition: transform 0.14s ease; }
 .ico.chev.open { transform: rotate(90deg); }
 
