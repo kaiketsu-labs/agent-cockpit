@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/kaiketsu-labs/claude-deck/compare/v0.4.2...v0.4.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **vscode:** rename package identifier to kaiketsu-claude-deck to avoid marketplace collision ([9946ccc](https://github.com/kaiketsu-labs/claude-deck/commit/9946cccffc76fff2bd6c72c04c887cac04bd2a79))
+
 ## [0.4.2](https://github.com/kaiketsu-labs/claude-deck/compare/v0.4.1...v0.4.2) (2026-11-05)
 
 
