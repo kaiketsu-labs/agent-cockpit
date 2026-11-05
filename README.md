@@ -68,13 +68,34 @@ You don't need to change how you use Claude Code or memorize slash commands:
 
 ## Install
 
+> [!TIP]
+> **🤖 Ask your AI agent to install it for you**
+>
+> Paste this prompt into Claude Code, Cursor, Windsurf, or your terminal agent:
+>
+> ```text
+> Install Claude Deck:
+> 1. Run: claude plugin marketplace add kaiketsu-labs/claude-deck && claude plugin install deck@claude-deck
+> 2. Download and install the latest VS Code extension from https://github.com/kaiketsu-labs/claude-deck/releases/latest/download/claude-deck.vsix using `code --install-extension` (or `cursor` / `windsurf`).
+> ```
+>
+> Or run the one-line installer in your terminal:
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/kaiketsu-labs/claude-deck/main/install.sh | bash
+> ```
+
 ### 1. Install the Claude Code plugin
 
-Inside Claude Code, add the marketplace and install the plugin:
-
+**In Claude Code (interactive session):**
 ```text
 /plugin marketplace add kaiketsu-labs/claude-deck
 /plugin install deck@claude-deck
+```
+
+**Or from your terminal / agent CLI:**
+```bash
+claude plugin marketplace add kaiketsu-labs/claude-deck
+claude plugin install deck@claude-deck
 ```
 
 <details>
@@ -94,7 +115,14 @@ Add `CLAUDE_CODE_PLUGIN_DIRS` to the `env` block of `~/.claude/settings.json`:
 ### 2. Install the VS Code extension
 
 <!-- x-release-please-start-version -->
-Download `claude-deck-0.3.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
+Download and install `claude-deck-0.3.0.vsix` in one command:
+
+```bash
+# Downloads and installs into VS Code (replace 'code' with 'cursor' or 'windsurf' if preferred)
+curl -fsSL https://github.com/kaiketsu-labs/claude-deck/releases/latest/download/claude-deck.vsix -o /tmp/claude-deck.vsix && code --install-extension /tmp/claude-deck.vsix --force
+```
+
+Or manually download `claude-deck-0.3.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/claude-deck/releases/latest) and install it:
 
 ```bash
 code --install-extension claude-deck-0.3.0.vsix --force
