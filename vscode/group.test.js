@@ -390,7 +390,6 @@ test('inbox lists sessions that need the person first and one card per folder or
   })
   assert.deepEqual(model.needs.map(row => row.id), ['b', 'd'])
   assert.equal(model.needs[0].cacheExpiresAt, 350_000)
-  assert.equal(model.needs[0].cacheTtl, 300_000)
   assert.deepEqual(model.tickets.map(t => [t.key, t.isTicket, t.title, t.isBusy, t.prs.length]), [
     ['Auth Refactor', false, '', false, 0],
     ['PROJ-1', true, 'One Jira', true, 1],

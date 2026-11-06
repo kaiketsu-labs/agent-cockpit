@@ -431,7 +431,7 @@ h2.toggle:hover {
   color: var(--vscode-descriptionForeground);
 }
 
-/* Cache TTL micro-bar & badge */
+/* Cache TTL badge */
 .cache-pill {
   display: inline-flex;
   align-items: center;
@@ -458,15 +458,6 @@ h2.toggle:hover {
   background: color-mix(in srgb, var(--claude-accent) 22%, transparent);
   box-shadow: 0 0 6px var(--claude-accent-soft);
   font-weight: 600;
-}
-.cache-bar {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--claude-accent), #f2a97e);
-  opacity: 0.7;
-  transition: width 1s linear;
 }
 
 /* PR Rows */
@@ -719,7 +710,6 @@ const sessionRow = row => {
   const now = Date.now()
   const left = hasExpires ? Math.max(0, row.cacheExpiresAt - now) : 0
   const timeStr = left > 0 ? clock(left) : (hasExpires ? null : row.cache)
-  const pct = left > 0 && row.cacheTtl > 0 ? Math.min(100, Math.round((left / row.cacheTtl) * 100)) : (hasExpires ? 0 : row.cachePct)
   const isWarm = Boolean(timeStr || row.keepWarm)
 
   const cardProps = {
@@ -735,7 +725,6 @@ const sessionRow = row => {
   }
   if (hasExpires && left > 0) {
     cardProps['data-cache-expires'] = row.cacheExpiresAt
-    cardProps['data-cache-ttl'] = row.cacheTtl
   }
   if (row.keepWarm) {
     cardProps['data-keep-warm'] = '1'
@@ -758,8 +747,7 @@ const sessionRow = row => {
           ? 'Prompt cache keepalive active' + (timeStr ? ' (' + timeStr + ' remaining)' : '') + ' · Click to disable'
           : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
         onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-      }, '⚡ ' + (timeStr || 'warm'))),
-    pct > 0 && el('div', { class: 'cache-bar', style: 'width:' + pct + '%' }))
+      }, '⚡ ' + (timeStr || 'warm')))))
 
   node.addEventListener('dragover', event => {
     event.preventDefault()
@@ -973,10 +961,8 @@ const tickCache = () => {
   const now = Date.now()
   for (const node of cards) {
     const expiresAt = Number(node.getAttribute('data-cache-expires'))
-    const ttl = Number(node.getAttribute('data-cache-ttl')) || 0
     const isKeepWarm = node.getAttribute('data-keep-warm') === '1'
     const pill = node.querySelector('.cache-pill')
-    const bar = node.querySelector('.cache-bar')
     const left = Math.max(0, expiresAt - now)
     if (left > 0) {
       const timeStr = clock(left)
@@ -986,22 +972,16 @@ const tickCache = () => {
           ? 'Prompt cache keepalive active (' + timeStr + ' remaining) · Click to disable'
           : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically'
       }
-      if (bar && ttl > 0) {
-        bar.style.width = Math.min(100, Math.round((left / ttl) * 100)) + '%'
-      }
     } else {
       if (isKeepWarm) {
         if (pill) {
           pill.textContent = '⚡ warm'
           pill.title = 'Prompt cache keepalive active · Click to disable'
         }
-        bar?.remove()
       } else {
         pill?.remove()
-        bar?.remove()
       }
       node.removeAttribute('data-cache-expires')
-      node.removeAttribute('data-cache-ttl')
     }
   }
 }
