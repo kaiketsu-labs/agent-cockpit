@@ -257,7 +257,7 @@ const prsByTicket = (items, keys, options = {}) => {
         } else if (hasOptions) {
           continue
         }
-      } else if (reposByTicket[key]) {
+      } else if (!cleanOrg && reposByTicket[key]) {
         const r = reposByTicket[key]
         expectedRepo = (typeof r === 'object' && r ? r.repo : r).toLowerCase()
       }
