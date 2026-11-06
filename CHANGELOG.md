@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.5](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.4...v0.6.5) (2026-11-06)
+
+
+### Bug Fixes
+
+* **vscode:** smooth 1-second prompt cache countdown badge (remove redundant progress bar) ([#43](https://github.com/kaiketsu-labs/agent-cockpit/issues/43)) ([ce3c358](https://github.com/kaiketsu-labs/agent-cockpit/commit/ce3c3580842893b2fe4441bbd5e2dded7de3c19e))
+
 ## [0.6.4](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.3...v0.6.4) (2026-11-06)
 
 
