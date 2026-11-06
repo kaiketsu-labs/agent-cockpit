@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.4](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.3...v0.6.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* **plugin:** declare all hook callbacks as top-level functions in register.tsx ([#42](https://github.com/kaiketsu-labs/agent-cockpit/issues/42)) ([530b51e](https://github.com/kaiketsu-labs/agent-cockpit/commit/530b51e5e7a43f35b06aaaa9b974510b6d1cb589))
+* **vscode:** remove redundant settings pill and prevent status pill wrapping ([#40](https://github.com/kaiketsu-labs/agent-cockpit/issues/40)) ([f331fb1](https://github.com/kaiketsu-labs/agent-cockpit/commit/f331fb1f287c26141707377c67af206dc0f60e0f))
+
 ## [0.6.3](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.2...v0.6.3) (2026-11-06)
 
 
