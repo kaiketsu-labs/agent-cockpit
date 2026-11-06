@@ -461,3 +461,29 @@ test('plugin/hooks/register.tsx parses cleanly without TypeScript or async/await
     try { fs.unlinkSync(tmpFile) } catch {}
   }
 })
+
+test('plugin/hooks/register.tsx declares all hook callbacks as top-level functions', () => {
+  const registerPath = path.resolve(__dirname, '../plugin/hooks/register.tsx')
+  const code = fs.readFileSync(registerPath, 'utf8')
+
+  // Collect all on(...) hook registrations: on(event, [matcher,] callback)
+  const onCalls = [...code.matchAll(/\bon\(\s*['"][^'"]+['"]\s*,\s*(?:\{[^}]*\}\s*,\s*)?([a-zA-Z0-9_$]+|\([^)]*\)\s*=>|async\s*\([^)]*\)\s*=>)/g)]
+  assert.ok(onCalls.length > 0, 'Must have on(...) hook registrations')
+
+  // Top-level function and const declarations at column 0 (unindented)
+  const topLevelDeclarations = new Set(
+    [...code.matchAll(/^(?:export\s+)?(?:const|function|async\s+function)\s+([a-zA-Z0-9_$]+)\b/gm)].map(m => m[1])
+  )
+
+  for (const match of onCalls) {
+    const handler = match[1].trim()
+    assert.ok(
+      /^[a-zA-Z0-9_$]+$/.test(handler),
+      `Hook callback in "${match[0]}" must be a top-level named function/const, not an inline function: ${handler}`
+    )
+    assert.ok(
+      topLevelDeclarations.has(handler),
+      `Hook callback "${handler}" in "${match[0]}" must be declared at the top level of register.tsx`
+    )
+  }
+})
