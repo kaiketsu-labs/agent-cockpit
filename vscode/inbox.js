@@ -431,7 +431,7 @@ h2.toggle:hover {
   color: var(--vscode-descriptionForeground);
 }
 
-/* Cache TTL micro-bar & badge */
+/* Cache TTL badge */
 .cache-pill {
   display: inline-flex;
   align-items: center;
@@ -458,15 +458,6 @@ h2.toggle:hover {
   background: color-mix(in srgb, var(--claude-accent) 22%, transparent);
   box-shadow: 0 0 6px var(--claude-accent-soft);
   font-weight: 600;
-}
-.cache-bar {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--claude-accent), #f2a97e);
-  opacity: 0.7;
-  transition: width 0.4s linear;
 }
 
 /* PR Rows */
@@ -709,18 +700,37 @@ const cardMatches = (card, q) =>
   !q || matches((card.key ?? '') + ' ' + card.title, q) || card.sessions.some(row => sessionMatches(row, q)) || card.prs.some(pr => matches(pr.title + pr.repo, q))
 const passesFilter = card => ui.filter === 'all' || (ui.filter === 'active' && card.isBusy) || (ui.filter === 'prs' && card.prs.length > 0)
 
+const clock = ms => {
+  const seconds = Math.ceil(ms / 1000)
+  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0')
+}
+
 const sessionRow = row => {
-  const node = el('div', {
-      id: 'session-' + row.id,
-      class: 'session-card ' + row.state,
-      draggable: 'true',
-      title: row.name + ' · ' + row.stateLabel,
-      onclick: () => send('attach', { id: row.id }),
-      ondragstart: event => {
-        event.dataTransfer.setData('text/plain', row.id)
-        event.dataTransfer.effectAllowed = 'move'
-      },
+  const hasExpires = Boolean(row.cacheExpiresAt && row.cacheExpiresAt > 0)
+  const now = Date.now()
+  const left = hasExpires ? Math.max(0, row.cacheExpiresAt - now) : 0
+  const timeStr = left > 0 ? clock(left) : (hasExpires ? null : row.cache)
+  const isWarm = Boolean(timeStr || row.keepWarm)
+
+  const cardProps = {
+    id: 'session-' + row.id,
+    class: 'session-card ' + row.state,
+    draggable: 'true',
+    title: row.name + ' · ' + row.stateLabel,
+    onclick: () => send('attach', { id: row.id }),
+    ondragstart: event => {
+      event.dataTransfer.setData('text/plain', row.id)
+      event.dataTransfer.effectAllowed = 'move'
     },
+  }
+  if (hasExpires && left > 0) {
+    cardProps['data-cache-expires'] = row.cacheExpiresAt
+  }
+  if (row.keepWarm) {
+    cardProps['data-keep-warm'] = '1'
+  }
+
+  const node = el('div', cardProps,
     el('div', { class: 'session-top' },
       el('span', { class: 'status-orb ' + row.state }),
       el('span', { class: 'session-name' }, row.name),
@@ -731,14 +741,13 @@ const sessionRow = row => {
         row.isHidden
           ? iconBtn('restore', 'Restore from history', () => send('show', { id: row.id }))
           : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))),
-      (row.cache || row.keepWarm) && el('span', {
+      isWarm && el('span', {
         class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
         title: row.keepWarm
-          ? 'Prompt cache keepalive active' + (row.cache ? ' (' + row.cache + ' remaining)' : '') + ' · Click to disable'
-          : 'Prompt cache warm for ' + row.cache + ' · Click to keep warm automatically',
+          ? 'Prompt cache keepalive active' + (timeStr ? ' (' + timeStr + ' remaining)' : '') + ' · Click to disable'
+          : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
         onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-      }, '⚡ ' + (row.cache || 'warm'))),
-    row.cachePct > 0 && el('div', { class: 'cache-bar', style: 'width:' + row.cachePct + '%' }))
+      }, '⚡ ' + (timeStr || 'warm')))))
 
   node.addEventListener('dragover', event => {
     event.preventDefault()
@@ -946,6 +955,37 @@ const renderList = () => {
   }
 }
 
+const tickCache = () => {
+  const cards = document.querySelectorAll('.session-card[data-cache-expires]')
+  if (!cards.length) return
+  const now = Date.now()
+  for (const node of cards) {
+    const expiresAt = Number(node.getAttribute('data-cache-expires'))
+    const isKeepWarm = node.getAttribute('data-keep-warm') === '1'
+    const pill = node.querySelector('.cache-pill')
+    const left = Math.max(0, expiresAt - now)
+    if (left > 0) {
+      const timeStr = clock(left)
+      if (pill) {
+        pill.textContent = '⚡ ' + timeStr
+        pill.title = isKeepWarm
+          ? 'Prompt cache keepalive active (' + timeStr + ' remaining) · Click to disable'
+          : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically'
+      }
+    } else {
+      if (isKeepWarm) {
+        if (pill) {
+          pill.textContent = '⚡ warm'
+          pill.title = 'Prompt cache keepalive active · Click to disable'
+        }
+      } else {
+        pill?.remove()
+      }
+      node.removeAttribute('data-cache-expires')
+    }
+  }
+}
+
 let lastPayload = ''
 window.addEventListener('message', event => {
   const nextPayload = JSON.stringify(event.data)
@@ -956,6 +996,7 @@ window.addEventListener('message', event => {
 })
 render()
 send('ready')
+setInterval(tickCache, 1000)
 `
 
 const html = nonce => `<!doctype html>
