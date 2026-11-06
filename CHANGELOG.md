@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.2...v0.6.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* **plugin:** mark legacy fallback catch callback async in register.tsx ([#38](https://github.com/kaiketsu-labs/agent-cockpit/issues/38)) ([bc308ad](https://github.com/kaiketsu-labs/agent-cockpit/commit/bc308adeccf80f92229d8935e926f02be5866163))
+
 ## [0.6.2](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.1...v0.6.2) (2026-11-06)
 
 
