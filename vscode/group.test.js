@@ -1,5 +1,9 @@
 'use strict'
 
+const fs = require('node:fs')
+const path = require('node:path')
+const os = require('node:os')
+const { execFileSync } = require('node:child_process')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
@@ -417,4 +421,43 @@ test('sessions preserve keepWarm status and honor expiration', () => {
   assert.equal(merged[2].lastWriteAt, 12345)
   assert.equal(merged[2].contextTokens, 4200)
   assert.equal(merged[2].model, 'claude-3-7-sonnet')
+})
+
+test('plugin/hooks/register.tsx parses cleanly without TypeScript or async/await syntax errors', () => {
+  const registerPath = path.resolve(__dirname, '../plugin/hooks/register.tsx')
+  const code = fs.readFileSync(registerPath, 'utf8')
+
+  // Guard against await inside synchronous .catch arrow callbacks (.catch(() => ... await ...))
+  const syncCatchWithAwait = /\.catch\(\s*(?:\([^)]*\)|[a-zA-Z_$][\w$]*)\s*=>[^{}\n;]*\bawait\b/
+  assert.equal(
+    syncCatchWithAwait.test(code),
+    false,
+    'register.tsx must not use await in synchronous .catch arrow callbacks (add async () => ...)',
+  )
+
+  // Full TypeScript AST parse check via Node experimental-strip-types
+  const tmpFile = path.join(os.tmpdir(), `register-syntax-check-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`)
+  fs.writeFileSync(tmpFile, code)
+  try {
+    execFileSync(process.execPath, [
+      '--experimental-strip-types',
+      '-e',
+      `import(${JSON.stringify(tmpFile)}).catch(err => {
+         if (err.name === 'SyntaxError' || err.code === 'ERR_INVALID_TYPESCRIPT_SYNTAX') {
+           console.error(err);
+           process.exit(1);
+         }
+         process.exit(0);
+       })`,
+    ], { stdio: 'pipe' })
+  } catch (err) {
+    if (err.status !== 0 && err.stderr) {
+      const stderr = err.stderr.toString()
+      if (stderr.includes('SyntaxError') || stderr.includes('ERR_INVALID_TYPESCRIPT_SYNTAX')) {
+        assert.fail(`register.tsx syntax error: ${stderr}`)
+      }
+    }
+  } finally {
+    try { fs.unlinkSync(tmpFile) } catch {}
+  }
 })
