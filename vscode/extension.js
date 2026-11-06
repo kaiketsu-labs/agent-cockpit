@@ -686,6 +686,10 @@ class SessionsProvider {
     const current = session.folder ?? session.ticket ?? undefined
     if (folder === current) return
     await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null })
+    session.folder = folder ?? null
+    session.ticket = folder ?? null
+    this.regroup()
+    this.changed.fire()
   }
 
   async reorderSession(session, targetId, before, rawFolder) {
@@ -693,11 +697,11 @@ class SessionsProvider {
     const current = session.folder ?? session.ticket ?? undefined
     if (folder !== current) {
       await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null })
-      session.folder = folder
-      session.ticket = folder
+      session.folder = folder ?? null
+      session.ticket = folder ?? null
     }
     const all = this.sessions.filter(s => !this.isHidden(s))
-    const dest = all.filter(s => (s.folder ?? s.ticket ?? undefined) === folder)
+    const dest = all.filter(s => (s.folder ?? s.ticket ?? null) === (folder ?? null))
     let siblingIds = dest.map(s => s.id)
     if (!siblingIds.includes(session.id)) {
       siblingIds.push(session.id)
@@ -966,7 +970,7 @@ const moveToFolder = async (session, provider, refresh) => {
         folder: f,
       }
     })),
-    ...(session.ticket ? [{ label: '$(close) Remove from folder (Ungrouped)', action: 'none' }] : []),
+    ...(session.folder || session.ticket ? [{ label: '$(close) Remove from folder (Ungrouped)', action: 'none' }] : []),
   ]
   const picked = await vscode.window.showQuickPick(items, {
     title: `Move "${session.name}" to folder`,
