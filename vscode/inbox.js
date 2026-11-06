@@ -144,6 +144,7 @@ input[type="search"]:focus {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  flex-wrap: wrap;
 }
 .segmented {
   display: inline-flex;
@@ -152,6 +153,7 @@ input[type="search"]:focus {
   padding: 2px;
   border-radius: 7px;
   gap: 2px;
+  flex-shrink: 0;
 }
 .chip {
   border-radius: 5px;
@@ -160,6 +162,7 @@ input[type="search"]:focus {
   font-weight: 500;
   color: var(--vscode-descriptionForeground);
   border: none;
+  white-space: nowrap;
 }
 .chip:hover { color: var(--vscode-foreground); background: transparent; }
 .chip.on {
@@ -173,17 +176,24 @@ input[type="search"]:focus {
   align-items: center;
   gap: 5px;
   font-size: 0.78em;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .stat-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 1px 6px;
+  height: 20px;
+  box-sizing: border-box;
+  padding: 0 7px;
   border-radius: 99px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   color: var(--vscode-descriptionForeground);
   font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1;
 }
 .stat-pill.working {
   color: var(--vscode-charts-blue, #3794ff);
@@ -194,17 +204,6 @@ input[type="search"]:focus {
   color: var(--vscode-charts-yellow, #cca700);
   border-color: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 45%, transparent);
   background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 14%, transparent);
-}
-.stat-pill.scope {
-  font-weight: 500;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stat-pill.scope:hover {
-  border-color: var(--claude-accent-border);
-  color: var(--vscode-foreground);
 }
 .stat-pill.clickable {
   cursor: pointer;
@@ -897,14 +896,6 @@ const renderList = () => {
     if (workingCount > 0) stats.append(el('span', { class: 'stat-pill working' }, '↻ ' + workingCount + ' running'))
     if (blockedCount === 0 && workingCount === 0 && allRows.length > 0) {
       stats.append(el('span', { class: 'stat-pill' }, allRows.length + ' session' + (allRows.length === 1 ? '' : 's')))
-    }
-    const showScope = Boolean(model.githubScope)
-    if (showScope) {
-      stats.append(el('span', {
-        class: 'stat-pill scope clickable',
-        title: 'GitHub PR search scope: ' + model.githubScope + ' · Click to configure',
-        onclick: () => send('configureGithubScope'),
-      }, icon('gear'), model.githubScope))
     }
   }
 
