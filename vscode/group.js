@@ -137,8 +137,13 @@ const groupSessions = (sessions, order = [], options = {}) => {
 const parseGithubRemote = stdout => {
   if (!stdout) return undefined
   for (const line of stdout.split('\n')) {
-    const match = line.match(/(?:github\.com|github[^/:\s]*?)[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\s|\(|$)/i)
-    if (match) return `${match[1]}/${match[2]}`
+    const match = line.match(
+      /(?:(?:https?|ssh):\/\/(?:[^@/\s]+@)?|(?:[^@/\s]+@)?)([^/:\s]*(?:github|ghe)[^/:\s]*?)(?::\d+)?[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\s|\(|$)/i,
+    )
+    if (match) {
+      const host = match[1].includes('.') ? match[1].toLowerCase() : undefined
+      return { repo: `${match[2]}/${match[3]}`, host }
+    }
   }
   return undefined
 }
@@ -194,7 +199,8 @@ const searchQueries = (keys, size = 6, options = {}) => {
     }
 
     for (const repo of repoList) {
-      const scopePrefix = repo && typeof repo === 'string' && repo.trim() ? `repo:${repo.trim()} ` : ''
+      const repoName = typeof repo === 'object' && repo ? repo.repo : repo
+      const scopePrefix = repoName && typeof repoName === 'string' && repoName.trim() ? `repo:${repoName.trim()} ` : ''
       if (!scopePrefix) continue
       if (!byScope.has(scopePrefix)) byScope.set(scopePrefix, [])
       byScope.get(scopePrefix).push(term)
@@ -226,7 +232,7 @@ const itemRepoOf = item => {
 
 const prsByTicket = (items, keys, options = {}) => {
   const { reposByTicket = {}, defaultRepos = [], githubOrg } = options
-  const fallbackRepos = (options.repos ?? defaultRepos).map(r => r.toLowerCase())
+  const fallbackRepos = (options.repos ?? defaultRepos).map(r => (typeof r === 'object' && r ? r.repo : r).toLowerCase())
   const cleanOrg = typeof githubOrg === 'string' && githubOrg.trim() ? githubOrg.trim().toLowerCase() : undefined
   const hasOptions = Boolean(options.reposByTicket || options.defaultRepos || options.repos || options.githubOrg)
   const byTicket = {}
@@ -246,12 +252,14 @@ const prsByTicket = (items, keys, options = {}) => {
       } else if (key.startsWith('#')) {
         // Bare GitHub issues: ONLY match if we are sure about the repo
         if (reposByTicket[key]) {
-          expectedRepo = reposByTicket[key].toLowerCase()
+          const r = reposByTicket[key]
+          expectedRepo = (typeof r === 'object' && r ? r.repo : r).toLowerCase()
         } else if (hasOptions) {
           continue
         }
       } else if (reposByTicket[key]) {
-        expectedRepo = reposByTicket[key].toLowerCase()
+        const r = reposByTicket[key]
+        expectedRepo = (typeof r === 'object' && r ? r.repo : r).toLowerCase()
       }
 
       if (expectedRepo) {
