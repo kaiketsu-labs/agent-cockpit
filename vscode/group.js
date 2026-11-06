@@ -362,20 +362,25 @@ const mergeSessions = (agents, files, pattern) => {
   const liveIds = new Set(agents.map(agent => agent.sessionId))
   const ended = files
     .filter(file => file.kind === 'interactive' && !liveIds.has(file.sessionId) && (file.name || file.prompt))
-    .map(file =>
-      withFolder(
+    .map(file => {
+      const keepWarm = Boolean(file.keepWarm && (!file.keepWarmUntil || file.keepWarmUntil > Date.now()))
+      return withFolder(
         {
           id: file.sessionId,
           sessionId: file.sessionId,
           name: file.name || file.prompt,
           state: 'done',
           updatedAt: file.lastTurnEndAt ?? file.startedAt,
+          lastWriteAt: file.lastTurnEndAt,
           cwd: file.cwd,
           ended: true,
+          keepWarm,
+          contextTokens: file.contextTokens,
+          model: file.model,
         },
         file.folder ?? file.ticket,
-      ),
-    )
+      )
+    })
   return [...live, ...ended]
 }
 

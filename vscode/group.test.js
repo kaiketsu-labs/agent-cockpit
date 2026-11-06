@@ -398,8 +398,23 @@ test('sessions preserve keepWarm status and honor expiration', () => {
   const files = [
     { sessionId: 's1', keepWarm: true, keepWarmUntil: Date.now() + 60_000, name: 'warm session' },
     { sessionId: 's2', keepWarm: true, keepWarmUntil: Date.now() - 1_000, name: 'expired warm session' },
+    {
+      sessionId: 's3',
+      kind: 'interactive',
+      keepWarm: true,
+      keepWarmUntil: Date.now() + 60_000,
+      name: 'ended warm session',
+      lastTurnEndAt: 12345,
+      contextTokens: 4200,
+      model: 'claude-3-7-sonnet',
+    },
   ]
   const merged = mergeSessions(agents, files, proj)
   assert.equal(merged[0].keepWarm, true)
   assert.equal(merged[1].keepWarm, false)
+  assert.equal(merged[2].ended, true)
+  assert.equal(merged[2].keepWarm, true)
+  assert.equal(merged[2].lastWriteAt, 12345)
+  assert.equal(merged[2].contextTokens, 4200)
+  assert.equal(merged[2].model, 'claude-3-7-sonnet')
 })
