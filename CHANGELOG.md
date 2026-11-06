@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.0...v0.6.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* search PRs on the remote's GitHub Enterprise host ([#34](https://github.com/kaiketsu-labs/agent-cockpit/issues/34)) ([bb5ad8c](https://github.com/kaiketsu-labs/agent-cockpit/commit/bb5ad8cbcdb5d9bfe25d346f85bace8704e51900))
+* **vscode:** anchor cache pill on hover and allow dragging sessions out of folders ([#32](https://github.com/kaiketsu-labs/agent-cockpit/issues/32)) ([42009a9](https://github.com/kaiketsu-labs/agent-cockpit/commit/42009a9552db448851d89c848af3cd08b6f92076))
+
 ## [0.6.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.5.4...v0.6.0) (2026-11-05)
 
 
