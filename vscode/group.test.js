@@ -271,6 +271,22 @@ test('PR searches scope to repository and reject PRs from stranger public repos'
   const orgMatches = prsByTicket([orgPr1, orgPr2, strangerOrgPr], ['PROJ-1'], { githubOrg: 'kaiketsu-labs' })
   assert.equal(orgMatches['PROJ-1']?.length, 2)
   assert.deepEqual(orgMatches['PROJ-1'].map(p => p.repo), ['backend', 'frontend'])
+
+  // When githubOrg is configured, Jira keys match org-wide even if reposByTicket has the session root repo
+  const siblingPr = {
+    number: 40,
+    title: 'PROJ-1 sibling repo change',
+    html_url: 'https://github.example.com/org/other/pull/40',
+    repository_url: 'https://github.example.com/api/v3/repos/org/other',
+    draft: false,
+  }
+  const siblingMatches = prsByTicket([siblingPr], ['PROJ-1'], {
+    githubOrg: 'org',
+    reposByTicket: { 'PROJ-1': 'org/root' },
+  })
+  assert.equal(siblingMatches['PROJ-1']?.length, 1)
+  assert.equal(siblingMatches['PROJ-1'][0].repo, 'other')
+  assert.equal(siblingMatches['PROJ-1'][0].number, 40)
 })
 
 test('only a ticket the tracker calls done is closed', () => {
