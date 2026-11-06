@@ -304,6 +304,13 @@ const loadJiraIssues = async (env, keys, cwd) => {
   return {}
 }
 
+// gh only follows GH_HOST for `gh api`, so a GitHub Enterprise remote needs it set when the editor's env lacks it.
+const ghEnv = host => {
+  if (process.env.GH_HOST) return process.env
+  if (host && host !== 'github.com') return { ...process.env, GH_HOST: host }
+  return process.env
+}
+
 const loadGithubIssues = async (keys, cwd, options = {}) => {
   const { reposByTicket = {} } = options
   const issues = {}
@@ -324,8 +331,13 @@ const loadGithubIssues = async (keys, cwd, options = {}) => {
           return
         }
         if (!repo) return
+        const host =
+          options.hostsByTicket?.[key] ||
+          (repo && (options.hostsByRepo?.[repo] || options.hostsByRepo?.[repo.toLowerCase()])) ||
+          options.defaultHost
+        const env = ghEnv(host)
         const args = ['issue', 'view', num, '--json', 'title,state,url', '-R', repo]
-        const data = JSON.parse(await run(GH, args, undefined, { cwd }))
+        const data = JSON.parse(await run(GH, args, undefined, { cwd, env }))
         // GitHub API returns PRs as issues under /issues/:num; ignore if it is actually a PR
         if (data.url && data.url.includes('/pull/')) return
         const isDone = String(data.state).toUpperCase() === 'CLOSED'
@@ -369,8 +381,21 @@ const loadPrs = async (keys, cfg, options = {}) => {
   try {
     const queries = searchQueries(keys, 6, options)
     if (queries.length === 0) return {}
+    const queriesByHost = new Map()
+    for (const q of queries) {
+      const repo = q.match(/\brepo:([^\s]+)/)?.[1]
+      const host = (repo && (options.hostsByRepo?.[repo] || options.hostsByRepo?.[repo.toLowerCase()])) || options.defaultHost
+      const list = queriesByHost.get(host) ?? []
+      list.push(q)
+      queriesByHost.set(host, list)
+    }
     const pages = await Promise.all(
-      queries.map(q => run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'])),
+      [...queriesByHost.entries()].flatMap(([host, hostQueries]) => {
+        const env = ghEnv(host)
+        return hostQueries.map(q =>
+          run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'], undefined, { env }),
+        )
+      }),
     )
     return prsByTicket(pages.flatMap(page => JSON.parse(page).items), keys, options)
   } catch (err) {
@@ -508,20 +533,40 @@ class SessionsProvider {
       const workspaceRepos = (await Promise.all(workspaceCwds.map(detectGithubRepo))).filter(Boolean)
       const defaultRepo = workspaceRepos[0] ?? (await detectGithubRepo(cwd))
       const reposByTicket = {}
+      const hostsByTicket = {}
+      const hostsByRepo = {}
+      for (const info of workspaceRepos) {
+        if (info?.repo && info?.host) hostsByRepo[info.repo] = info.host
+      }
+      if (defaultRepo?.repo && defaultRepo?.host) {
+        hostsByRepo[defaultRepo.repo] = defaultRepo.host
+      }
       for (const group of this.groups) {
         const tKey = folderTicket(group.ticket, this.pattern)
         if (!tKey) continue
+        const sessionCwds = (group.sessions ?? []).map(s => s.cwd).filter(Boolean)
+        const sessionRepos = (await Promise.all(sessionCwds.map(detectGithubRepo))).filter(Boolean)
+        for (const info of sessionRepos) {
+          if (info?.repo && info?.host) hostsByRepo[info.repo] = info.host
+        }
         if (tKey.includes('/') && tKey.includes('#')) {
-          reposByTicket[tKey] = tKey.split('#')[0]
+          const repo = tKey.split('#')[0]
+          reposByTicket[tKey] = repo
+          const host = sessionRepos[0]?.host ?? hostsByRepo[repo] ?? defaultRepo?.host
+          if (host) hostsByTicket[tKey] = host
         } else {
-          const sessionCwds = (group.sessions ?? []).map(s => s.cwd).filter(Boolean)
-          const sessionRepos = (await Promise.all(sessionCwds.map(detectGithubRepo))).filter(Boolean)
           if (tKey.startsWith('#')) {
             // For bare GitHub issues: only assign if we are sure (at least one session in this group has a detected repo)
-            if (sessionRepos.length > 0) reposByTicket[tKey] = sessionRepos[0]
+            if (sessionRepos.length > 0) {
+              reposByTicket[tKey] = sessionRepos[0].repo
+              if (sessionRepos[0].host) hostsByTicket[tKey] = sessionRepos[0].host
+            }
           } else {
             const groupRepo = sessionRepos[0] ?? defaultRepo
-            if (groupRepo) reposByTicket[tKey] = groupRepo
+            if (groupRepo) {
+              reposByTicket[tKey] = groupRepo.repo
+              if (groupRepo.host) hostsByTicket[tKey] = groupRepo.host
+            }
           }
         }
       }
@@ -529,10 +574,21 @@ class SessionsProvider {
         const tKey = folderTicket(session.folder ?? session.ticket, this.pattern)
         if (!tKey || reposByTicket[tKey]) continue
         if (tKey.includes('/') && tKey.includes('#')) {
-          reposByTicket[tKey] = tKey.split('#')[0]
+          const repo = tKey.split('#')[0]
+          reposByTicket[tKey] = repo
+          const repoInfo = session.cwd ? await detectGithubRepo(session.cwd) : undefined
+          if (repoInfo?.repo && repoInfo?.host) hostsByRepo[repoInfo.repo] = repoInfo.host
+          const host = repoInfo?.host ?? hostsByRepo[repo] ?? defaultRepo?.host
+          if (host) hostsByTicket[tKey] = host
         } else if (session.cwd) {
-          const repo = await detectGithubRepo(session.cwd)
-          if (repo) reposByTicket[tKey] = repo
+          const repoInfo = await detectGithubRepo(session.cwd)
+          if (repoInfo) {
+            reposByTicket[tKey] = repoInfo.repo
+            if (repoInfo.host) {
+              hostsByTicket[tKey] = repoInfo.host
+              hostsByRepo[repoInfo.repo] = repoInfo.host
+            }
+          }
         }
       }
       const configuredRepos = this.config?.githubRepositories
@@ -541,14 +597,18 @@ class SessionsProvider {
       const githubOrg = this.config?.githubOrg?.trim() || undefined
       const allDetectedRepos = [...new Set([
         ...configuredRepos,
-        ...workspaceRepos,
+        ...workspaceRepos.map(r => r.repo),
         ...Object.values(reposByTicket),
-        defaultRepo,
+        defaultRepo?.repo,
       ].filter(Boolean))]
       return {
         reposByTicket,
         defaultRepos: configuredRepos.length > 0 ? configuredRepos : allDetectedRepos,
         githubOrg,
+        hostsByTicket,
+        hostsByRepo,
+        defaultHost: defaultRepo?.host,
+        workspaceRepos,
       }
     }
 
@@ -1139,7 +1199,8 @@ const activate = async context => {
       const isNone = config.get('pullRequests', 'auto') === 'none'
 
       const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir()
-      const detectedRepo = await detectGithubRepo(cwd)
+      const detected = await detectGithubRepo(cwd)
+      const detectedRepo = detected?.repo
       const currentMode = isNone
         ? 'Disabled'
         : currentOrg

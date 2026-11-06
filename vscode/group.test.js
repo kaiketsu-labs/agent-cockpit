@@ -149,14 +149,17 @@ test('PR searches batch six keys and match PRs to every key their title names', 
   assert.deepEqual(byTicket['PROJ-1'][0], { repo: 'api', number: 9, title: 'feat(proj-1): x, PROJ-2, not PROJ-20, fixes #42', url: 'u', isDraft: true })
 })
 
-test('parseGithubRemote extracts owner/repo from various git remote URL formats', () => {
-  assert.equal(
+test('parseGithubRemote extracts owner/repo and host from various git remote URL formats', () => {
+  assert.deepEqual(
     parseGithubRemote('origin\thttps://github.com/kaiketsu-labs/agent-cockpit.git (fetch)\norigin\thttps://github.com/kaiketsu-labs/agent-cockpit.git (push)'),
-    'kaiketsu-labs/agent-cockpit',
+    { repo: 'kaiketsu-labs/agent-cockpit', host: 'github.com' },
   )
-  assert.equal(parseGithubRemote('origin\tgit@github.com:owner/repo.git (fetch)'), 'owner/repo')
-  assert.equal(parseGithubRemote('origin\tssh://git@github.com/owner/repo (fetch)'), 'owner/repo')
-  assert.equal(parseGithubRemote('origin\tgit@github-work:my-org/my-project.git (fetch)'), 'my-org/my-project')
+  assert.deepEqual(parseGithubRemote('origin\tgit@github.com:owner/repo.git (fetch)'), { repo: 'owner/repo', host: 'github.com' })
+  assert.deepEqual(parseGithubRemote('origin\tssh://git@github.com/owner/repo (fetch)'), { repo: 'owner/repo', host: 'github.com' })
+  assert.deepEqual(parseGithubRemote('origin\tgit@github-work:my-org/my-project.git (fetch)'), { repo: 'my-org/my-project', host: 'github-work' })
+  assert.deepEqual(parseGithubRemote('origin\tgit@github.example.com:org/repo.git (fetch)'), { repo: 'org/repo', host: 'github.example.com' })
+  assert.deepEqual(parseGithubRemote('origin\thttps://github.example.com/org/repo.git (fetch)'), { repo: 'org/repo', host: 'github.example.com' })
+  assert.deepEqual(parseGithubRemote('origin\tssh://git@github.example.com/org/repo (fetch)'), { repo: 'org/repo', host: 'github.example.com' })
   assert.equal(parseGithubRemote('origin\thttps://gitlab.com/foo/bar.git (fetch)'), undefined)
   assert.equal(parseGithubRemote(''), undefined)
   assert.equal(parseGithubRemote(undefined), undefined)
