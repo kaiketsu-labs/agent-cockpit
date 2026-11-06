@@ -305,9 +305,10 @@ const loadJiraIssues = async (env, keys, cwd) => {
 }
 
 // gh only follows GH_HOST for `gh api`, so a GitHub Enterprise remote needs it set when the editor's env lacks it.
+// SSH aliases without dots (e.g. github-work) point to github.com and must not set GH_HOST.
 const ghEnv = host => {
   if (process.env.GH_HOST) return process.env
-  if (host && host !== 'github.com') return { ...process.env, GH_HOST: host }
+  if (host && host.includes('.') && host !== 'github.com') return { ...process.env, GH_HOST: host }
   return process.env
 }
 
@@ -389,15 +390,23 @@ const loadPrs = async (keys, cfg, options = {}) => {
       list.push(q)
       queriesByHost.set(host, list)
     }
-    const pages = await Promise.all(
-      [...queriesByHost.entries()].flatMap(([host, hostQueries]) => {
+    const hostResults = await Promise.all(
+      [...queriesByHost.entries()].map(async ([host, hostQueries]) => {
         const env = ghEnv(host)
-        return hostQueries.map(q =>
-          run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'], undefined, { env }),
-        )
+        try {
+          const pages = await Promise.all(
+            hostQueries.map(q =>
+              run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'], undefined, { env }),
+            ),
+          )
+          return pages.flatMap(page => JSON.parse(page).items ?? [])
+        } catch (err) {
+          if (cfg.pullRequests === 'github') throw err
+          return []
+        }
       }),
     )
-    return prsByTicket(pages.flatMap(page => JSON.parse(page).items), keys, options)
+    return prsByTicket(hostResults.flat(), keys, options)
   } catch (err) {
     if (cfg.pullRequests === 'github') throw err
     return {}

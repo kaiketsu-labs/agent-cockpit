@@ -140,7 +140,10 @@ const parseGithubRemote = stdout => {
     const match = line.match(
       /(?:(?:https?|ssh):\/\/(?:[^@/\s]+@)?|(?:[^@/\s]+@)?)([^/:\s]*(?:github|ghe)[^/:\s]*?)(?::\d+)?[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?(?:\s|\(|$)/i,
     )
-    if (match) return { repo: `${match[2]}/${match[3]}`, host: match[1].toLowerCase() }
+    if (match) {
+      const host = match[1].includes('.') ? match[1].toLowerCase() : undefined
+      return { repo: `${match[2]}/${match[3]}`, host }
+    }
   }
   return undefined
 }

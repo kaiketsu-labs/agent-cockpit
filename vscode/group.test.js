@@ -156,7 +156,8 @@ test('parseGithubRemote extracts owner/repo and host from various git remote URL
   )
   assert.deepEqual(parseGithubRemote('origin\tgit@github.com:owner/repo.git (fetch)'), { repo: 'owner/repo', host: 'github.com' })
   assert.deepEqual(parseGithubRemote('origin\tssh://git@github.com/owner/repo (fetch)'), { repo: 'owner/repo', host: 'github.com' })
-  assert.deepEqual(parseGithubRemote('origin\tgit@github-work:my-org/my-project.git (fetch)'), { repo: 'my-org/my-project', host: 'github-work' })
+  // SSH aliases without dots point to github.com and leave host undefined so GH_HOST is never set to the alias
+  assert.deepEqual(parseGithubRemote('origin\tgit@github-work:my-org/my-project.git (fetch)'), { repo: 'my-org/my-project', host: undefined })
   assert.deepEqual(parseGithubRemote('origin\tgit@github.example.com:org/repo.git (fetch)'), { repo: 'org/repo', host: 'github.example.com' })
   assert.deepEqual(parseGithubRemote('origin\thttps://github.example.com/org/repo.git (fetch)'), { repo: 'org/repo', host: 'github.example.com' })
   assert.deepEqual(parseGithubRemote('origin\tssh://git@github.example.com/org/repo (fetch)'), { repo: 'org/repo', host: 'github.example.com' })
