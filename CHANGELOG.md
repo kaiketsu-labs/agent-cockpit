@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.2](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.1...v0.6.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* match org-wide PR search results for ticket folders ([#35](https://github.com/kaiketsu-labs/agent-cockpit/issues/35)) ([deda043](https://github.com/kaiketsu-labs/agent-cockpit/commit/deda043ac455305e65ae9ab1be05d2858a827790))
+* resolve enterprise host for org PR queries and preserve cache on ended sessions ([#37](https://github.com/kaiketsu-labs/agent-cockpit/issues/37)) ([3a9c53d](https://github.com/kaiketsu-labs/agent-cockpit/commit/3a9c53d27491c12e1a511eee9761bc8c8be6e14d))
+
 ## [0.6.1](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.0...v0.6.1) (2026-11-06)
 
 
