@@ -59,7 +59,7 @@ const storedRecord = async ($: EngineInterface) => {
   const id = await $.session.id()
   const text = await $.fs
     .read(await sessionFile($, id))
-    .catch(() => $.fs.read(await legacySessionFile($, id)))
+    .catch(async () => $.fs.read(await legacySessionFile($, id)))
     .catch(() => undefined)
   if (!text) return undefined
   try {

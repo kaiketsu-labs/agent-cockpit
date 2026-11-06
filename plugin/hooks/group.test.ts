@@ -13,6 +13,7 @@ import {
   ticketSuffix,
   withoutTicketSuffix,
 } from './group'
+import { register } from './register'
 
 const proj = ticketSuffix(['PROJ'])
 const anyKey = ticketSuffix()
@@ -65,4 +66,8 @@ test('a prompt names a session by its first non-empty content line, stripping ba
   expect(promptName('/start-task')).toBe('')
   expect(promptName('/start-task explore auth flow')).toBe('explore auth flow')
   expect(promptName('x'.repeat(100))).toHaveLength(80)
+})
+
+test('register.tsx parses cleanly and exports register hook entrypoint', () => {
+  expect(typeof register).toBe('function')
 })
