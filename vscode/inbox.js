@@ -914,12 +914,16 @@ const renderList = () => {
     sessionMatches(row, q) &&
     (ui.filter === 'all' || (ui.filter === 'active' && (row.state === 'working' || row.state === 'blocked' || row.state === 'failed')))
   )
-  const showLoose = looseSessions.length > 0
+  const showLoose = looseSessions.length > 0 || (!q && folders.length > 0)
   if (folders.length > 0) {
     list.append(el('div', { class: 'section-block' }, folders.map(c => card(c, false))))
   }
   if (showLoose) {
-    const looseBlock = section('Ungrouped', looseSessions.length, el('div', { class: 'loose-list' }, looseSessions.map(sessionRow)))
+    const looseBlock = section('Ungrouped', looseSessions.length,
+      looseSessions.length > 0
+        ? el('div', { class: 'loose-list' }, looseSessions.map(sessionRow))
+        : el('div', { class: 'empty-folder' }, 'Drop a session here to remove from folder')
+    )
     dropTarget(looseBlock, null)
     list.append(looseBlock)
   }
