@@ -385,7 +385,11 @@ const loadPrs = async (keys, cfg, options = {}) => {
     const queriesByHost = new Map()
     for (const q of queries) {
       const repo = q.match(/\brepo:([^\s]+)/)?.[1]
-      const host = (repo && (options.hostsByRepo?.[repo] || options.hostsByRepo?.[repo.toLowerCase()])) || options.defaultHost
+      const org = q.match(/\borg:([^\s]+)/)?.[1]
+      const host =
+        (repo && (options.hostsByRepo?.[repo] || options.hostsByRepo?.[repo.toLowerCase()])) ||
+        (org && (options.hostsByOrg?.[org.toLowerCase()] || options.orgHost)) ||
+        options.defaultHost
       const list = queriesByHost.get(host) ?? []
       list.push(q)
       queriesByHost.set(host, list)
@@ -610,12 +614,26 @@ class SessionsProvider {
         ...Object.values(reposByTicket),
         defaultRepo?.repo,
       ].filter(Boolean))]
+      const hostsByOrg = {}
+      for (const [r, h] of Object.entries(hostsByRepo)) {
+        if (!h) continue
+        const orgPart = r.split('/')[0]?.toLowerCase()
+        if (orgPart && !hostsByOrg[orgPart]) hostsByOrg[orgPart] = h
+      }
+      const cleanOrg = githubOrg?.toLowerCase()
+      const orgHost =
+        (cleanOrg && hostsByOrg[cleanOrg]) ||
+        defaultRepo?.host ||
+        workspaceRepos.find(r => r.host)?.host ||
+        Object.values(hostsByRepo).find(Boolean)
       return {
         reposByTicket,
         defaultRepos: configuredRepos.length > 0 ? configuredRepos : allDetectedRepos,
         githubOrg,
         hostsByTicket,
         hostsByRepo,
+        hostsByOrg,
+        orgHost,
         defaultHost: defaultRepo?.host,
         workspaceRepos,
       }
