@@ -371,10 +371,10 @@ test('the cache countdown runs from the last transcript write and stops at zero'
 })
 
 test('inbox lists sessions that need the person first and one card per folder or ticket (with PRs and Jira status on ticket folders)', () => {
-  const session = (id, state, folder) => ({ id, name: `work ${id}`, folder, ticket: folder, state, updatedAt: 0 })
+  const session = (id, state, folder, lastWriteAt) => ({ id, name: `work ${id}`, folder, ticket: folder, state, updatedAt: 0, lastWriteAt })
   const sessions = [
-    session('a', 'working', 'PROJ-1'),
-    session('b', 'blocked', 'PROJ-1'),
+    session('a', 'working', 'PROJ-1', 50_000),
+    session('b', 'blocked', 'PROJ-1', 50_000),
     session('c', 'idle', 'Auth Refactor'),
     session('d', 'failed'),
   ]
@@ -389,11 +389,14 @@ test('inbox lists sessions that need the person first and one card per folder or
     now: 60_000,
   })
   assert.deepEqual(model.needs.map(row => row.id), ['b', 'd'])
+  assert.equal(model.needs[0].cacheExpiresAt, 350_000)
+  assert.equal(model.needs[0].cacheTtl, 300_000)
   assert.deepEqual(model.tickets.map(t => [t.key, t.isTicket, t.title, t.isBusy, t.prs.length]), [
     ['Auth Refactor', false, '', false, 0],
     ['PROJ-1', true, 'One Jira', true, 1],
   ])
   assert.equal(model.tickets[1].sessions[0].name, 'work a')
+  assert.equal(model.tickets[1].sessions[0].cacheExpiresAt, 0)
   assert.deepEqual(model.loose.map(row => row.id), ['d'])
 })
 
