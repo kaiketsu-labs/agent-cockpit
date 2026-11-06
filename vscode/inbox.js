@@ -449,6 +449,7 @@ h2.toggle:hover {
   cursor: pointer;
   user-select: none;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+  flex: none;
 }
 .cache-pill:hover {
   border-color: var(--claude-accent-border);
@@ -724,21 +725,20 @@ const sessionRow = row => {
     el('div', { class: 'session-top' },
       el('span', { class: 'status-orb ' + row.state }),
       el('span', { class: 'session-name' }, row.name),
-      el('span', { class: 'meta hide-on-hover' },
-        (row.cache || row.keepWarm) && el('span', {
-          class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
-          title: row.keepWarm
-            ? 'Prompt cache keepalive active' + (row.cache ? ' (' + row.cache + ' remaining)' : '') + ' · Click to disable'
-            : 'Prompt cache warm for ' + row.cache + ' · Click to keep warm automatically',
-          onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-        }, '⚡ ' + (row.cache || 'warm')),
-        el('span', {}, row.age ?? row.activity)),
+      el('span', { class: 'meta hide-on-hover' }, el('span', {}, row.age ?? row.activity)),
       el('span', { class: 'actions' },
         iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
         iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
         row.isHidden
           ? iconBtn('restore', 'Restore from history', () => send('show', { id: row.id }))
-          : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id })))),
+          : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))),
+      (row.cache || row.keepWarm) && el('span', {
+        class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
+        title: row.keepWarm
+          ? 'Prompt cache keepalive active' + (row.cache ? ' (' + row.cache + ' remaining)' : '') + ' · Click to disable'
+          : 'Prompt cache warm for ' + row.cache + ' · Click to keep warm automatically',
+        onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
+      }, '⚡ ' + (row.cache || 'warm'))),
     row.cachePct > 0 && el('div', { class: 'cache-bar', style: 'width:' + row.cachePct + '%' }))
 
   node.addEventListener('dragover', event => {
@@ -914,12 +914,16 @@ const renderList = () => {
     sessionMatches(row, q) &&
     (ui.filter === 'all' || (ui.filter === 'active' && (row.state === 'working' || row.state === 'blocked' || row.state === 'failed')))
   )
-  const showLoose = looseSessions.length > 0
+  const showLoose = looseSessions.length > 0 || (!q && folders.length > 0)
   if (folders.length > 0) {
     list.append(el('div', { class: 'section-block' }, folders.map(c => card(c, false))))
   }
   if (showLoose) {
-    const looseBlock = section('Ungrouped', looseSessions.length, el('div', { class: 'loose-list' }, looseSessions.map(sessionRow)))
+    const looseBlock = section('Ungrouped', looseSessions.length,
+      looseSessions.length > 0
+        ? el('div', { class: 'loose-list' }, looseSessions.map(sessionRow))
+        : el('div', { class: 'empty-folder' }, 'Drop a session here to remove from folder')
+    )
     dropTarget(looseBlock, null)
     list.append(looseBlock)
   }
