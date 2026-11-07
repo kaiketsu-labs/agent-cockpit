@@ -1,6 +1,9 @@
 """Builds agent-cockpit-<version>.vsix without npm: a VSIX is a zip with a manifest."""
 
 import json
+import shutil
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -90,3 +93,34 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as vsix:
     if (REPO_ROOT / "LICENSE").exists():
         vsix.write(REPO_ROOT / "LICENSE", "extension/LICENSE.txt")
 print(f"{out} ({ident})")
+
+if "--install" in sys.argv:
+    code_bin = shutil.which("code")
+    if not code_bin:
+        for candidate in ["/opt/homebrew/bin/code", "/usr/local/bin/code"]:
+            if Path(candidate).exists():
+                code_bin = candidate
+                break
+    if not code_bin:
+        print("Error: 'code' command not found in PATH.")
+        print("Install it via VS Code Command Palette: 'Shell Command: Install code command in PATH'")
+        sys.exit(1)
+
+    cmd = [code_bin, "--install-extension", str(out), "--force"]
+    if "--profile" in sys.argv:
+        idx = sys.argv.index("--profile")
+        if idx + 1 < len(sys.argv):
+            profile_name = sys.argv[idx + 1]
+            cmd.extend(["--profile", profile_name])
+            print(f"Installing {out.name} into VS Code profile '{profile_name}'...")
+        else:
+            print("Error: --profile requires a profile name argument.")
+            sys.exit(1)
+    else:
+        print(f"Installing {out.name} into default VS Code profile...")
+
+    res = subprocess.run(cmd)
+    if res.returncode == 0:
+        print("Installation complete! Reload VS Code (Developer: Reload Window) to use the new build.")
+    else:
+        sys.exit(res.returncode)
