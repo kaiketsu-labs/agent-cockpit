@@ -22,7 +22,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test:
-    name: Test & Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
