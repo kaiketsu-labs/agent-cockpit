@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.6](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.5...v0.6.6) (2026-11-07)
+
+
+### Bug Fixes
+
+* **vscode:** smooth cache countdown and extract webview assets with CI validation ([#45](https://github.com/kaiketsu-labs/agent-cockpit/issues/45)) ([4c0b021](https://github.com/kaiketsu-labs/agent-cockpit/commit/4c0b021b87ad9d6129c564dfd6afa209e1a1441e))
+
 ## [0.6.5](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.4...v0.6.5) (2026-11-06)
 
 
