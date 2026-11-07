@@ -1059,7 +1059,7 @@ const activate = async context => {
       await provider.reorderSession(session, targetId, before, folder)
       refresh(true)
     },
-  })
+  }, context.extensionUri)
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('agentCockpit.inbox', inbox),
     provider.onDidChange(() => inbox.post()),
