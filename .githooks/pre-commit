@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+echo "🔍 [pre-commit] Checking syntax and running tests..."
+
+# Ensure Node is found in various shell/GUI environments
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "⚠️ Node.js not found in PATH, skipping local test execution."
+  exit 0
+fi
+
+# 1. Fast JavaScript syntax check (<10ms)
+node --check vscode/*.js vscode/media/*.js
+
+# 2. Fast unit test suite (<150ms, 29 tests)
+node --test vscode/group.test.js
+
+echo "✅ [pre-commit] All syntax checks and unit tests passed!"

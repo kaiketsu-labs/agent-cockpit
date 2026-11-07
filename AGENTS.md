@@ -47,6 +47,19 @@ If Bun is installed, also run the plugin hook tests:
 bun test plugin/hooks/group.test.ts
 ```
 
+## Development & Branch Hygiene (Mandatory)
+
+- **Always start from latest `origin/main`**:
+  - Before starting any task or writing code, fetch the latest `main`: `git fetch origin main`
+  - When creating a new branch, branch strictly from `origin/main`: `git checkout -b <branch-name> origin/main`
+  - When working on an existing branch, always rebase onto `origin/main` first: `git fetch origin main && git rebase origin/main`
+  - Never let feature branches fall behind `main`. The repo uses `.githooks/pre-push` to reject any push where the branch is behind `origin/main`.
+- **Pre-commit validation**:
+  - Git hooks in `.githooks/` run `node --check` and `node --test` automatically in <150ms before every commit. Enable them once with `sh .githooks/setup.sh`.
+- **Local Testing & Dev Tools**:
+  - Press `F5` in VS Code to launch the Extension Development Host window running the local code live (isolated from the installed Marketplace extension).
+  - Run `python3 vscode/package.py --install` to build and install the VSIX locally into your active VS Code profile.
+
 ## Releasing & Shipping
 
 - **NEVER merge or release autonomously**: Agents must NEVER run `gh pr merge`, push directly to `main`, or merge release PRs on their own. Merging PRs and cutting releases is strictly restricted to the user. Agents only prepare branches, run tests, and open PRs.
