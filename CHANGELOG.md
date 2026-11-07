@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.7](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.6...v0.6.7) (2026-11-07)
+
+
+### Bug Fixes
+
+* **vscode:** resolve defaultRepo repo object in inboxModel to avoid crashing webview refresh ([#48](https://github.com/kaiketsu-labs/agent-cockpit/issues/48)) ([eac14d9](https://github.com/kaiketsu-labs/agent-cockpit/commit/eac14d93b90b996c4ce866ab8458ab97939fedc9))
+
 ## [0.6.6](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.5...v0.6.6) (2026-11-07)
 
 
