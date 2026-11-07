@@ -489,3 +489,95 @@ test('plugin/hooks/register.tsx declares all hook callbacks as top-level functio
     )
   }
 })
+
+test('vscode/media/inbox.js and vscode/media/inbox.css parse cleanly and are non-empty', () => {
+  const mediaDir = path.resolve(__dirname, 'media')
+  const jsPath = path.join(mediaDir, 'inbox.js')
+  const cssPath = path.join(mediaDir, 'inbox.css')
+
+  assert.ok(fs.existsSync(jsPath), 'media/inbox.js must exist')
+  assert.ok(fs.existsSync(cssPath), 'media/inbox.css must exist')
+
+  const jsContent = fs.readFileSync(jsPath, 'utf8')
+  const cssContent = fs.readFileSync(cssPath, 'utf8')
+
+  assert.ok(jsContent.length > 100, 'media/inbox.js must not be empty')
+  assert.ok(cssContent.length > 100, 'media/inbox.css must not be empty')
+
+  // Verify JS syntax
+  assert.doesNotThrow(() => {
+    new Function(jsContent)
+  }, 'Syntax error in media/inbox.js')
+
+  // Verify balanced braces in CSS
+  const openBraces = (cssContent.match(/\{/g) || []).length
+  const closeBraces = (cssContent.match(/\}/g) || []).length
+  assert.equal(openBraces, closeBraces, `Unbalanced braces in media/inbox.css: {=${openBraces}, }=${closeBraces}`)
+})
+
+test('vscode/inbox.js html() renders properly in both URI and fallback modes', () => {
+  const { html } = require('./inbox')
+  const standaloneHtml = html('test-nonce')
+  assert.ok(standaloneHtml.includes('nonce-test-nonce'), 'Standalone HTML must include nonce')
+  assert.ok(standaloneHtml.includes('<style nonce="test-nonce">'), 'Standalone HTML must embed style')
+  assert.ok(standaloneHtml.includes('<script nonce="test-nonce">'), 'Standalone HTML must embed script')
+
+  const uriHtml = html({
+    nonce: 'uri-nonce',
+    cspSource: 'vscode-webview:',
+    scriptUri: 'vscode-webview://media/inbox.js',
+    styleUri: 'vscode-webview://media/inbox.css',
+  })
+  assert.ok(uriHtml.includes('src="vscode-webview://media/inbox.js"'), 'URI mode HTML must link scriptUri')
+  assert.ok(uriHtml.includes('href="vscode-webview://media/inbox.css"'), 'URI mode HTML must link styleUri')
+  assert.ok(uriHtml.includes('style-src vscode-webview:'), 'URI mode HTML must allow cspSource in style-src')
+})
+
+test('all vscode javascript files parse without syntax errors', () => {
+  const dirs = [__dirname, path.join(__dirname, 'media')]
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue
+    for (const file of fs.readdirSync(dir)) {
+      if (file.endsWith('.js') && !file.endsWith('.test.js')) {
+        const fullPath = path.join(dir, file)
+        assert.doesNotThrow(() => {
+          new Function(fs.readFileSync(fullPath, 'utf8'))
+        }, `Syntax error in ${file}`)
+      }
+    }
+  }
+})
+
+test('all files packaged by package.py exist on disk', () => {
+  const packagePyPath = path.resolve(__dirname, 'package.py')
+  const content = fs.readFileSync(packagePyPath, 'utf8')
+  const match = content.match(/FILES\s*=\s*\[([\s\S]*?)\]/)
+  assert.ok(match, 'Must find FILES array in package.py')
+  const files = match[1]
+    .split('\n')
+    .map(line => line.trim().replace(/[",]/g, ''))
+    .filter(Boolean)
+  assert.ok(files.length >= 6, 'FILES in package.py should contain at least 6 files')
+  for (const rel of files) {
+    const full = path.join(__dirname, rel)
+    assert.ok(fs.existsSync(full), `File listed in package.py does not exist: ${rel}`)
+  }
+})
+
+test('all manifest and config JSON files are valid JSON', () => {
+  const root = path.resolve(__dirname, '..')
+  const jsonFiles = [
+    'vscode/package.json',
+    'plugin/.claude-plugin/plugin.json',
+    '.claude-plugin/marketplace.json',
+    'plugin/hooks/hooks.json',
+    '.release-please-manifest.json',
+    'release-please-config.json',
+  ]
+  for (const rel of jsonFiles) {
+    const full = path.join(root, rel)
+    assert.doesNotThrow(() => {
+      JSON.parse(fs.readFileSync(full, 'utf8'))
+    }, `Invalid JSON in ${rel}`)
+  }
+})
