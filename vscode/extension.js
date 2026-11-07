@@ -682,7 +682,8 @@ class SessionsProvider {
       const repos = this.config.githubRepositories.split(',').map(r => r.trim()).filter(Boolean)
       githubScope = repos.length === 1 ? repos[0] : `${repos.length} repos`
     } else {
-      const defaultRepo = (vscode.workspace.workspaceFolders ?? []).map(f => repoCache.get(f.uri.fsPath)).find(Boolean)
+      const defaultRepoInfo = (vscode.workspace.workspaceFolders ?? []).map(f => repoCache.get(f.uri.fsPath)).find(Boolean)
+      const defaultRepo = defaultRepoInfo?.repo || (typeof defaultRepoInfo === 'string' ? defaultRepoInfo : undefined)
       if (defaultRepo) githubScope = defaultRepo.split('/').pop()
     }
     return inboxModel({

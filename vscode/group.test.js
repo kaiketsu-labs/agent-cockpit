@@ -399,6 +399,15 @@ test('inbox lists sessions that need the person first and one card per folder or
   assert.deepEqual(model.loose.map(row => row.id), ['d'])
 })
 
+test('defaultRepo resolution handles detectedRepo object from repoCache without crashing', () => {
+  const repoCache = new Map()
+  repoCache.set('/workspace', { repo: 'kaiketsu-labs/agent-cockpit', host: 'github.com' })
+  const defaultRepoInfo = [repoCache.get('/workspace')].find(Boolean)
+  const defaultRepo = defaultRepoInfo?.repo || (typeof defaultRepoInfo === 'string' ? defaultRepoInfo : undefined)
+  const githubScope = defaultRepo ? defaultRepo.split('/').pop() : ''
+  assert.equal(githubScope, 'agent-cockpit')
+})
+
 test('sessions preserve keepWarm status and honor expiration', () => {
   const agents = [{ sessionId: 's1', pid: 1, status: 'idle' }, { sessionId: 's2', pid: 2, status: 'idle' }]
   const files = [
