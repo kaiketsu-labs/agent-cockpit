@@ -1101,6 +1101,7 @@ const openBriefing = async (provider, refresh) => {
         'Give me an ultra-compact executive dashboard briefing that can be scanned in 10 seconds.\n\n' +
         'CRITICAL RULES:\n' +
         '- NO tables, NO directories, NO commit counts/hashes, NO diff stats (+/- lines), NO meta-commentary on what tools/commands were run.\n' +
+        '- Ignore historical/stale branches, routine tool output, and minor git trivia. Focus strictly on actual progress and pending decisions.\n' +
         '- Keep it extremely brief. Short bullet points only, max 1-2 lines per bullet. No walls of text.\n\n' +
         'Strictly follow this 3-part layout (translate headings to English if sessions are in English):\n' +
         '### 📌 Auf einen Blick (TL;DR)\n' +
