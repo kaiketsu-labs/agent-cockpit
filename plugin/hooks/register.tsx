@@ -124,6 +124,8 @@ const save = ($: EngineInterface, change: Partial<SessionFile>) => {
 
 // A -p run, a script's or a child of a background job's (it inherits CLAUDE_JOB_DIR), stays off the list.
 let isListed = false
+let isBriefing = false
+let briefingInjected = false
 let kind: SessionFile['kind'] = 'interactive'
 let projects: string[] = []
 let suffix = ticketSuffix()
