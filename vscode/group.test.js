@@ -299,6 +299,23 @@ test('only a ticket the tracker calls done is closed', () => {
   assert.equal(isClosed(undefined), false)
 })
 
+test('groupSessions with sortByAge sorts folders and their sessions descending by recency', () => {
+  const sessions = [
+    { id: 'f1-old', name: 'Folder 1 older session', folder: 'Folder-A', updatedAt: 1000 },
+    { id: 'f1-new', name: 'Folder 1 newest session', folder: 'Folder-A', archivedAt: 5000, updatedAt: 2000 },
+    { id: 'f2-mid', name: 'Folder 2 session', folder: 'Folder-B', archivedAt: 3000, updatedAt: 3000 },
+    { id: 'loose-recent', name: 'Loose newest session', archivedAt: 4000, updatedAt: 1000 },
+    { id: 'loose-old', name: 'Loose older session', updatedAt: 500 },
+  ]
+  const groups = groupSessions(sessions, [], { sortByAge: true })
+  // Folder-A (max age 5000), Loose (max age 4000), Folder-B (max age 3000)
+  assert.deepEqual(groups.map(g => g.folder), ['Folder-A', null, 'Folder-B'])
+  // Folder-A sessions ordered by recency: f1-new (5000) before f1-old (1000)
+  assert.deepEqual(groups[0].sessions.map(s => s.id), ['f1-new', 'f1-old'])
+  // Loose sessions ordered by recency: loose-recent (4000) before loose-old (500)
+  assert.deepEqual(groups[1].sessions.map(s => s.id), ['loose-recent', 'loose-old'])
+})
+
 test('a week without a turn or a closed ticket hides a session, a hand-set flag wins, work never hides', () => {
   const day = 24 * 60 * 60 * 1000
   const idle = { state: 'idle', updatedAt: 0 }
@@ -307,6 +324,8 @@ test('a week without a turn or a closed ticket hides a session, a hand-set flag 
   assert.equal(isHidden(idle, 0, true), true)
   assert.equal(isHidden(idle, 10 * day, true, false), false)
   assert.equal(isHidden(idle, 0, false, true), true)
+  assert.equal(isHidden(idle, 0, false, 1700000000000), true)
+  assert.equal(isHidden(idle, 10 * day, true, 0), false)
   assert.equal(isHidden({ state: 'working', updatedAt: 0 }, 10 * day, true, true), false)
   assert.equal(isHidden({ state: 'blocked', updatedAt: 0 }, 10 * day, false), true)
 })

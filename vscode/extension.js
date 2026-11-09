@@ -447,7 +447,13 @@ class SessionsProvider {
   }
 
   async setHidden(session, isHidden) {
-    await this.saveView({ hidden: { ...this.view.hidden, [session.id]: isHidden } })
+    const val = isHidden ? Date.now() : false
+    if (!isHidden) {
+      delete session.archivedAt
+    } else {
+      session.archivedAt = val
+    }
+    await this.saveView({ hidden: { ...this.view.hidden, [session.id]: val } })
   }
 
   async addFolder(rawFolder) {
@@ -497,7 +503,11 @@ class SessionsProvider {
   isHidden(session) {
     const folder = session.folder ?? session.ticket
     const isTicketClosed = folder !== undefined && this.isFolderClosed(folder)
-    return isHidden(session, Date.now(), isTicketClosed, this.view.hidden?.[session.id])
+    const flag = this.view.hidden?.[session.id]
+    if (typeof flag === 'number' && flag > 0) {
+      session.archivedAt = flag
+    }
+    return isHidden(session, Date.now(), isTicketClosed, flag)
   }
 
   regroup() {
@@ -510,7 +520,7 @@ class SessionsProvider {
     this.hidden = groupSessions(
       this.sessions.filter(session => this.isHidden(session)),
       this.order,
-      { unticketedSort: 'age' },
+      { sortByAge: true },
     )
   }
 
@@ -913,12 +923,15 @@ const attach = async (session, provider) => {
     return
   }
   const short = withoutTicketSuffix(session.name, pattern) || session.name
+  const cwd = session.cwd && fs.existsSync(session.cwd)
+    ? session.cwd
+    : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir())
   vscode.window
     .createTerminal({
       name: short,
       shellPath: CLAUDE,
       shellArgs: attachArgs(session),
-      cwd: session.cwd,
+      cwd,
       env: (session.folder || session.ticket) ? { AGENT_COCKPIT_FOLDER: session.folder || session.ticket, CLAUDE_DECK_FOLDER: session.folder || session.ticket } : undefined,
       iconPath: new vscode.ThemeIcon('hubot'),
       location: vscode.TerminalLocation.Editor,

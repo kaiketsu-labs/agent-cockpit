@@ -208,6 +208,12 @@ const autoNameInBackground = async ($: EngineInterface, userPrompt: string, pres
 }
 
 const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => Promise<unknown>) => {
+  isBriefing = (await $.env.get('AGENT_COCKPIT_BRIEFING')) === '1'
+  if (isBriefing) {
+    isListed = false
+    briefingInjected = false
+    return next(e)
+  }
   projects = ((await $.env.get('TICKET_PROJECTS')) ?? '')
     .split(',')
     .map(project => project.trim())
@@ -337,6 +343,14 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
 // (including upgrading a generic topic folder to the specific ticket folder);
 // if the session has no name yet, classify and name it silently in the background via Haiku.
 const handlePromptSubmit = async ($: EngineInterface, e: any, next: (e: any) => Promise<unknown>) => {
+  if (isBriefing) {
+    if (!briefingInjected && !(e as { isMeta?: boolean }).isMeta) {
+      briefingInjected = true
+      const snapshot = await $.fs.read(`${await claudeDir($)}/cockpit/briefing.md`).catch(() => '')
+      if (snapshot) return next({ ...e, context: [...(e.context ?? []), snapshot] })
+    }
+    return next(e)
+  }
   turnActive = true
   const record = await storedRecord($)
   const fallback = promptName(e.text)
@@ -428,6 +442,7 @@ const handleKeepWarmTool = async ($: EngineInterface, e: unknown) => {
 
 // Automatically detect ticket keys in ticket-intent CLI commands (e.g. acli, jira, gh issue, git checkout -b feat/PROJ-123).
 const handleBashTicketDetection = async ($: EngineInterface, e: unknown, next: (e: unknown) => Promise<unknown>) => {
+  if (!isListed) return next(e)
   const call = e as unknown as Record<string, unknown>
   const tool = String(call.tool ?? '').replace(/^mcp__[a-zA-Z0-9_-]+__/, '')
   const params = (call.params as Record<string, unknown> | undefined) ?? call
@@ -450,7 +465,7 @@ const handleBashTicketDetection = async ($: EngineInterface, e: unknown, next: (
 
 const handleTurnComplete = async ($: EngineInterface, e: any, next: (e: any) => Promise<unknown>) => {
   turnActive = false
-  if (e.agentId !== undefined) return next(e)
+  if (!isListed || e.agentId !== undefined) return next(e)
   const usage = e.usage
   const contextTokens = usage
     ? (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.input_tokens ?? 0)
