@@ -1,52 +1,54 @@
 {
   "name": "agent-cockpit",
-  "displayName": "Agent Cockpit for Claude Code",
-  "description": "Multi-session cockpit for Claude Code in VS Code with prompt cache keepalive, ticket grouping, and PR tracking",
-  "version": "1.3.0",
+  "displayName": "Agent Cockpit",
+  "description": "Coding agent sessions organized by project folders and tickets, with live status, ticket status and open PRs; click a session to jump in.",
+  "version": "0.6.7",
   "publisher": "kaiketsu-labs",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#18181b",
+    "theme": "dark"
+  },
+  "categories": [
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "agent cockpit",
+    "cockpit",
+    "claude",
+    "claude code",
+    "ai",
+    "chat",
+    "productivity",
+    "terminal",
+    "session manager",
+    "worktrees",
+    "jira",
+    "github"
+  ],
+  "homepage": "https://github.com/kaiketsu-labs/agent-cockpit#readme",
+  "bugs": {
+    "url": "https://github.com/kaiketsu-labs/agent-cockpit/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/kaiketsu-labs/agent-cockpit"
   },
-  "bugs": {
-    "url": "https://github.com/kaiketsu-labs/agent-cockpit/issues"
-  },
-  "homepage": "https://github.com/kaiketsu-labs/agent-cockpit#readme",
   "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "AI",
-    "Productivity",
-    "Other"
-  ],
-  "keywords": [
-    "claude",
-    "claude code",
-    "anthropic",
-    "ai assistant",
-    "cockpit",
-    "agent manager",
-    "multi-agent",
-    "prompt caching"
-  ],
-  "icon": "icon.png",
-  "galleryBanner": {
-    "color": "#1e1e24",
-    "theme": "dark"
+    "vscode": "^1.90.0"
   },
   "main": "./extension.js",
-  "activationEvents": [
-    "onStartupFinished"
-  ],
+  "activationEvents": [],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
           "id": "agentCockpit",
           "title": "Agent Cockpit",
-          "icon": "icon.svg"
+          "icon": "media/icon.svg"
         }
       ]
     },
@@ -55,7 +57,7 @@
         {
           "type": "webview",
           "id": "agentCockpit.inbox",
-          "name": "Sessions"
+          "name": "Inbox"
         }
       ]
     },
@@ -72,12 +74,12 @@
             "none"
           ],
           "default": "auto",
-          "description": "How to fetch issue status: 'auto' tries Jira (acli/jira-cli/REST) and GitHub (gh issue view), 'jira' forces Jira, 'github' forces GitHub, 'command' runs agentCockpit.trackerCommand, 'none' disables issue tracking."
+          "description": "Issue tracker integration for ticket folders. 'auto' queries Jira for PROJ-123 keys (when JIRA_URL/JIRA_TOKEN are set) and GitHub Issues for #42 / owner/repo#42 keys (when gh is available), without showing error banners when unconfigured."
         },
         "agentCockpit.trackerCommand": {
           "type": "string",
           "default": "",
-          "description": "Shell command to run when tracker is 'command'. Receives a JSON array of keys on stdin and must return JSON mapping each key to { status, category, summary, url }."
+          "description": "Shell command used when agentCockpit.tracker is 'command'. Receives JSON array of ticket keys on stdin and must print a JSON object mapping keys to { status, category ('new'|'indeterminate'|'done'), summary, url }."
         },
         "agentCockpit.pullRequests": {
           "type": "string",
@@ -87,32 +89,32 @@
             "none"
           ],
           "default": "auto",
-          "description": "Fetch open PRs via GitHub CLI (gh api search/issues) for each active ticket key. 'none' disables PR search."
+          "description": "Pull request lookup mode for ticket folders. 'auto' queries GitHub via gh when available and stays silent when unconfigured; 'none' disables PR lookups."
         },
         "agentCockpit.ticketProjects": {
           "type": "string",
           "default": "",
-          "description": "Comma-separated Jira/Linear project prefixes (e.g. 'PROJ,ENG,INFRA') to recognize in branch names, folder names, and prompts. Case-insensitive."
+          "description": "Comma-separated project prefixes (e.g. 'PROJ,OPS') to restrict Jira-style ticket recognition. Falls back to TICKET_PROJECTS in settings.json."
         },
         "agentCockpit.ticketPattern": {
           "type": "string",
           "default": "",
-          "description": "Custom regex matching ticket keys (e.g. '[A-Z]{2,10}-\\d+'). Overrides agentCockpit.ticketProjects."
+          "description": "Optional custom regular expression for matching ticket keys."
         },
         "agentCockpit.githubOrg": {
           "type": "string",
           "default": "",
-          "description": "Optional GitHub organization or username (e.g. 'my-org'). When set, Jira ticket PR searches scope org-wide (org:my-org) across all repositories in that organization."
+          "description": "GitHub organization or user scope (e.g. 'kaiketsu-labs') to search for pull requests on Jira ticket folders. When empty, defaults to auto-detected workspace repositories."
         },
         "agentCockpit.githubRepositories": {
           "type": "string",
           "default": "",
-          "description": "Optional comma-separated list of GitHub repositories (e.g. 'org/repo1, org/repo2'). When set, searches for open PRs are scoped to these repositories instead of guessing from workspace remotes."
+          "description": "Comma-separated list of GitHub repositories (e.g. 'org/repo1,org/repo2') to search for pull requests on Jira ticket folders. Overrides auto-detection when set."
         },
         "agentCockpit.closeTerminalOnArchive": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically close the session's VS Code terminal tab when moving it to History."
+          "description": "Automatically close the associated VS Code terminal tab when archiving a session (moving to history)."
         }
       }
     },
@@ -228,10 +230,6 @@
           "when": "false"
         },
         {
-          "command": "agentCockpit.renameFolder",
-          "when": "false"
-        },
-        {
           "command": "agentCockpit.hide",
           "when": "false"
         },
@@ -241,6 +239,10 @@
         },
         {
           "command": "agentCockpit.rename",
+          "when": "false"
+        },
+        {
+          "command": "agentCockpit.renameFolder",
           "when": "false"
         }
       ]

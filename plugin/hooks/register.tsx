@@ -313,7 +313,7 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
       const record = await storedRecord($)
       if (!record?.keepWarm || !record.lastTurnEndAt) return
       if (record.keepWarmUntil && Date.now() > record.keepWarmUntil) {
-        await save($, { keepWarm: false, keepWarmUntil: null })
+        await save($, { keepWarm: false, keepWarmUntil: null })\
         return
       }
       const elapsed = Date.now() - record.lastTurnEndAt
@@ -347,9 +347,11 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
 const handlePromptSubmit = async ($: EngineInterface, e: any, next: (e: any) => Promise<unknown>) => {
   if (isBriefing) {
     if (!briefingInjected && !(e as { isMeta?: boolean }).isMeta) {
-      briefingInjected = true
       const snapshot = await $.fs.read(`${await claudeDir($)}/cockpit/briefing.md`).catch(() => '')
-      if (snapshot) return next({ ...e, context: [...(e.context ?? []), snapshot] })
+      if (snapshot) {
+        briefingInjected = true
+        return next({ ...e, context: [...(e.context ?? []), snapshot] })
+      }
     }
     return next(e)
   }
