@@ -913,7 +913,9 @@ const newSession = (folder, provider) => {
   if (prefill) {
     setTimeout(() => {
       try {
-        terminal.sendText(prefill, false)
+        if (terminal.exitStatus === undefined) {
+          terminal.sendText(prefill, false)
+        }
       } catch {}
     }, 1200)
   }

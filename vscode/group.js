@@ -84,7 +84,7 @@ const customTitleLine = (sessionId, customTitle) => `${JSON.stringify({ type: 'c
 
 const prefillForFolder = (folder, { issues = {}, titles = {}, pattern = ticketPattern() } = {}) => {
   if (!folder || typeof folder !== 'string') return ''
-  const trimmed = folder.trim()
+  const trimmed = folder.replace(/[\r\n]+/g, ' ').trim()
   if (!trimmed) return ''
   const ticketKey = folderTicket(trimmed, pattern)
   const rawTitle =
@@ -93,7 +93,8 @@ const prefillForFolder = (folder, { issues = {}, titles = {}, pattern = ticketPa
     titles[trimmed] ??
     (ticketKey ? titles[ticketKey] : undefined)
   const title = typeof rawTitle === 'string' ? rawTitle.replace(/[\r\n]+/g, ' ').trim() : ''
-  return title ? `${trimmed} (${title}): ` : `${trimmed}: `
+  const hasDistinctTitle = title && title.toLowerCase() !== trimmed.toLowerCase()
+  return hasDistinctTitle ? `${trimmed} (${title}): ` : `${trimmed}: `
 }
 
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare

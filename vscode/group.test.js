@@ -680,10 +680,25 @@ test('prefillForFolder formats ticket or folder with title or clean key', () => 
   // Non-ticket folder without title
   assert.equal(prefillForFolder('Auth Refactor', {}), 'Auth Refactor: ')
 
-  // Sanitizes newlines in summary
+  // Sanitizes newlines in summary and folder
   assert.equal(
     prefillForFolder('PROJ-123', { issues: { 'PROJ-123': { summary: 'Line 1\r\nLine 2\n' } } }),
     'PROJ-123 (Line 1 Line 2): ',
+  )
+  assert.equal(
+    prefillForFolder('PROJ-123\r\n', { issues: { 'PROJ-123': { summary: 'OAuth Token Refresh' } } }),
+    'PROJ-123 (OAuth Token Refresh): ',
+  )
+  assert.equal(prefillForFolder('Auth\r\nRefactor', {}), 'Auth Refactor: ')
+
+  // Omits redundant title when title matches folder name case-insensitively
+  assert.equal(
+    prefillForFolder('Auth Refactor', { titles: { 'Auth Refactor': 'Auth Refactor' } }),
+    'Auth Refactor: ',
+  )
+  assert.equal(
+    prefillForFolder('PROJ-123', { issues: { 'PROJ-123': { summary: 'proj-123' } } }),
+    'PROJ-123: ',
   )
 
   // Empty or undefined folder
