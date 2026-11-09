@@ -32,6 +32,7 @@ const SHAPES = {
   external: '<path d="M9 3h4v4M13 3 7.5 8.5M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
   close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
   gear: '<path d="M9.1 1.5H6.9l-.3 1.5a5 5 0 0 0-1.2.7L4 3 2.5 4.5l.7 1.4a5 5 0 0 0-.7 1.2l-1.5.3v2.2l1.5.3a5 5 0 0 0 .7 1.2L2.5 12 4 13.5l1.4-.7a5 5 0 0 0 1.2.7l.3 1.5h2.2l.3-1.5a5 5 0 0 0 1.2-.7l1.4.7 1.5-1.5-.7-1.4a5 5 0 0 0 .7-1.2l1.5-.3V6.9l-1.5-.3a5 5 0 0 0-.7-1.2l.7-1.4L13.5 3 12 2.5l-1.4.7a5 5 0 0 0-1.2-.7l-.3-1.5zM8 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>',
+  compass: '<circle cx="8" cy="8" r="6"/><polygon points="6.5,6.5 11,5 9.5,9.5 5,11" fill="currentColor" stroke="none"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -204,7 +205,13 @@ const render = () => {
       search),
     el('div', { class: 'filter-bar' },
       el('div', { class: 'segmented' }, chip('all', 'All'), chip('active', 'Active'), chip('prs', 'PRs')),
-      el('div', { id: 'stats', class: 'stats-pills' }))))
+      el('div', { class: 'bar-right' },
+        el('div', { id: 'stats', class: 'stats-pills' }),
+        el('button', {
+          class: 'briefing-btn',
+          title: 'Start on-demand Briefing session (Sonnet)',
+          onclick: () => send('briefing'),
+        }, icon('compass'), 'Briefing')))))
   root.append(el('div', { id: 'list' }))
   renderList()
 }

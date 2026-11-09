@@ -124,6 +124,8 @@ const save = ($: EngineInterface, change: Partial<SessionFile>) => {
 
 // A -p run, a script's or a child of a background job's (it inherits CLAUDE_JOB_DIR), stays off the list.
 let isListed = false
+let isBriefing = false
+let briefingInjected = false
 let kind: SessionFile['kind'] = 'interactive'
 let projects: string[] = []
 let suffix = ticketSuffix()
@@ -208,6 +210,12 @@ const autoNameInBackground = async ($: EngineInterface, userPrompt: string, pres
 }
 
 const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => Promise<unknown>) => {
+  isBriefing = (await $.env.get('AGENT_COCKPIT_BRIEFING')) === '1'
+  if (isBriefing) {
+    isListed = false
+    briefingInjected = false
+    return next(e)
+  }
   projects = ((await $.env.get('TICKET_PROJECTS')) ?? '')
     .split(',')
     .map(project => project.trim())
@@ -337,6 +345,14 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
 // (including upgrading a generic topic folder to the specific ticket folder);
 // if the session has no name yet, classify and name it silently in the background via Haiku.
 const handlePromptSubmit = async ($: EngineInterface, e: any, next: (e: any) => Promise<unknown>) => {
+  if (isBriefing) {
+    if (!briefingInjected && !(e as { isMeta?: boolean }).isMeta) {
+      briefingInjected = true
+      const snapshot = await $.fs.read(`${await claudeDir($)}/cockpit/briefing.md`).catch(() => '')
+      if (snapshot) return next({ ...e, context: [...(e.context ?? []), snapshot] })
+    }
+    return next(e)
+  }
   turnActive = true
   const record = await storedRecord($)
   const fallback = promptName(e.text)

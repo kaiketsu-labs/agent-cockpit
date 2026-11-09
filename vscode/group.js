@@ -360,32 +360,36 @@ const mergeSessions = (agents, files, pattern) => {
       ticket: resolved,
     }
   }
-  const live = agents.map(agent => {
-    const file = fileOf.get(agent.sessionId) ?? {}
-    const isBg = agent.id !== undefined
-    const keepWarm = Boolean(file.keepWarm && (!file.keepWarmUntil || file.keepWarmUntil > Date.now()))
-    return withFolder(
-      {
-        id: isBg ? agent.id : agent.sessionId,
-        sessionId: agent.sessionId,
-        pid: isBg ? undefined : agent.pid,
-        name: (isBg ? file.name || agent.name : file.name || file.prompt || agent.name) || agent.sessionId.slice(0, 8),
-        hasCustomName: Boolean(file.name),
-        state: isBg ? agent.state : interactiveState(agent.status),
-        updatedAt: file.lastTurnEndAt ?? agent.startedAt ?? 0,
-        lastWriteAt: file.lastTurnEndAt,
-        cwd: agent.cwd ?? file.cwd,
-        interactive: !isBg,
-        keepWarm,
-        contextTokens: file.contextTokens,
-        model: file.model,
-      },
-      file.folder ?? file.ticket,
-    )
-  })
+  const live = agents
+    .filter(agent => agent.name !== 'Briefing' && !fileOf.get(agent.sessionId)?.isBriefing)
+    .map(agent => {
+      const file = fileOf.get(agent.sessionId) ?? {}
+      const isBg = agent.id !== undefined
+      const keepWarm = Boolean(file.keepWarm && (!file.keepWarmUntil || file.keepWarmUntil > Date.now()))
+      return withFolder(
+        {
+          id: isBg ? agent.id : agent.sessionId,
+          sessionId: agent.sessionId,
+          pid: isBg ? undefined : agent.pid,
+          name: (isBg ? file.name || agent.name : file.name || file.prompt || agent.name) || agent.sessionId.slice(0, 8),
+          hasCustomName: Boolean(file.name),
+          prompt: file.prompt,
+          state: isBg ? agent.state : interactiveState(agent.status),
+          updatedAt: file.lastTurnEndAt ?? agent.startedAt ?? 0,
+          lastWriteAt: file.lastTurnEndAt,
+          cwd: agent.cwd ?? file.cwd,
+          initialCwd: file.cwd,
+          interactive: !isBg,
+          keepWarm,
+          contextTokens: file.contextTokens,
+          model: file.model,
+        },
+        file.folder ?? file.ticket,
+      )
+    })
   const liveIds = new Set(agents.map(agent => agent.sessionId))
   const ended = files
-    .filter(file => file.kind === 'interactive' && !liveIds.has(file.sessionId) && (file.name || file.prompt))
+    .filter(file => file.name !== 'Briefing' && !file.isBriefing && file.kind === 'interactive' && !liveIds.has(file.sessionId) && (file.name || file.prompt))
     .map(file => {
       const keepWarm = Boolean(file.keepWarm && (!file.keepWarmUntil || file.keepWarmUntil > Date.now()))
       return withFolder(
@@ -393,10 +397,12 @@ const mergeSessions = (agents, files, pattern) => {
           id: file.sessionId,
           sessionId: file.sessionId,
           name: file.name || file.prompt,
+          prompt: file.prompt,
           state: 'done',
           updatedAt: file.lastTurnEndAt ?? file.startedAt,
           lastWriteAt: file.lastTurnEndAt,
           cwd: file.cwd,
+          initialCwd: file.cwd,
           ended: true,
           keepWarm,
           contextTokens: file.contextTokens,
