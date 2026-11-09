@@ -900,6 +900,9 @@ const newSession = folder =>
     .show()
 
 const attach = async (session, provider) => {
+  if (provider?.isHidden(session)) {
+    await provider.setHidden(session, false)
+  }
   if (session.interactive) return focusInteractive(session, provider)
   const pattern = provider.pattern
   const open = await findTerminalForSession(session)
@@ -916,7 +919,7 @@ const attach = async (session, provider) => {
       shellPath: CLAUDE,
       shellArgs: attachArgs(session),
       cwd: session.cwd,
-      env: session.ticket ? { AGENT_COCKPIT_FOLDER: session.ticket, CLAUDE_DECK_FOLDER: session.ticket } : undefined,
+      env: (session.folder || session.ticket) ? { AGENT_COCKPIT_FOLDER: session.folder || session.ticket, CLAUDE_DECK_FOLDER: session.folder || session.ticket } : undefined,
       iconPath: new vscode.ThemeIcon('hubot'),
       location: vscode.TerminalLocation.Editor,
     })
@@ -954,10 +957,10 @@ const search = async provider => {
       const tKey = folderTicket(folder, provider.pattern)
       const title =
         tKey &&
-        (provider.titles[folder] ??
-          provider.titles[tKey] ??
-          provider.issues[folder]?.summary ??
-          provider.issues[tKey]?.summary)
+        (provider.issues[folder]?.summary ??
+          provider.issues[tKey]?.summary ??
+          provider.titles[folder] ??
+          provider.titles[tKey])
       const when = `${age(now - session.updatedAt)}${provider.isHidden(session) ? ' · hidden' : ''}`
       return {
         label: `$(${status.icon}) ${withoutTicketSuffix(session.name, provider.pattern) || session.name}`,
@@ -986,7 +989,7 @@ const moveToFolder = async (session, provider, refresh) => {
       const tKey = folderTicket(f, provider.pattern)
       return {
         label: `$(folder) ${f}`,
-        description: tKey ? (provider.titles[f] ?? provider.titles[tKey] ?? provider.issues[tKey]?.summary ?? '') : '',
+        description: tKey ? (provider.issues[tKey]?.summary ?? provider.titles[f] ?? provider.titles[tKey] ?? '') : '',
         folder: f,
       }
     })),

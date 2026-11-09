@@ -399,6 +399,38 @@ test('inbox lists sessions that need the person first and one card per folder or
   assert.deepEqual(model.loose.map(row => row.id), ['d'])
 })
 
+test('tracker issue summary takes precedence over cached ticket titles, falling back to cached titles when tracker is unconfigured or returns nothing', () => {
+  const session = (id, folder) => ({ id, name: `work ${id}`, folder, ticket: folder, state: 'idle', updatedAt: 0 })
+  const sessions = [
+    session('s1', 'PROJ-1'),
+    session('s2', 'PROJ-2'),
+    session('s3', 'PROJ-3'),
+  ]
+  const model = inboxModel({
+    groups: groupSessions(sessions),
+    hidden: [],
+    prs: {},
+    issues: {
+      'PROJ-1': { category: 'indeterminate', summary: 'Canonical Jira Title', status: 'In Progress' },
+    },
+    titles: {
+      'PROJ-1': 'Stale AI Guess',
+      'PROJ-2': 'Manual Fallback Title',
+    },
+    pattern: proj,
+    cacheTtl: 300_000,
+    now: 60_000,
+  })
+  assert.deepEqual(
+    model.tickets.map(t => [t.key, t.title]),
+    [
+      ['PROJ-1', 'Canonical Jira Title'],
+      ['PROJ-2', 'Manual Fallback Title'],
+      ['PROJ-3', ''],
+    ],
+  )
+})
+
 test('defaultRepo resolution handles detectedRepo object from repoCache without crashing', () => {
   const repoCache = new Map()
   repoCache.set('/workspace', { repo: 'kaiketsu-labs/agent-cockpit', host: 'github.com' })

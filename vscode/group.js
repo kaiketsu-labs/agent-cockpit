@@ -445,7 +445,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
       key,
       ticketKey: ticketKey ?? null,
       isTicket,
-      title: isTicket ? (titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? issue?.summary ?? '') : '',
+      title: isTicket ? (issue?.summary ?? titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? '') : '',
       category: issue?.category ?? null,
       status: issue?.status ?? null,
       sessions,

@@ -89,7 +89,13 @@ const sessionRow = row => {
         iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
         iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
         row.isHidden
-          ? iconBtn('restore', 'Restore from history', () => send('show', { id: row.id }))
+          ? iconBtn('restore', 'Restore from history', () => {
+              if (row.folder) {
+                ui.open[row.folder] = true
+                save()
+              }
+              send('show', { id: row.id })
+            })
           : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))),
       isWarm && el('span', {
         class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
@@ -116,7 +122,7 @@ const sessionRow = row => {
     const isBefore = node.classList.contains('drop-before')
     node.classList.remove('drop-before', 'drop-after')
     const movedId = event.dataTransfer.getData('text/plain')
-    if (movedId && movedId !== row.id) {
+    if (movedId && movedId !== row.id && !row.isHidden) {
       send('reorderSession', { movedId, targetId: row.id, before: isBefore, folder: row.folder })
     }
   })
