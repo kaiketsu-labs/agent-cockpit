@@ -313,7 +313,7 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
       const record = await storedRecord($)
       if (!record?.keepWarm || !record.lastTurnEndAt) return
       if (record.keepWarmUntil && Date.now() > record.keepWarmUntil) {
-        await save($, { keepWarm: false, keepWarmUntil: null })\
+        await save($, { keepWarm: false, keepWarmUntil: null })
         return
       }
       const elapsed = Date.now() - record.lastTurnEndAt
