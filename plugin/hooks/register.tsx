@@ -37,6 +37,7 @@ type SessionFile = {
   lastKeepWarmAt?: number
   contextTokens?: number
   model?: string
+  isBriefing?: boolean
 }
 
 const claudeDir = async ($: EngineInterface) => `${await $.env.get('HOME')}/.claude`

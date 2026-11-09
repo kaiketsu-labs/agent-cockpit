@@ -1087,7 +1087,7 @@ const openBriefing = async (provider, refresh) => {
         'sonnet',
         '-n',
         'Briefing',
-        'Gib mir ein kurzes, strukturiertes Briefing zum aktuellen Stand meiner Tickets und Sessions: Wo brennt es (Waiting/Needs Input), was wurde in den Sessions umgesetzt und was ist der nächste sinnvolle Schritt?',
+        'Give me a concise, structured briefing on the current status of my tickets and sessions: what needs immediate attention (Waiting/Needs Input), what was recently implemented, and what the next logical steps are.',
       ],
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
       env: { AGENT_COCKPIT_BRIEFING: '1' },

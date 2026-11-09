@@ -48,262 +48,150 @@ const iconBtn = (kind, title, fn) => el('button', { class: 'icon-btn', title, on
 const matches = (text, q) => text.toLowerCase().includes(q)
 const sessionMatches = (row, q) => !q || matches(row.name + ' ' + (row.ticket ?? ''), q)
 const cardMatches = (card, q) =>
-  !q ||
-  matches(card.key ?? '', q) ||
-  matches(card.title ?? '', q) ||
-  card.sessions.some(session => sessionMatches(session, q)) ||
-  card.prs.some(pr => matches(`${pr.repo}#${pr.number} ${pr.title}`, q))
+  !q || matches((card.key ?? '') + ' ' + card.title, q) || card.sessions.some(row => sessionMatches(row, q)) || card.prs.some(pr => matches(pr.title + pr.repo, q))
+const passesFilter = card => ui.filter === 'all' || (ui.filter === 'active' && card.isBusy) || (ui.filter === 'prs' && card.prs.length > 0)
+
+const clock = ms => {
+  const seconds = Math.ceil(ms / 1000)
+  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0')
+}
 
 const sessionRow = row => {
-  const statusOrb = el('span', { class: 'status-orb ' + row.state, title: row.stateLabel })
-  const isWarm = Boolean(row.keepWarm || row.cache)
-  const isDraggable = !row.isHidden
-  const node = el('div', {
+  const hasExpires = Boolean(row.cacheExpiresAt && row.cacheExpiresAt > 0)
+  const now = Date.now()
+  const left = hasExpires ? Math.max(0, row.cacheExpiresAt - now) : 0
+  const timeStr = left > 0 ? clock(left) : (hasExpires ? null : row.cache)
+  const isWarm = Boolean(timeStr || row.keepWarm)
+
+  const cardProps = {
+    id: 'session-' + row.id,
     class: 'session-card ' + row.state,
-    draggable: isDraggable ? 'true' : 'false',
-    title: row.stateLabel + ' · Click to open',
+    draggable: 'true',
+    title: row.name + ' · ' + row.stateLabel,
     onclick: () => send('attach', { id: row.id }),
-  },
+    ondragstart: event => {
+      event.dataTransfer.setData('text/plain', row.id)
+      event.dataTransfer.effectAllowed = 'move'
+    },
+  }
+  if (hasExpires && left > 0) {
+    cardProps['data-cache-expires'] = row.cacheExpiresAt
+  }
+  if (row.keepWarm) {
+    cardProps['data-keep-warm'] = '1'
+  }
+
+  const node = el('div', cardProps,
     el('div', { class: 'session-top' },
-      statusOrb,
+      el('span', { class: 'status-orb ' + row.state }),
       el('span', { class: 'session-name' }, row.name),
-      el('span', { class: 'meta hide-on-hover' },
-        el('span', {}, row.age)),
+      el('span', { class: 'meta hide-on-hover' }, el('span', {}, row.age ?? row.activity)),
       el('span', { class: 'actions' },
         iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
         iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
         row.isHidden
-          ? iconBtn('restore', 'Restore from history', () => send('show', { id: row.id }))
+          ? iconBtn('restore', 'Restore from history', () => {
+              if (row.folder) {
+                ui.open[row.folder] = true
+                save()
+              }
+              send('show', { id: row.id })
+            })
           : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))),
       isWarm && el('span', {
         class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
         title: row.keepWarm
-          ? (row.cache ? `Prompt cache kept warm (~${row.cache} left in window) · Click to disable` : 'Prompt cache kept warm · Click to disable')
-          : `Prompt cache ~${row.cache} left · Click to keep warm`,
+          ? 'Prompt cache keepalive active' + (timeStr ? ' (auto-refreshing in ' + timeStr + ')' : '') + ' · Click to disable'
+          : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
         onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-      }, row.cache ? `${row.cache} left` : 'warm')))
+      }, '⚡ ' + (row.keepWarm ? 'warm' : (timeStr || 'warm')))))
 
-  if (isDraggable) {
-    node.addEventListener('dragstart', event => {
-      event.dataTransfer.setData('text/plain', row.id)
-      event.dataTransfer.effectAllowed = 'move'
-    })
-    node.addEventListener('dragover', event => {
-      event.preventDefault()
-      event.dataTransfer.dropEffect = 'move'
-      const rect = node.getBoundingClientRect()
-      const mid = rect.top + rect.height / 2
-      if (event.clientY < mid) {
-        node.classList.add('drop-before')
-        node.classList.remove('drop-after')
-      } else {
-        node.classList.add('drop-after')
-        node.classList.remove('drop-before')
-      }
-    })
-    node.addEventListener('dragleave', () => {
-      node.classList.remove('drop-before', 'drop-after')
-    })
-    node.addEventListener('drop', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      const isBefore = node.classList.contains('drop-before')
-      node.classList.remove('drop-before', 'drop-after')
-      const movedId = event.dataTransfer.getData('text/plain')
-      if (movedId && movedId !== row.id) {
-        send('reorderSession', { movedId, targetId: row.id, before: isBefore, folder: row.folder })
-      }
-    })
-  }
+  node.addEventListener('dragover', event => {
+    event.preventDefault()
+    event.stopPropagation()
+    const rect = node.getBoundingClientRect()
+    const isBefore = (event.clientY - rect.top) < rect.height / 2
+    node.classList.toggle('drop-before', isBefore)
+    node.classList.toggle('drop-after', !isBefore)
+  })
+  node.addEventListener('dragleave', () => {
+    node.classList.remove('drop-before', 'drop-after')
+  })
+  node.addEventListener('drop', event => {
+    event.preventDefault()
+    event.stopPropagation()
+    const isBefore = node.classList.contains('drop-before')
+    node.classList.remove('drop-before', 'drop-after')
+    const movedId = event.dataTransfer.getData('text/plain')
+    if (movedId && movedId !== row.id && !row.isHidden) {
+      send('reorderSession', { movedId, targetId: row.id, before: isBefore, folder: row.folder })
+    }
+  })
   return node
 }
 
-const cardNode = card => {
-  const isOpen = ui.open[card.key] ?? false
-  const isTicket = card.isTicket
-  const ticketClass = card.category ? ` t-${card.category}` : ''
-  const prsCount = card.prs.length
-  const isDropTarget = !card.isHidden
-  const node = el('div', { class: 'card' + (card.isBusy ? ' busy' : '') },
-    el('div', {
-      class: 'head',
-      onclick: () => { ui.open[card.key] = !isOpen; save(); renderList() },
-    },
-      icon('chev', isOpen ? 'open' : ''),
-      icon(isTicket ? 'ticket' : 'folder', isTicket ? ticketClass : ''),
-      el('span', { class: 'key' + (isTicket ? ' ticket-pill' + ticketClass : ''), title: card.status ? `Status: ${card.status}` : '' }, card.key),
-      card.title && el('span', { class: 'title' }, card.title),
-      el('span', { class: 'meta hide-on-hover' },
-        prsCount > 0 && el('span', { class: 'badge pr' }, icon('pr'), `${prsCount}`)),
-      el('span', { class: 'actions' },
-        iconBtn('plus', 'New session in folder', () => send('newSession', { folder: card.key })),
-        isTicket && iconBtn('external', 'Open ticket in browser', () => send('openTicket', { ticket: card.key })),
-        iconBtn('edit', 'Rename folder', () => send('renameFolder', { folder: card.key })),
-        iconBtn('close', 'Remove folder', () => send('removeFolder', { folder: card.key })))),
-  if (isDropTarget) {
-    node.addEventListener('dragover', event => {
-      event.preventDefault()
-      event.dataTransfer.dropEffect = 'move'
-      node.classList.add('drop')
-    })
-    node.addEventListener('dragleave', event => {
-      if (!node.contains(event.relatedTarget)) {
-        node.classList.remove('drop')
-      }
-    })
-    node.addEventListener('drop', event => {
-      event.preventDefault()
-      node.classList.remove('drop')
-      const id = event.dataTransfer.getData('text/plain')
-      if (id) send('assign', { id, ticket: card.key })
-    })
-  }
+const prRow = pr =>
+  el('div', { class: 'pr-row' + (pr.isDraft ? ' draft' : ''), title: pr.title + '\\n' + pr.url, onclick: () => send('openUrl', { url: pr.url }) },
+    icon('pr', pr.isDraft ? 'draft' : ''),
+    el('span', { class: 'grow' }, el('span', { class: 'ref' }, pr.repo + '#' + pr.number), ' ' + pr.title),
+    pr.isDraft && el('span', { class: 'badge' }, 'draft'))
+
+const counts = card => {
+  const blocked = card.sessions.filter(s => s.state === 'blocked' || s.state === 'failed').length
+  const working = card.sessions.filter(s => s.state === 'working').length
+  const badges = []
+  if (blocked > 0) badges.push(el('span', { class: 'badge warn', title: blocked + ' waiting for input' }, '● ' + blocked))
+  if (working > 0) badges.push(el('span', { class: 'badge working', title: working + ' running' }, '↻ ' + working))
+  if (card.prs.length > 0) badges.push(el('span', { class: 'badge pr', title: card.prs.length + ' PR' + (card.prs.length === 1 ? '' : 's') }, '⎇ ' + card.prs.length))
+  return badges
+}
+
+const dropTarget = (node, ticket) => {
+  node.addEventListener('dragover', event => { event.preventDefault(); node.classList.add('drop') })
+  node.addEventListener('dragleave', event => { if (!node.contains(event.relatedTarget)) node.classList.remove('drop') })
+  node.addEventListener('drop', event => {
+    event.preventDefault()
+    node.classList.remove('drop')
+    send('assign', { id: event.dataTransfer.getData('text/plain'), ticket })
+  })
+}
+
+const card = (c, isLoose, isHistory = false) => {
+  const id = (isHistory ? 'history:' : '') + (c.key ?? 'none')
+  const forced = ui.q !== ''
+  const isOpen = forced || (ui.open[id] ?? (c.isBusy || isLoose || c.sessions.length > 0))
+  const sessions = c.sessions.filter(row => sessionMatches(row, ui.q) || (c.key && matches(c.key + c.title, ui.q)))
+  const folderIcon = c.key ? (c.isTicket ? icon('ticket', 't-' + (c.category ?? 'none')) : icon('folder')) : false
+  const keyClass = 'key' + (c.isTicket ? ' ticket-pill t-' + (c.category ?? 'none') : '')
+  const head = el('div', { class: 'head', onclick: () => { ui.open[id] = !isOpen; save(); renderList() } },
+    icon('chev', isOpen ? 'open' : ''),
+    folderIcon,
+    el('span', { class: keyClass }, c.key ?? 'Ungrouped'),
+    el('span', { class: 'grow title' }, c.title),
+    el('span', { class: 'meta hide-on-hover' }, counts(c)),
+    c.key && el('span', { class: 'actions' },
+      iconBtn('plus', 'New session in ' + c.key, () => send('newSession', { folder: c.key })),
+      c.isTicket && iconBtn('external', 'Open ticket in browser', () => send('openTicket', { ticket: c.ticketKey || c.key })),
+      iconBtn('edit', 'Rename folder', () => send('renameFolder', { folder: c.key })),
+      c.sessions.length === 0 && iconBtn('close', 'Remove empty folder', () => send('removeFolder', { folder: c.key }))))
+  const node = el('div', { class: 'card' + (c.isBusy ? ' busy' : '') }, head)
   if (isOpen) {
-    const prRows = card.prs.map(pr =>
-      el('div', {
-        class: 'pr-row' + (pr.isDraft ? ' draft' : ''),
-        title: (pr.isDraft ? 'Draft PR: ' : 'PR: ') + pr.title,
-        onclick: () => send('openUrl', { url: pr.url }),
-      },
-        icon('pr', pr.isDraft ? 'draft' : ''),
-        el('span', { class: 'ref' }, `${pr.repo}#${pr.number}`),
-        el('span', { class: 'grow' }, pr.title)),
-    )
-    const sessionRows = card.sessions.map(sessionRow)
-    const body = el('div', { class: 'body' })
-    if (prRows.length > 0) {
-      body.append(el('div', { class: 'sub' }, 'Pull Requests'), ...prRows)
-    }
-    if (sessionRows.length > 0) {
-      if (prRows.length > 0) body.append(el('div', { class: 'sub' }, 'Sessions'))
-      body.append(...sessionRows)
-    } else if (prRows.length === 0) {
-      body.append(el('div', { class: 'empty-folder' }, 'No sessions yet'))
-    }
-    node.append(body)
+    const prs = c.prs.filter(pr => !ui.q || matches(pr.title + pr.repo, ui.q) || matches(c.key + c.title, ui.q))
+    node.append(el('div', { class: 'body' },
+      prs.length > 0 && [el('div', { class: 'sub' }, 'Pull requests'), prs.map(prRow)],
+      sessions.length > 0 && [prs.length > 0 && el('div', { class: 'sub' }, 'Sessions'), sessions.map(sessionRow)],
+      sessions.length === 0 && prs.length === 0 && el('div', { class: 'empty-folder' }, 'Drop a session here or click + to start one')))
   }
+  if (!isHistory) dropTarget(node, c.key)
   return node
 }
 
-const renderList = () => {
-  const list = document.getElementById('list')
-  if (!list) return
-  list.innerHTML = ''
-  if (!data.model) return
-  const m = data.model
-  const q = ui.q
-  const filter = ui.filter
-
-  const updateStats = () => {
-    const stats = document.getElementById('stats')
-    if (!stats) return
-    const allSessions = [
-      ...m.tickets.flatMap(t => t.sessions),
-      ...m.loose,
-    ]
-    const waiting = allSessions.filter(s => s.state === 'blocked').length
-    const working = allSessions.filter(s => s.state === 'working').length
-    const totalPrs = m.tickets.reduce((sum, t) => sum + (t.prs?.length || 0), 0)
-
-    stats.innerHTML = ''
-    if (waiting > 0) {
-      stats.append(el('span', { class: 'stat-pill warn' },
-        el('span', { class: 'stat-dot pulse' }),
-        `${waiting} waiting`))
-    }
-    if (working > 0) {
-      stats.append(el('span', { class: 'stat-pill busy' },
-        el('span', { class: 'stat-dot spin' }),
-        `${working} active`))
-    }
-    if (totalPrs > 0 && waiting === 0 && working === 0) {
-      stats.append(el('span', { class: 'stat-pill' },
-        icon('pr'),
-        `${totalPrs} open`))
-    }
-  }
-  updateStats()
-
-  if (data.message) {
-    list.append(el('div', { class: 'error' }, data.message))
-  }
-
-  let tickets = m.tickets.filter(card => cardMatches(card, q))
-  let loose = m.loose.filter(s => sessionMatches(s, q))
-
-  if (filter === 'active') {
-    tickets = tickets.filter(t => t.isBusy || t.sessions.some(s => s.state !== 'done'))
-    loose = loose.filter(s => s.state !== 'done')
-  } else if (filter === 'prs') {
-    tickets = tickets.filter(t => t.prs.length > 0)
-    loose = []
-  }
-
-  if (filter === 'all' && !q && m.needs.length > 0) {
-    const sec = el('div', { class: 'sec' })
-    sec.append(
-      el('h2', {},
-        el('span', { class: 'count' }, `${m.needs.length}`),
-        'Waiting for you'),
-      el('div', { class: 'loose-list' }, ...m.needs.map(sessionRow)))
-    list.append(sec)
-  }
-
-  const main = el('div', { class: 'sec' })
-  if (tickets.length === 0 && loose.length === 0 && !data.message) {
-    if (q) {
-      main.append(el('div', { class: 'empty-state' }, `No sessions match "${q}"`))
-    } else {
-      main.append(
-        el('div', { class: 'empty-state' },
-          el('span', { class: 'empty-title' }, 'No sessions'),
-          el('span', {}, 'Start a Claude Code session to begin'),
-          el('div', { class: 'empty-actions' },
-            el('button', { class: 'btn-primary', onclick: () => send('newSession') }, icon('plus'), 'New session'),
-            el('button', { class: 'btn-ghost', onclick: () => send('newFolder') }, icon('newFolder'), 'New folder'))))
-    }
-  } else {
-    tickets.forEach(ticket => main.append(cardNode(ticket)))
-    if (loose.length > 0) {
-      const dropZone = el('div', { class: 'loose-list' }, ...loose.map(sessionRow))
-      dropZone.addEventListener('dragover', event => {
-        event.preventDefault()
-        event.dataTransfer.dropEffect = 'move'
-      })
-      dropZone.addEventListener('drop', event => {
-        event.preventDefault()
-        const id = event.dataTransfer.getData('text/plain')
-        if (id) send('assign', { id, ticket: undefined })
-      })
-      main.append(
-        tickets.length > 0 ? el('h2', {}, 'Ungrouped') : '',
-        dropZone)
-    }
-  }
-  list.append(main)
-
-  if (m.history.length > 0 && !q && filter === 'all') {
-    const sec = el('div', { class: 'sec' })
-    const isHistoryOpen = ui.history ?? false
-    sec.append(
-      el('h2', {
-        class: 'toggle',
-        onclick: () => { ui.history = !isHistoryOpen; save(); renderList() },
-      },
-        icon('chev', isHistoryOpen ? 'open' : ''),
-        'History',
-        el('span', { class: 'count' }, `${m.history.length}`)))
-    if (isHistoryOpen) {
-      m.history.forEach(ticket => sec.append(cardNode(ticket)))
-    }
-    list.append(sec)
-  }
-}
+const section = (title, count, ...children) =>
+  el('div', { class: 'section-block' }, el('h2', {}, title, count > 0 && el('span', { class: 'count' }, count)), children)
 
 const render = () => {
   const root = document.getElementById('root')
-  if (!root) return
-  root.innerHTML = ''
+  root.replaceChildren()
   const search = el('input', {
     type: 'search',
     placeholder: 'Search folders, tickets, sessions, PRs…',
@@ -328,9 +216,150 @@ const render = () => {
   renderList()
 }
 
+let waitingIndex = 0
+
+const focusNextWaiting = () => {
+  const waiting = (data.model?.needs ?? []).filter(r => r.state === 'blocked' || r.state === 'failed')
+  if (waiting.length === 0) return
+  const target = waiting[waitingIndex % waiting.length]
+  waitingIndex = (waitingIndex + 1) % waiting.length
+  if (target.isHidden) {
+    ui.history = true
+    if (target.folder) ui.open['history:' + target.folder] = true
+    save()
+    renderList()
+  } else if (target.folder) {
+    ui.open[target.folder] = true
+    save()
+    renderList()
+  }
+  send('attach', { id: target.id })
+  setTimeout(() => {
+    const node = document.getElementById('session-' + target.id)
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      node.classList.add('spotlight-pulse')
+      setTimeout(() => node.classList.remove('spotlight-pulse'), 1200)
+    }
+  }, 50)
+}
+
+const renderList = () => {
+  const list = document.getElementById('list')
+  const stats = document.getElementById('stats')
+  const model = data.model
+  list.replaceChildren()
+  if (stats) stats.replaceChildren()
+  if (data.message) list.append(el('div', { class: 'error' }, data.message))
+  if (!model) return list.append(el('div', { class: 'empty-state' }, 'Loading sessions…'))
+
+  // Compute live summary pills for the header bar
+  const allRows = [...model.tickets.flatMap(t => t.sessions), ...model.loose]
+  const workingCount = allRows.filter(r => r.state === 'working').length
+  const blockedCount = allRows.filter(r => r.state === 'blocked').length
+  if (stats) {
+    if (blockedCount > 0) {
+      stats.append(el('span', {
+        class: 'stat-pill blocked clickable',
+        title: 'Click to focus next waiting session (' + blockedCount + ' waiting)',
+        onclick: () => focusNextWaiting(),
+      }, '● ' + blockedCount + ' waiting'))
+    }
+    if (workingCount > 0) stats.append(el('span', { class: 'stat-pill working' }, '↻ ' + workingCount + ' running'))
+    if (blockedCount === 0 && workingCount === 0 && allRows.length > 0) {
+      stats.append(el('span', { class: 'stat-pill' }, allRows.length + ' session' + (allRows.length === 1 ? '' : 's')))
+    }
+  }
+
+  const q = ui.q
+  const folders = model.tickets.filter(c => passesFilter(c) && cardMatches(c, q))
+  const looseSessions = model.loose.filter(row =>
+    sessionMatches(row, q) &&
+    (ui.filter === 'all' || (ui.filter === 'active' && (row.state === 'working' || row.state === 'blocked' || row.state === 'failed')))
+  )
+  const showLoose = looseSessions.length > 0 || (!q && folders.length > 0)
+  if (folders.length > 0) {
+    list.append(el('div', { class: 'section-block' }, folders.map(c => card(c, false))))
+  }
+  if (showLoose) {
+    const looseBlock = section('Ungrouped', looseSessions.length,
+      looseSessions.length > 0
+        ? el('div', { class: 'loose-list' }, looseSessions.map(sessionRow))
+        : el('div', { class: 'empty-folder' }, 'Drop a session here to remove from folder')
+    )
+    dropTarget(looseBlock, null)
+    list.append(looseBlock)
+  }
+  const history = model.history.filter(c => cardMatches(c, q))
+  if (history.length > 0) {
+    const histTotal = history.reduce((sum, c) => sum + c.sessions.length, 0)
+    const isOpen = ui.history || q !== ''
+    const heading = el('h2', { class: 'toggle', onclick: () => { ui.history = !ui.history; save(); renderList() } }, icon('chev', isOpen ? 'open' : ''), 'History', el('span', { class: 'count' }, histTotal))
+    const histBlock = el('div', { class: 'section-block' }, heading)
+    if (isOpen) {
+      for (const c of history) {
+        if (c.key) {
+          histBlock.append(card(c, false, true))
+        } else {
+          const rows = c.sessions.filter(row => sessionMatches(row, q))
+          if (rows.length > 0) histBlock.append(el('div', { class: 'loose-list' }, rows.map(sessionRow)))
+        }
+      }
+    }
+    list.append(histBlock)
+  }
+  if (folders.length === 0 && !showLoose && history.length === 0) {
+    list.append(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-title' }, q ? 'No matching sessions or folders' : 'Your Agent Cockpit is ready'),
+      el('div', {}, q ? 'Try a different filter or search query.' : 'Start an agent session or create a topic/ticket folder to organize your work.'),
+      !q && el('div', { class: 'empty-actions' },
+        el('button', { class: 'btn-primary', onclick: () => send('newSession') }, icon('plus'), 'New Session'),
+        el('button', { class: 'btn-ghost', onclick: () => send('newFolder') }, icon('newFolder'), 'New Folder'))))
+  }
+}
+
+const tickCache = () => {
+  const cards = document.querySelectorAll('.session-card[data-cache-expires]')
+  if (!cards.length) return
+  const now = Date.now()
+  for (const node of cards) {
+    const expiresAt = Number(node.getAttribute('data-cache-expires'))
+    const isKeepWarm = node.getAttribute('data-keep-warm') === '1'
+    const pill = node.querySelector('.cache-pill')
+    const left = Math.max(0, expiresAt - now)
+    if (left > 0) {
+      const timeStr = clock(left)
+      if (pill) {
+        if (isKeepWarm) {
+          pill.textContent = '⚡ warm'
+          pill.title = 'Prompt cache keepalive active (auto-refreshing in ' + timeStr + ') · Click to disable'
+        } else {
+          pill.textContent = '⚡ ' + timeStr
+          pill.title = 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically'
+        }
+      }
+    } else {
+      if (isKeepWarm) {
+        if (pill) {
+          pill.textContent = '⚡ warm'
+          pill.title = 'Prompt cache keepalive active · Click to disable'
+        }
+      } else {
+        pill?.remove()
+      }
+      node.removeAttribute('data-cache-expires')
+    }
+  }
+}
+
+let lastPayload = ''
 window.addEventListener('message', event => {
+  const nextPayload = JSON.stringify(event.data)
+  if (nextPayload === lastPayload) return
+  lastPayload = nextPayload
   data = event.data
   renderList()
 })
-
 render()
+send('ready')
+setInterval(tickCache, 1000)
