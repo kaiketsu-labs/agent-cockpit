@@ -497,5 +497,6 @@ module.exports = {
   cacheLeft,
   clock,
   age,
+  inboxRow,
   inboxModel,
 }

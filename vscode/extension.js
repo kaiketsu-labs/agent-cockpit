@@ -39,6 +39,7 @@ const REFRESH_MS = 5_000
 const TRACKER_MS = 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
 const PRS_MS = 120_000
+const DEFAULT_KEEP_WARM_WINDOW_MS = 30 * 60_000
 
 // The extension host's PATH often lacks ~/.local/bin or Homebrew paths on macOS/Linux.
 const localBin = name => {
@@ -1038,10 +1039,9 @@ const activate = async context => {
       const session = sessionById(id)
       if (!session) return
       const next = !session.keepWarm
-      const durationMs = 30 * 60_000
       await updateSessionRecord(session, {
         keepWarm: next,
-        keepWarmUntil: next ? Date.now() + durationMs : null,
+        keepWarmUntil: next ? Date.now() + DEFAULT_KEEP_WARM_WINDOW_MS : null,
       })
       refresh(true)
     },
@@ -1217,10 +1217,9 @@ const activate = async context => {
       const session = element?.session ?? (element?.id ? sessionById(element.id) : undefined)
       if (!session) return
       const next = !session.keepWarm
-      const durationMs = 30 * 60_000
       await updateSessionRecord(session, {
         keepWarm: next,
-        keepWarmUntil: next ? Date.now() + durationMs : null,
+        keepWarmUntil: next ? Date.now() + DEFAULT_KEEP_WARM_WINDOW_MS : null,
       })
       refresh(true)
     }),

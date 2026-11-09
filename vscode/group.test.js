@@ -434,6 +434,36 @@ test('sessions preserve keepWarm status and honor expiration', () => {
   assert.equal(merged[2].model, 'claude-3-7-sonnet')
 })
 
+test('inboxRow preserves keepWarm flag and calculates cache expiration', () => {
+  const { inboxRow } = require('./group')
+  const now = 1_000_000
+  const cacheTtl = 300_000 // 5 minutes
+  const warmSession = {
+    id: 's1',
+    sessionId: 's1',
+    name: 'warm session',
+    state: 'idle',
+    lastWriteAt: now - 60_000,
+    keepWarm: true,
+  }
+  const regularSession = {
+    id: 's2',
+    sessionId: 's2',
+    name: 'regular session',
+    state: 'idle',
+    lastWriteAt: now - 60_000,
+    keepWarm: false,
+  }
+  const warmRow = inboxRow(warmSession, { pattern: anyKey, now, cacheTtl })
+  const regularRow = inboxRow(regularSession, { pattern: anyKey, now, cacheTtl })
+
+  assert.equal(warmRow.keepWarm, true)
+  assert.equal(regularRow.keepWarm, false)
+  assert.equal(warmRow.cache, '4:00')
+  assert.equal(regularRow.cache, '4:00')
+  assert.equal(warmRow.cacheExpiresAt, now - 60_000 + cacheTtl)
+})
+
 test('plugin/hooks/register.tsx parses cleanly without TypeScript or async/await syntax errors', () => {
   const registerPath = path.resolve(__dirname, '../plugin/hooks/register.tsx')
   const code = fs.readFileSync(registerPath, 'utf8')

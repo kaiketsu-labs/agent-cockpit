@@ -94,10 +94,10 @@ const sessionRow = row => {
       isWarm && el('span', {
         class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
         title: row.keepWarm
-          ? 'Prompt cache keepalive active' + (timeStr ? ' (' + timeStr + ' remaining)' : '') + ' · Click to disable'
+          ? 'Prompt cache keepalive active' + (timeStr ? ' (auto-refreshing in ' + timeStr + ')' : '') + ' · Click to disable'
           : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
         onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-      }, '⚡ ' + (timeStr || 'warm'))))
+      }, '⚡ ' + (row.keepWarm ? 'warm' : (timeStr || 'warm')))))
 
   node.addEventListener('dragover', event => {
     event.preventDefault()
@@ -317,10 +317,13 @@ const tickCache = () => {
     if (left > 0) {
       const timeStr = clock(left)
       if (pill) {
-        pill.textContent = '⚡ ' + timeStr
-        pill.title = isKeepWarm
-          ? 'Prompt cache keepalive active (' + timeStr + ' remaining) · Click to disable'
-          : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically'
+        if (isKeepWarm) {
+          pill.textContent = '⚡ warm'
+          pill.title = 'Prompt cache keepalive active (auto-refreshing in ' + timeStr + ') · Click to disable'
+        } else {
+          pill.textContent = '⚡ ' + timeStr
+          pill.title = 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically'
+        }
       }
     } else {
       if (isKeepWarm) {

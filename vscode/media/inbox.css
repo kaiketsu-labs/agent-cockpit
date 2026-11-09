@@ -454,6 +454,10 @@ h2.toggle:hover {
   box-shadow: 0 0 6px var(--claude-accent-soft);
   font-weight: 600;
 }
+.cache-pill.keep-warm:hover {
+  background: color-mix(in srgb, var(--claude-accent) 30%, transparent);
+  box-shadow: 0 0 8px var(--claude-accent-soft);
+}
 
 /* PR Rows */
 .pr-row {

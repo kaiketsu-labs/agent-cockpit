@@ -94,6 +94,8 @@ const listKnownFolders = async ($: EngineInterface): Promise<string[]> => {
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+const DEFAULT_KEEP_WARM_WINDOW_MS = 30 * 60_000
+
 // Appends a custom-title entry to Claude Code's native JSONL transcript if the file exists.
 const writeTranscriptTitle = async ($: EngineInterface, sessionId: string, cwd: string, title: string) => {
   try {
@@ -361,6 +363,9 @@ const handlePromptSubmit = async ($: EngineInterface, e: any, next: (e: any) => 
     updates.folder = detectedTicket
     updates.ticket = detectedTicket
   }
+  if (record?.keepWarm) {
+    updates.keepWarmUntil = Date.now() + DEFAULT_KEEP_WARM_WINDOW_MS
+  }
   if (Object.keys(updates).length > 0) {
     await save($, updates).catch(err => $.ui.log(`cockpit: ${err}`))
   }
@@ -464,14 +469,19 @@ const handleTurnComplete = async ($: EngineInterface, e: any, next: (e: any) => 
     ? (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.input_tokens ?? 0)
     : undefined
   const model = usage?.model
+  const record = await storedRecord($)
+  const keepWarmUpdates: Partial<SessionFile> = {}
+  if (record?.keepWarm) {
+    keepWarmUpdates.keepWarmUntil = Date.now() + DEFAULT_KEEP_WARM_WINDOW_MS
+  }
   // The sidebar counts the prompt cache's lifetime from here.
   await save($, {
     lastTurnEndAt: Date.now(),
+    ...keepWarmUpdates,
     ...(contextTokens !== undefined ? { contextTokens } : {}),
     ...(model ? { model } : {}),
   })
   // Fallback if Haiku background naming didn't run or was unavailable: fork the warm session cache invisibly.
-  const record = await storedRecord($)
   if (isListed && !record?.name && !namingInFlight && record?.prompt) {
     $.clock.after(10, async () => {
       if (namingInFlight) return
