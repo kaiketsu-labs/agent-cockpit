@@ -148,7 +148,7 @@ const buildClassificationInstruction = (knownFolders: string[], presetFolder?: s
     `Focus on the high-level purpose (e.g. feature being built, bug being fixed, or component being refactored). ` +
     `Do NOT name after temporary micro-steps, follow-ups, or routine actions (e.g. avoid naming after running tests, fixing a typo, inspecting files, or git commands). ` +
     `Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
-    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>", "title": "<optional 3-5 word subtitle ONLY if folder is a ticket key (e.g. PROJ-123, #42); omit for normal folders>"}. ` +
+    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>"}. ` +
     folderRule
   )
 }
@@ -160,28 +160,15 @@ const applyClassificationReply = async ($: EngineInterface, text: string, preset
   if (parsed.skip || !parsed.summary?.trim()) return false
 
   const latest = await storedRecord($)
-  if (latest?.name) {
-    if (!latest.folder && !latest.ticket && (presetFolder ?? parsed.folder)) {
-      const rawFolder = (presetFolder ?? parsed.folder)?.trim()
-      const resolvedFolder = rawFolder ? normalizeFolder(rawFolder, projects) : undefined
-      if (resolvedFolder) {
-        await save($, { folder: resolvedFolder, ticket: resolvedFolder })
-      }
-    }
-    return true
-  }
-  const rawFolder = (presetFolder ?? parsed.folder)?.trim()
+  if (latest?.name) return true
+
+  const existingFolder = presetFolder ?? latest?.folder ?? latest?.ticket
+  const rawFolder = (existingFolder ?? parsed.folder)?.trim()
   const resolvedFolder = rawFolder
     ? normalizeFolder(rawFolder, projects)
     : (ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
   const name = sessionName(parsed.summary.trim(), resolvedFolder, suffix)
   await save($, { name, ...(resolvedFolder ? { folder: resolvedFolder, ticket: resolvedFolder } : {}) })
-  if (resolvedFolder && isTicketKey(resolvedFolder, projects) && parsed.title?.trim()) {
-    const titles = await storedTitles($)
-    if (!titles[resolvedFolder]) {
-      await storeTitles($, { [resolvedFolder]: parsed.title.trim() })
-    }
-  }
   const sessionId = await $.session.id()
   const cwd = latest?.cwd ?? (await $.session.cwd())
   await writeTranscriptTitle($, sessionId, cwd, name)
@@ -359,7 +346,7 @@ const handlePromptSubmit = async ($: EngineInterface, e: any, next: (e: any) => 
   if (fallback && (!record?.prompt || isTrivialPrompt(record.prompt))) {
     updates.prompt = fallback
   }
-  if (detectedTicket && (!currentFolder || !isTicketKey(currentFolder, projects))) {
+  if (detectedTicket && !record?.name && (!currentFolder || !isTicketKey(currentFolder, projects))) {
     updates.folder = detectedTicket
     updates.ticket = detectedTicket
   }
@@ -441,6 +428,7 @@ const handleKeepWarmTool = async ($: EngineInterface, e: unknown) => {
 
 // Automatically detect ticket keys in ticket-intent CLI commands (e.g. acli, jira, gh issue, git checkout -b feat/PROJ-123).
 const handleBashTicketDetection = async ($: EngineInterface, e: unknown, next: (e: unknown) => Promise<unknown>) => {
+  if (!isListed) return next(e)
   const call = e as unknown as Record<string, unknown>
   const tool = String(call.tool ?? '').replace(/^mcp__[a-zA-Z0-9_-]+__/, '')
   const params = (call.params as Record<string, unknown> | undefined) ?? call
@@ -452,7 +440,7 @@ const handleBashTicketDetection = async ($: EngineInterface, e: unknown, next: (
       if (cmdTicket) {
         const record = await storedRecord($)
         const currentFolder = record?.folder ?? record?.ticket
-        if (!currentFolder || !isTicketKey(currentFolder, projects)) {
+        if (!record?.name && (!currentFolder || !isTicketKey(currentFolder, projects))) {
           await save($, { folder: cmdTicket, ticket: cmdTicket }).catch(() => {})
         }
       }
@@ -463,7 +451,7 @@ const handleBashTicketDetection = async ($: EngineInterface, e: unknown, next: (
 
 const handleTurnComplete = async ($: EngineInterface, e: any, next: (e: any) => Promise<unknown>) => {
   turnActive = false
-  if (e.agentId !== undefined) return next(e)
+  if (!isListed || e.agentId !== undefined) return next(e)
   const usage = e.usage
   const contextTokens = usage
     ? (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.input_tokens ?? 0)

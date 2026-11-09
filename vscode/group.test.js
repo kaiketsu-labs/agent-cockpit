@@ -299,6 +299,23 @@ test('only a ticket the tracker calls done is closed', () => {
   assert.equal(isClosed(undefined), false)
 })
 
+test('groupSessions with sortByAge sorts folders and their sessions descending by recency', () => {
+  const sessions = [
+    { id: 'f1-old', name: 'Folder 1 older session', folder: 'Folder-A', updatedAt: 1000 },
+    { id: 'f1-new', name: 'Folder 1 newest session', folder: 'Folder-A', archivedAt: 5000, updatedAt: 2000 },
+    { id: 'f2-mid', name: 'Folder 2 session', folder: 'Folder-B', archivedAt: 3000, updatedAt: 3000 },
+    { id: 'loose-recent', name: 'Loose newest session', archivedAt: 4000, updatedAt: 1000 },
+    { id: 'loose-old', name: 'Loose older session', updatedAt: 500 },
+  ]
+  const groups = groupSessions(sessions, [], { sortByAge: true })
+  // Folder-A (max age 5000), Loose (max age 4000), Folder-B (max age 3000)
+  assert.deepEqual(groups.map(g => g.folder), ['Folder-A', null, 'Folder-B'])
+  // Folder-A sessions ordered by recency: f1-new (5000) before f1-old (1000)
+  assert.deepEqual(groups[0].sessions.map(s => s.id), ['f1-new', 'f1-old'])
+  // Loose sessions ordered by recency: loose-recent (4000) before loose-old (500)
+  assert.deepEqual(groups[1].sessions.map(s => s.id), ['loose-recent', 'loose-old'])
+})
+
 test('a week without a turn or a closed ticket hides a session, a hand-set flag wins, work never hides', () => {
   const day = 24 * 60 * 60 * 1000
   const idle = { state: 'idle', updatedAt: 0 }
@@ -307,6 +324,8 @@ test('a week without a turn or a closed ticket hides a session, a hand-set flag 
   assert.equal(isHidden(idle, 0, true), true)
   assert.equal(isHidden(idle, 10 * day, true, false), false)
   assert.equal(isHidden(idle, 0, false, true), true)
+  assert.equal(isHidden(idle, 0, false, 1700000000000), true)
+  assert.equal(isHidden(idle, 10 * day, true, 0), false)
   assert.equal(isHidden({ state: 'working', updatedAt: 0 }, 10 * day, true, true), false)
   assert.equal(isHidden({ state: 'blocked', updatedAt: 0 }, 10 * day, false), true)
 })
@@ -397,6 +416,38 @@ test('inbox lists sessions that need the person first and one card per folder or
   assert.equal(model.tickets[1].sessions[0].name, 'work a')
   assert.equal(model.tickets[1].sessions[0].cacheExpiresAt, 0)
   assert.deepEqual(model.loose.map(row => row.id), ['d'])
+})
+
+test('tracker issue summary takes precedence over cached ticket titles, falling back to cached titles when tracker is unconfigured or returns nothing', () => {
+  const session = (id, folder) => ({ id, name: `work ${id}`, folder, ticket: folder, state: 'idle', updatedAt: 0 })
+  const sessions = [
+    session('s1', 'PROJ-1'),
+    session('s2', 'PROJ-2'),
+    session('s3', 'PROJ-3'),
+  ]
+  const model = inboxModel({
+    groups: groupSessions(sessions),
+    hidden: [],
+    prs: {},
+    issues: {
+      'PROJ-1': { category: 'indeterminate', summary: 'Canonical Jira Title', status: 'In Progress' },
+    },
+    titles: {
+      'PROJ-1': 'Stale AI Guess',
+      'PROJ-2': 'Manual Fallback Title',
+    },
+    pattern: proj,
+    cacheTtl: 300_000,
+    now: 60_000,
+  })
+  assert.deepEqual(
+    model.tickets.map(t => [t.key, t.title]),
+    [
+      ['PROJ-1', 'Canonical Jira Title'],
+      ['PROJ-2', 'Manual Fallback Title'],
+      ['PROJ-3', ''],
+    ],
+  )
 })
 
 test('defaultRepo resolution handles detectedRepo object from repoCache without crashing', () => {

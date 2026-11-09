@@ -105,7 +105,7 @@ const moveBefore = (order, siblings, moved, target) => {
 const groupSessions = (sessions, order = [], options = {}) => {
   const opts = Array.isArray(order) ? options : order
   const orderList = Array.isArray(order) ? order : []
-  const { unticketedSort, folders = [] } = opts
+  const { unticketedSort, folders = [], sortByAge } = opts
   const byFolder = new Map()
   for (const folder of folders) {
     if (folder) byFolder.set(folder, [])
@@ -114,23 +114,30 @@ const groupSessions = (sessions, order = [], options = {}) => {
     const key = session.folder ?? session.ticket ?? null
     byFolder.set(key, [...(byFolder.get(key) ?? []), session])
   }
+  const groupAge = members => Math.max(0, ...members.map(s => s.archivedAt ?? s.updatedAt ?? 0))
   const groups = [...byFolder].map(([ticket, members]) => {
     const counts = Object.entries(STATUS)
       .map(([state, { label }]) => ({ label, count: members.filter(s => s.state === state).length }))
       .filter(({ count }) => count > 0)
     const sorted =
-      ticket === null && unticketedSort === 'age'
-        ? [...members].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || byName(a.name, b.name))
-        : sortByOrder(members, s => s.id, s => s.name, orderList)
+      sortByAge
+        ? [...members].sort((a, b) => (b.archivedAt ?? b.updatedAt ?? 0) - (a.archivedAt ?? a.updatedAt ?? 0) || byName(a.name, b.name))
+        : ticket === null && unticketedSort === 'age'
+          ? [...members].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || byName(a.name, b.name))
+          : sortByOrder(members, s => s.id, s => s.name, orderList)
     return {
       ticket,
       folder: ticket,
       sessions: sorted,
       counts,
       isActive: members.some(s => s.state !== 'done'),
+      age: groupAge(members),
     }
   })
   const grouped = groups.filter(group => group.ticket !== null)
+  if (sortByAge) {
+    return [...groups].sort((a, b) => b.age - a.age || byName(a.ticket ?? '', b.ticket ?? ''))
+  }
   return [...sortByOrder(grouped, g => g.ticket, g => g.ticket, orderList), ...groups.filter(group => group.ticket === null)]
 }
 
@@ -305,7 +312,9 @@ const HIDE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
 // A working session stays in the list; else a hand-set flag wins, then closed tickets and a week without a turn hide it.
 const isHidden = (session, now, isTicketClosed, flag) => {
   if (session.state === 'working') return false
-  return flag ?? (isTicketClosed || now - session.updatedAt > HIDE_AFTER_MS)
+  if (typeof flag === 'boolean') return flag
+  if (typeof flag === 'number') return flag > 0
+  return isTicketClosed || now - session.updatedAt > HIDE_AFTER_MS
 }
 
 const ticketOf = (name, pattern) => {
@@ -445,7 +454,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
       key,
       ticketKey: ticketKey ?? null,
       isTicket,
-      title: isTicket ? (titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? issue?.summary ?? '') : '',
+      title: isTicket ? (issue?.summary ?? titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? '') : '',
       category: issue?.category ?? null,
       status: issue?.status ?? null,
       sessions,

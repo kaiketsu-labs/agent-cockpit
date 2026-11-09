@@ -447,7 +447,13 @@ class SessionsProvider {
   }
 
   async setHidden(session, isHidden) {
-    await this.saveView({ hidden: { ...this.view.hidden, [session.id]: isHidden } })
+    const val = isHidden ? Date.now() : false
+    if (!isHidden) {
+      delete session.archivedAt
+    } else {
+      session.archivedAt = val
+    }
+    await this.saveView({ hidden: { ...this.view.hidden, [session.id]: val } })
   }
 
   async addFolder(rawFolder) {
@@ -497,7 +503,11 @@ class SessionsProvider {
   isHidden(session) {
     const folder = session.folder ?? session.ticket
     const isTicketClosed = folder !== undefined && this.isFolderClosed(folder)
-    return isHidden(session, Date.now(), isTicketClosed, this.view.hidden?.[session.id])
+    const flag = this.view.hidden?.[session.id]
+    if (typeof flag === 'number' && flag > 0) {
+      session.archivedAt = flag
+    }
+    return isHidden(session, Date.now(), isTicketClosed, flag)
   }
 
   regroup() {
@@ -510,7 +520,7 @@ class SessionsProvider {
     this.hidden = groupSessions(
       this.sessions.filter(session => this.isHidden(session)),
       this.order,
-      { unticketedSort: 'age' },
+      { sortByAge: true },
     )
   }
 
@@ -900,6 +910,9 @@ const newSession = folder =>
     .show()
 
 const attach = async (session, provider) => {
+  if (provider?.isHidden(session)) {
+    await provider.setHidden(session, false)
+  }
   if (session.interactive) return focusInteractive(session, provider)
   const pattern = provider.pattern
   const open = await findTerminalForSession(session)
@@ -910,13 +923,16 @@ const attach = async (session, provider) => {
     return
   }
   const short = withoutTicketSuffix(session.name, pattern) || session.name
+  const cwd = session.cwd && fs.existsSync(session.cwd)
+    ? session.cwd
+    : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir())
   vscode.window
     .createTerminal({
       name: short,
       shellPath: CLAUDE,
       shellArgs: attachArgs(session),
-      cwd: session.cwd,
-      env: session.ticket ? { AGENT_COCKPIT_FOLDER: session.ticket, CLAUDE_DECK_FOLDER: session.ticket } : undefined,
+      cwd,
+      env: (session.folder || session.ticket) ? { AGENT_COCKPIT_FOLDER: session.folder || session.ticket, CLAUDE_DECK_FOLDER: session.folder || session.ticket } : undefined,
       iconPath: new vscode.ThemeIcon('hubot'),
       location: vscode.TerminalLocation.Editor,
     })
@@ -954,10 +970,10 @@ const search = async provider => {
       const tKey = folderTicket(folder, provider.pattern)
       const title =
         tKey &&
-        (provider.titles[folder] ??
-          provider.titles[tKey] ??
-          provider.issues[folder]?.summary ??
-          provider.issues[tKey]?.summary)
+        (provider.issues[folder]?.summary ??
+          provider.issues[tKey]?.summary ??
+          provider.titles[folder] ??
+          provider.titles[tKey])
       const when = `${age(now - session.updatedAt)}${provider.isHidden(session) ? ' · hidden' : ''}`
       return {
         label: `$(${status.icon}) ${withoutTicketSuffix(session.name, provider.pattern) || session.name}`,
@@ -986,7 +1002,7 @@ const moveToFolder = async (session, provider, refresh) => {
       const tKey = folderTicket(f, provider.pattern)
       return {
         label: `$(folder) ${f}`,
-        description: tKey ? (provider.titles[f] ?? provider.titles[tKey] ?? provider.issues[tKey]?.summary ?? '') : '',
+        description: tKey ? (provider.issues[tKey]?.summary ?? provider.titles[f] ?? provider.titles[tKey] ?? '') : '',
         folder: f,
       }
     })),
