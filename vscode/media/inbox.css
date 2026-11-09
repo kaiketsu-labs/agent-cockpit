@@ -166,43 +166,6 @@ input[type="search"]:focus {
   font-weight: 600;
 }
 
-.bar-right {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-.briefing-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-  box-sizing: border-box;
-  padding: 0 7px;
-  border-radius: 99px;
-  font-size: 0.78em;
-  font-weight: 600;
-  background: var(--claude-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--claude-accent) 45%, transparent);
-  color: var(--claude-accent);
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  line-height: 1;
-  transition: transform 0.1s ease, filter 0.12s ease, background 0.12s ease;
-}
-.briefing-btn .ico {
-  width: 11px;
-  height: 11px;
-}
-.briefing-btn:hover {
-  filter: brightness(1.15);
-  background: color-mix(in srgb, var(--claude-accent) 24%, transparent);
-  transform: translateY(-1px);
-}
-.briefing-btn:active {
-  transform: translateY(0);
-}
 .stats-pills {
   display: flex;
   align-items: center;

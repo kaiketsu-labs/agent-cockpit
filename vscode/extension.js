@@ -1098,13 +1098,20 @@ const openBriefing = async (provider, refresh) => {
         'sonnet',
         '-n',
         'Briefing',
-        'Give me a concise executive briefing on the current state of work. ' +
-        'IMPORTANT: Do NOT output session tables, directories, or raw status lists — these are already visible in the sidebar. ' +
-        'Instead, synthesize the snapshot into:\n' +
-        '1. **Where we stand (Current Standing):** What was actually accomplished or discovered across topics/tickets (substantive synthesis, not a session-by-session log).\n' +
-        '2. **What is open or blocked:** Unresolved questions, pending decisions, or blockers needing attention.\n' +
-        '3. **Recommended next steps:** Concrete, prioritized recommendation on where to pick up work next.\n\n' +
-        'Respond in the primary language of the session prompts (e.g. German if prompts/notes are in German, English otherwise).',
+        'Give me an ultra-compact executive dashboard briefing that can be scanned in 10 seconds.\n\n' +
+        'CRITICAL RULES:\n' +
+        '- NO tables, NO directories, NO commit counts/hashes, NO diff stats (+/- lines), NO meta-commentary on what tools/commands were run.\n' +
+        '- Keep it extremely brief. Short bullet points only, max 1-2 lines per bullet. No walls of text.\n\n' +
+        'Strictly follow this 3-part layout (translate headings to English if sessions are in English):\n' +
+        '### 📌 Auf einen Blick (TL;DR)\n' +
+        '- Max 1-2 concise bullet points per active topic on actual substantive standing.\n\n' +
+        '### 🚦 Status & Blocker\n' +
+        '- 🟢 **Bereit:** Ready PRs, finished tasks, unblocked items\n' +
+        '- 🟡 **Entscheidung / Warten:** Decisions needed from user, waiting items\n' +
+        '- 🔴 **Blocker:** Hard blockers (or "Keine Blocker" if clear)\n\n' +
+        '### 🎯 Empfohlener nächster Schritt\n' +
+        '👉 Exactly ONE concrete, prioritized action recommendation on what to do next.\n\n' +
+        'Respond in the primary language of the session prompts (German if sessions are German, English otherwise).',
       ],
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
       env: { AGENT_COCKPIT_BRIEFING: '1' },
