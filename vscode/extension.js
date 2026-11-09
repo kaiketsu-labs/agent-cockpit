@@ -952,6 +952,13 @@ const cleanPromptText = raw => {
     .trim()
 }
 
+const clipText = (text, maxLen) => {
+  if (!text || text.length <= maxLen) return text
+  const cut = text.slice(0, maxLen)
+  const lastSpace = cut.lastIndexOf(' ')
+  return (lastSpace > maxLen * 0.75 ? cut.slice(0, lastSpace) : cut) + '…'
+}
+
 const extractSessionSummary = async session => {
   const filePath = findTranscriptFile(session)
   if (!filePath) return { userPrompts: session.prompt ? [session.prompt] : [], modifiedFiles: [], assistantNotes: [], lastReply: '' }
@@ -979,17 +986,17 @@ const extractSessionSummary = async session => {
               : ''
           const cleaned = cleanPromptText(raw)
           if (cleaned) {
-            userPrompts.push(cleaned.slice(0, 220))
+            userPrompts.push(clipText(cleaned, 400))
             if (userPrompts.length > 8) userPrompts.splice(1, 1)
           }
         } else if (row.type === 'assistant' && Array.isArray(row.message?.content)) {
           for (const block of row.message.content) {
             if (block.type === 'text' && block.text?.trim()) {
               const text = block.text.replace(/\s+/g, ' ').trim()
-              lastReply = text.slice(0, 400)
+              lastReply = clipText(text, 2500)
               if (text.length > 25) {
-                assistantNotes.push(text.slice(0, 200))
-                if (assistantNotes.length > 6) assistantNotes.shift()
+                assistantNotes.push(clipText(text, 800))
+                if (assistantNotes.length > 8) assistantNotes.shift()
               }
             } else if (block.type === 'tool_use' && ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(block.name)) {
               const p = block.input?.file_path || block.input?.path || block.input?.notebook_path
@@ -1006,14 +1013,18 @@ const extractSessionSummary = async session => {
   return {
     userPrompts: userPrompts.length > 0 ? [userPrompts[0], ...userPrompts.slice(1).slice(-5)] : (session.prompt ? [session.prompt] : []),
     modifiedFiles: [...modifiedFiles].slice(-12),
-    assistantNotes: assistantNotes.slice(-4),
+    assistantNotes: assistantNotes.slice(-6),
     lastReply,
   }
 }
 
 const buildBriefingMarkdown = async provider => {
   const now = Date.now()
-  const lines = ['# Agent Cockpit Briefing Snapshot', '']
+  const lines = [
+    '# Agent Cockpit Briefing Snapshot',
+    '*Context for executive briefing: This snapshot contains active sessions, tickets, recent prompts, modified files, and assistant outputs. Do NOT reproduce raw session lists or directory tables.*',
+    '',
+  ]
   const visibleGroups = provider.groups ?? []
   const allVisible = visibleGroups.flatMap(g => g.sessions ?? [])
   if (allVisible.length === 0) {
@@ -1087,7 +1098,13 @@ const openBriefing = async (provider, refresh) => {
         'sonnet',
         '-n',
         'Briefing',
-        'Give me a concise, structured briefing on the current status of my tickets and sessions: what needs immediate attention (Waiting/Needs Input), what was recently implemented, and what the next logical steps are.',
+        'Give me a concise executive briefing on the current state of work. ' +
+        'IMPORTANT: Do NOT output session tables, directories, or raw status lists — these are already visible in the sidebar. ' +
+        'Instead, synthesize the snapshot into:\n' +
+        '1. **Where we stand (Current Standing):** What was actually accomplished or discovered across topics/tickets (substantive synthesis, not a session-by-session log).\n' +
+        '2. **What is open or blocked:** Unresolved questions, pending decisions, or blockers needing attention.\n' +
+        '3. **Recommended next steps:** Concrete, prioritized recommendation on where to pick up work next.\n\n' +
+        'Respond in the primary language of the session prompts (e.g. German if prompts/notes are in German, English otherwise).',
       ],
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
       env: { AGENT_COCKPIT_BRIEFING: '1' },
