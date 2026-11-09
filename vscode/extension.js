@@ -1022,7 +1022,7 @@ const buildBriefingMarkdown = async provider => {
   const now = Date.now()
   const lines = [
     '# Agent Cockpit Briefing Snapshot',
-    '*Context for executive briefing: This snapshot contains active sessions, tickets, recent prompts, modified files, and assistant outputs. Do NOT reproduce raw session lists or directory tables.*',
+    '*Context for executive briefing: This snapshot contains active sessions grouped by Cockpit folders/tickets. Do NOT reproduce raw session lists or directory tables.*',
     '',
   ]
   const visibleGroups = provider.groups ?? []
@@ -1040,7 +1040,7 @@ const buildBriefingMarkdown = async provider => {
     const issue = key ? (provider.issues[key] ?? (tKey ? provider.issues[tKey] : undefined)) : undefined
     const title = key ? (provider.titles[key] ?? (tKey ? provider.titles[tKey] : undefined) ?? issue?.summary ?? '') : ''
     const prs = key ? (provider.prs[key] ?? (tKey ? provider.prs[tKey] : undefined) ?? []) : []
-    lines.push(`## ${key ? `${key}${title ? ` — ${title}` : ''}` : 'Ungrouped Sessions'}`)
+    lines.push(`## Folder: ${key ? `${key}${title ? ` — ${title}` : ''}` : 'Ungrouped Sessions'}`)
     if (issue?.status) lines.push(`- **Ticket Status:** ${issue.status}`)
     if (prs.length > 0) {
       lines.push(`- **Open PRs:** ${prs.map(pr => `${pr.repo}#${pr.number} (${pr.title}${pr.isDraft ? ', draft' : ''})`).join('; ')}`)
@@ -1104,8 +1104,10 @@ const openBriefing = async (provider, refresh) => {
         '- Ignore historical/stale branches, routine tool output, and minor git trivia. Focus strictly on actual progress and pending decisions.\n' +
         '- Keep it extremely brief. Short bullet points only, max 1-2 lines per bullet. No walls of text.\n\n' +
         'Strictly follow this 3-part layout (translate headings to English if sessions are in English):\n' +
-        '### 📌 Auf einen Blick (TL;DR)\n' +
-        '- Max 1-2 concise bullet points per active topic on actual substantive standing.\n\n' +
+        '### 📌 Auf einen Blick (nach Ordner / Ticket geclustert)\n' +
+        'Cluster strictly by the Cockpit folders/tickets from the snapshot. Use the folder or ticket name as the bold bullet prefix:\n' +
+        '- **[Ordner / Ticket-Name]**: 1–2 concise lines summarizing actual substantive progress and current standing of the sessions in that folder.\n' +
+        '- (For sessions without a folder, cluster them under **Ohne Ordner**).\n\n' +
         '### 🚦 Status & Blocker\n' +
         '- 🟢 **Bereit:** Ready PRs, finished tasks, unblocked items\n' +
         '- 🟡 **Entscheidung / Warten:** Decisions needed from user, waiting items\n' +
