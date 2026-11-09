@@ -368,6 +368,7 @@ test('sessions merge claude agents with plugin files, support free-form folders 
   assert.equal(sessions[1].initialCwd, '/repo')
 })
 
+
 test('mergeSessions filters out Briefing sessions by agent name or isBriefing flag', () => {
   const agents = [
     { sessionId: 'b1', pid: 100, name: 'Briefing', status: 'idle', startedAt: 1, cwd: '/repo' },
