@@ -925,10 +925,12 @@ const newSession = (folder, provider) => {
   return terminal
 }
 
+
 const findTranscriptFile = session => {
+  const worktreeMatch = session.cwd ? session.cwd.split(/[/\\]\.claude[/\\]worktrees[/\\]/) : null
   const dirs = [
     session.initialCwd,
-    session.cwd?.includes('/.claude/worktrees/') ? session.cwd.split('/.claude/worktrees/')[0] : undefined,
+    worktreeMatch ? worktreeMatch[0] : undefined,
     session.cwd,
   ].filter(Boolean)
   for (const dir of [...new Set(dirs)]) {
@@ -976,13 +978,19 @@ const extractSessionSummary = async session => {
               ? content.filter(b => b.type === 'text').map(b => b.text).join(' ')
               : ''
           const cleaned = cleanPromptText(raw)
-          if (cleaned) userPrompts.push(cleaned.slice(0, 220))
+          if (cleaned) {
+            userPrompts.push(cleaned.slice(0, 220))
+            if (userPrompts.length > 8) userPrompts.splice(1, 1)
+          }
         } else if (row.type === 'assistant' && Array.isArray(row.message?.content)) {
           for (const block of row.message.content) {
             if (block.type === 'text' && block.text?.trim()) {
               const text = block.text.replace(/\s+/g, ' ').trim()
               lastReply = text.slice(0, 400)
-              if (text.length > 25) assistantNotes.push(text.slice(0, 200))
+              if (text.length > 25) {
+                assistantNotes.push(text.slice(0, 200))
+                if (assistantNotes.length > 6) assistantNotes.shift()
+              }
             } else if (block.type === 'tool_use' && ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(block.name)) {
               const p = block.input?.file_path || block.input?.path || block.input?.notebook_path
               if (typeof p === 'string' && p) {
@@ -1038,9 +1046,12 @@ const buildBriefingMarkdown = async provider => {
       if (sum.modifiedFiles.length > 0) {
         lines.push(`- **Modified Files:** ${sum.modifiedFiles.map(f => `\`${f}\``).join(', ')}`)
       }
-      if (sum.assistantNotes.length > 1) {
-        lines.push(`- **Key Progress Notes:**`)
-        sum.assistantNotes.slice(0, -1).forEach(n => lines.push(`  - ${n}`))
+      if (sum.assistantNotes.length > 0) {
+        const notes = sum.assistantNotes.filter(n => !sum.lastReply || !sum.lastReply.includes(n))
+        if (notes.length > 0) {
+          lines.push(`- **Key Progress Notes:**`)
+          notes.forEach(n => lines.push(`  - ${n}`))
+        }
       }
       if (sum.lastReply) {
         lines.push(`- **Latest Assistant Output / Open Question:** "${sum.lastReply}"`)
@@ -1052,34 +1063,41 @@ const buildBriefingMarkdown = async provider => {
 }
 
 let briefingTerminal = null
+let briefingInFlight = false
 
 const openBriefing = async (provider, refresh) => {
-  await refresh(true)
-  const markdown = await buildBriefingMarkdown(provider)
-  await fs.promises.mkdir(COCKPIT_DIR, { recursive: true })
-  await fs.promises.writeFile(BRIEFING_FILE, markdown, 'utf8')
-  if (briefingTerminal) {
-    try {
-      briefingTerminal.dispose()
-    } catch {}
-    briefingTerminal = null
+  if (briefingInFlight) return
+  briefingInFlight = true
+  try {
+    await refresh(true)
+    const markdown = await buildBriefingMarkdown(provider)
+    await fs.promises.mkdir(COCKPIT_DIR, { recursive: true })
+    await fs.promises.writeFile(BRIEFING_FILE, markdown, 'utf8')
+    if (briefingTerminal) {
+      try {
+        briefingTerminal.dispose()
+      } catch {}
+      briefingTerminal = null
+    }
+    briefingTerminal = vscode.window.createTerminal({
+      name: 'Briefing',
+      shellPath: CLAUDE,
+      shellArgs: [
+        '--model',
+        'sonnet',
+        '-n',
+        'Briefing',
+        'Gib mir ein kurzes, strukturiertes Briefing zum aktuellen Stand meiner Tickets und Sessions: Wo brennt es (Waiting/Needs Input), was wurde in den Sessions umgesetzt und was ist der nächste sinnvolle Schritt?',
+      ],
+      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
+      env: { AGENT_COCKPIT_BRIEFING: '1' },
+      iconPath: new vscode.ThemeIcon('compass'),
+      location: vscode.TerminalLocation.Editor,
+    })
+    briefingTerminal.show()
+  } finally {
+    briefingInFlight = false
   }
-  briefingTerminal = vscode.window.createTerminal({
-    name: 'Briefing',
-    shellPath: CLAUDE,
-    shellArgs: [
-      '--model',
-      'sonnet',
-      '-n',
-      'Briefing',
-      'Gib mir ein kurzes, strukturiertes Briefing zum aktuellen Stand meiner Tickets und Sessions: Wo brennt es (Waiting/Needs Input), was wurde in den Sessions umgesetzt und was ist der nächste sinnvolle Schritt?',
-    ],
-    cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
-    env: { AGENT_COCKPIT_BRIEFING: '1' },
-    iconPath: new vscode.ThemeIcon('compass'),
-    location: vscode.TerminalLocation.Editor,
-  })
-  briefingTerminal.show()
 }
 
 const attach = async (session, provider) => {
