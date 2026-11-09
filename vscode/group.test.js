@@ -31,6 +31,7 @@ const {
   cacheLeft,
   clock,
   inboxModel,
+  prefillForFolder,
 } = require('./group')
 
 const anyKey = ticketPattern()
@@ -652,6 +653,58 @@ test('all files packaged by package.py exist on disk', () => {
     const full = path.join(__dirname, rel)
     assert.ok(fs.existsSync(full), `File listed in package.py does not exist: ${rel}`)
   }
+})
+
+test('prefillForFolder formats ticket or folder with title or clean key', () => {
+  // Ticket with tracker issue summary
+  assert.equal(
+    prefillForFolder('PROJ-123', { issues: { 'PROJ-123': { summary: 'OAuth Token Refresh' } } }),
+    'PROJ-123 (OAuth Token Refresh): ',
+  )
+
+  // Ticket with fallback to cached titles
+  assert.equal(
+    prefillForFolder('PROJ-123', { titles: { 'PROJ-123': 'OAuth Token Refresh' } }),
+    'PROJ-123 (OAuth Token Refresh): ',
+  )
+
+  // Ticket without title
+  assert.equal(prefillForFolder('PROJ-123', {}), 'PROJ-123: ')
+
+  // Non-ticket folder with title
+  assert.equal(
+    prefillForFolder('Auth Refactor', { titles: { 'Auth Refactor': 'Clean up middleware' } }),
+    'Auth Refactor (Clean up middleware): ',
+  )
+
+  // Non-ticket folder without title
+  assert.equal(prefillForFolder('Auth Refactor', {}), 'Auth Refactor: ')
+
+  // Sanitizes newlines in summary and folder
+  assert.equal(
+    prefillForFolder('PROJ-123', { issues: { 'PROJ-123': { summary: 'Line 1\r\nLine 2\n' } } }),
+    'PROJ-123 (Line 1 Line 2): ',
+  )
+  assert.equal(
+    prefillForFolder('PROJ-123\r\n', { issues: { 'PROJ-123': { summary: 'OAuth Token Refresh' } } }),
+    'PROJ-123 (OAuth Token Refresh): ',
+  )
+  assert.equal(prefillForFolder('Auth\r\nRefactor', {}), 'Auth Refactor: ')
+
+  // Omits redundant title when title matches folder name case-insensitively
+  assert.equal(
+    prefillForFolder('Auth Refactor', { titles: { 'Auth Refactor': 'Auth Refactor' } }),
+    'Auth Refactor: ',
+  )
+  assert.equal(
+    prefillForFolder('PROJ-123', { issues: { 'PROJ-123': { summary: 'proj-123' } } }),
+    'PROJ-123: ',
+  )
+
+  // Empty or undefined folder
+  assert.equal(prefillForFolder(undefined, {}), '')
+  assert.equal(prefillForFolder('', {}), '')
+  assert.equal(prefillForFolder('   ', {}), '')
 })
 
 test('all manifest and config JSON files are valid JSON', () => {

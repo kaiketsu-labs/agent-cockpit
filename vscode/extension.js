@@ -25,6 +25,7 @@ const {
   cacheTtlMs,
   age,
   inboxModel,
+  prefillForFolder,
 } = require('./group')
 const { InboxView } = require('./inbox')
 
@@ -897,17 +898,30 @@ const hideSession = async (session, provider) => {
 }
 
 // Opens an interactive Claude terminal directly in an editor tab, optionally pre-bound to a folder or ticket.
-const newSession = folder =>
-  vscode.window
-    .createTerminal({
-      name: folder || 'Claude',
-      shellPath: CLAUDE,
-      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-      env: folder ? { AGENT_COCKPIT_FOLDER: folder, CLAUDE_DECK_FOLDER: folder } : undefined,
-      iconPath: new vscode.ThemeIcon('comment-discussion'),
-      location: vscode.TerminalLocation.Editor,
-    })
-    .show()
+const newSession = (folder, provider) => {
+  const terminal = vscode.window.createTerminal({
+    name: folder || 'Claude',
+    shellPath: CLAUDE,
+    cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    env: folder ? { AGENT_COCKPIT_FOLDER: folder, CLAUDE_DECK_FOLDER: folder } : undefined,
+    iconPath: new vscode.ThemeIcon('comment-discussion'),
+    location: vscode.TerminalLocation.Editor,
+  })
+  terminal.show()
+
+  const prefill = prefillForFolder(folder, provider)
+  if (prefill) {
+    setTimeout(() => {
+      try {
+        if (terminal.exitStatus === undefined) {
+          terminal.sendText(prefill, false)
+        }
+      } catch {}
+    }, 1200)
+  }
+
+  return terminal
+}
 
 const attach = async (session, provider) => {
   if (provider?.isHidden(session)) {
@@ -1214,14 +1228,14 @@ const activate = async context => {
       refresh(true)
     }),
     ...registerCmd('newSession', async element => {
-      const folder = element?.group?.ticket ?? (typeof element === 'string' ? element : undefined)
-      newSession(folder)
+      const folder = element?.group?.ticket ?? element?.folder ?? (typeof element === 'string' ? element : undefined)
+      newSession(folder, provider)
       // claude takes a moment to register itself.
       setTimeout(() => refresh(), 2_500)
     }),
     ...registerCmd('startTask', async element => {
-      const folder = element?.group?.ticket
-      newSession(folder)
+      const folder = element?.group?.ticket ?? element?.folder ?? (typeof element === 'string' ? element : undefined)
+      newSession(folder, provider)
       setTimeout(() => refresh(), 2_500)
     }),
     ...registerCmd('hide', async element => {

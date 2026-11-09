@@ -82,6 +82,21 @@ const encodeProjectPath = cwd => String(cwd ?? '').replace(/[^a-zA-Z0-9-]/g, '-'
 
 const customTitleLine = (sessionId, customTitle) => `${JSON.stringify({ type: 'custom-title', customTitle, sessionId })}\n`
 
+const prefillForFolder = (folder, { issues = {}, titles = {}, pattern = ticketPattern() } = {}) => {
+  if (!folder || typeof folder !== 'string') return ''
+  const trimmed = folder.replace(/[\r\n]+/g, ' ').trim()
+  if (!trimmed) return ''
+  const ticketKey = folderTicket(trimmed, pattern)
+  const rawTitle =
+    issues[trimmed]?.summary ??
+    (ticketKey ? issues[ticketKey]?.summary : undefined) ??
+    titles[trimmed] ??
+    (ticketKey ? titles[ticketKey] : undefined)
+  const title = typeof rawTitle === 'string' ? rawTitle.replace(/[\r\n]+/g, ' ').trim() : ''
+  const hasDistinctTitle = title && title.toLowerCase() !== trimmed.toLowerCase()
+  return hasDistinctTitle ? `${trimmed} (${title}): ` : `${trimmed}: `
+}
+
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare
 
 // Moved items keep the order they were dragged into; the rest follow alphabetically.
@@ -508,4 +523,5 @@ module.exports = {
   age,
   inboxRow,
   inboxModel,
+  prefillForFolder,
 }
