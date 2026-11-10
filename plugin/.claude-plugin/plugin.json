@@ -1,5 +1,5 @@
 {
   "name": "cockpit",
-  "version": "0.6.7",
+  "version": "0.7.0",
   "description": "Silently names and organizes Claude Code sessions by folder and ticket for the Agent Cockpit VS Code sidebar"
 }
