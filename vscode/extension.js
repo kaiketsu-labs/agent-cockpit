@@ -1080,7 +1080,20 @@ const openBriefing = async (provider, refresh) => {
   if (briefingInFlight) return
   briefingInFlight = true
   try {
-    await refresh(true)
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'Preparing Briefing…' },
+      async () => {
+        await refresh(true)
+      },
+    )
+    const allVisible = (provider.groups ?? []).flatMap(g => g.sessions ?? [])
+    if (allVisible.length === 0) {
+      const action = await vscode.window.showInformationMessage('No active Agent Cockpit sessions.', 'Start New Session')
+      if (action === 'Start New Session') {
+        vscode.commands.executeCommand('agentCockpit.newSession')
+      }
+      return
+    }
     const markdown = await buildBriefingMarkdown(provider)
     await fs.promises.mkdir(COCKPIT_DIR, { recursive: true })
     await fs.promises.writeFile(BRIEFING_FILE, markdown, 'utf8')
@@ -1109,11 +1122,11 @@ const openBriefing = async (provider, refresh) => {
         '- **[Ordner / Ticket-Name]**: 1–2 concise lines summarizing actual substantive progress and current standing of the sessions in that folder.\n' +
         '- (For sessions without a folder, cluster them under **Ohne Ordner**).\n\n' +
         '### 🚦 Status & Blocker\n' +
-        '- 🟢 **Bereit:** Ready PRs, finished tasks, unblocked items\n' +
-        '- 🟡 **Entscheidung / Warten:** Decisions needed from user, waiting items\n' +
+        '- 🟢 **Bereit:** Ready PRs, finished tasks, unblocked items (or "Keine" if none)\n' +
+        '- 🟡 **Entscheidung / Warten:** Decisions needed from user, waiting items (or "Keine" if none)\n' +
         '- 🔴 **Blocker:** Hard blockers (or "Keine Blocker" if clear)\n\n' +
         '### 🎯 Empfohlener nächster Schritt\n' +
-        '👉 Exactly ONE concrete, prioritized action recommendation on what to do next.\n\n' +
+        '👉 Exactly ONE concrete, prioritized action recommendation on what to do next (always explicitly name the target session or ticket in quotes).\n\n' +
         'Respond in the primary language of the session prompts (German if sessions are German, English otherwise).',
       ],
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
