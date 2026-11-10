@@ -1103,6 +1103,25 @@ const openBriefing = async (provider, refresh) => {
       } catch {}
       briefingTerminal = null
     }
+    const briefingSystemPrompt =
+      'You are an executive assistant for Agent Cockpit. Give an ultra-compact executive dashboard briefing that can be scanned in 10 seconds.\n\n' +
+      'CRITICAL RULES:\n' +
+      '- NO tables, NO directories, NO commit counts/hashes, NO diff stats (+/- lines), NO meta-commentary on what tools/commands were run.\n' +
+      '- Ignore historical/stale branches, routine tool output, and minor git trivia. Focus strictly on actual progress and pending decisions.\n' +
+      '- Keep it extremely brief. Short bullet points only, max 1-2 lines per bullet. No walls of text.\n\n' +
+      'Strictly follow this 3-part layout (translate headings to English if sessions are in English):\n' +
+      '### 📌 Auf einen Blick (nach Ordner / Ticket geclustert)\n' +
+      'Cluster strictly by the Cockpit folders/tickets from the snapshot. Use the folder or ticket name as the bold bullet prefix:\n' +
+      '- **[Ordner / Ticket-Name]**: 1–2 concise lines summarizing actual substantive progress and current standing of the sessions in that folder.\n' +
+      '- (For sessions without a folder, cluster them under **Ohne Ordner**).\n\n' +
+      '### 🚦 Status & Blocker\n' +
+      '- 🟢 **Bereit:** Ready PRs, finished tasks, unblocked items (or "Keine" if none)\n' +
+      '- 🟡 **Entscheidung / Warten:** Decisions needed from user, waiting items (or "Keine" if none)\n' +
+      '- 🔴 **Blocker:** Hard blockers (or "Keine Blocker" if clear)\n\n' +
+      '### 🎯 Empfohlener nächster Schritt\n' +
+      '👉 Exactly ONE concrete, prioritized action recommendation on what to do next (always explicitly name the target session or ticket in quotes).\n\n' +
+      'Respond in the primary language of the session prompts (German if sessions are German, English otherwise).'
+
     briefingTerminal = vscode.window.createTerminal({
       name: 'Briefing',
       shellPath: CLAUDE,
@@ -1111,23 +1130,9 @@ const openBriefing = async (provider, refresh) => {
         'sonnet',
         '-n',
         'Briefing',
-        'Give me an ultra-compact executive dashboard briefing that can be scanned in 10 seconds.\n\n' +
-        'CRITICAL RULES:\n' +
-        '- NO tables, NO directories, NO commit counts/hashes, NO diff stats (+/- lines), NO meta-commentary on what tools/commands were run.\n' +
-        '- Ignore historical/stale branches, routine tool output, and minor git trivia. Focus strictly on actual progress and pending decisions.\n' +
-        '- Keep it extremely brief. Short bullet points only, max 1-2 lines per bullet. No walls of text.\n\n' +
-        'Strictly follow this 3-part layout (translate headings to English if sessions are in English):\n' +
-        '### 📌 Auf einen Blick (nach Ordner / Ticket geclustert)\n' +
-        'Cluster strictly by the Cockpit folders/tickets from the snapshot. Use the folder or ticket name as the bold bullet prefix:\n' +
-        '- **[Ordner / Ticket-Name]**: 1–2 concise lines summarizing actual substantive progress and current standing of the sessions in that folder.\n' +
-        '- (For sessions without a folder, cluster them under **Ohne Ordner**).\n\n' +
-        '### 🚦 Status & Blocker\n' +
-        '- 🟢 **Bereit:** Ready PRs, finished tasks, unblocked items (or "Keine" if none)\n' +
-        '- 🟡 **Entscheidung / Warten:** Decisions needed from user, waiting items (or "Keine" if none)\n' +
-        '- 🔴 **Blocker:** Hard blockers (or "Keine Blocker" if clear)\n\n' +
-        '### 🎯 Empfohlener nächster Schritt\n' +
-        '👉 Exactly ONE concrete, prioritized action recommendation on what to do next (always explicitly name the target session or ticket in quotes).\n\n' +
-        'Respond in the primary language of the session prompts (German if sessions are German, English otherwise).',
+        '--append-system-prompt',
+        briefingSystemPrompt,
+        'Briefing erstellen',
       ],
       cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
       env: { AGENT_COCKPIT_BRIEFING: '1' },
