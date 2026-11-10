@@ -125,6 +125,12 @@
         "category": "Agent Cockpit"
       },
       {
+        "command": "agentCockpit.briefing",
+        "title": "Briefing",
+        "icon": "$(compass)",
+        "category": "Agent Cockpit"
+      },
+      {
         "command": "agentCockpit.refresh",
         "title": "Refresh",
         "icon": "$(refresh)"
@@ -188,6 +194,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "agentCockpit.briefing",
+          "when": "view == agentCockpit.inbox",
+          "group": "navigation@0"
+        },
         {
           "command": "agentCockpit.newSession",
           "when": "view == agentCockpit.inbox",

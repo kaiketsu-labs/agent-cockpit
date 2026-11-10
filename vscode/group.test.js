@@ -364,6 +364,25 @@ test('sessions merge claude agents with plugin files, support free-form folders 
   )
   assert.equal(sessions[3].ended, true)
   assert.equal(sessions[1].pid, 42)
+  assert.equal(sessions[1].prompt, 'fix the nulls')
+  assert.equal(sessions[1].initialCwd, '/repo')
+})
+
+
+test('mergeSessions filters out Briefing sessions by agent name or isBriefing flag', () => {
+  const agents = [
+    { sessionId: 'b1', pid: 100, name: 'Briefing', status: 'idle', startedAt: 1, cwd: '/repo' },
+    { sessionId: 'b2', pid: 101, name: 'some-project', status: 'idle', startedAt: 2, cwd: '/repo' },
+    { sessionId: 's1', pid: 102, name: 'Normal session', status: 'idle', startedAt: 3, cwd: '/repo' },
+  ]
+  const files = [
+    { sessionId: 'b2', kind: 'interactive', isBriefing: true, cwd: '/repo', startedAt: 2 },
+    { sessionId: 'b3', kind: 'interactive', isBriefing: true, cwd: '/repo', startedAt: 4, name: 'Ended briefing' },
+    { sessionId: 'b4', kind: 'interactive', cwd: '/repo', startedAt: 5, name: 'Briefing' },
+    { sessionId: 's1', kind: 'interactive', cwd: '/repo', startedAt: 3, prompt: 'build feature' },
+  ]
+  const merged = mergeSessions(agents, files, proj)
+  assert.deepEqual(merged.map(s => s.id), ['s1'])
 })
 
 test('interactive sessions map waiting to blocked, busy to working, anything else to idle', () => {

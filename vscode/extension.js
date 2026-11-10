@@ -4,6 +4,7 @@ const vscode = require('vscode')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const readline = require('readline')
 const { execFile, execFileSync } = require('child_process')
 const {
   STATUS,
@@ -36,6 +37,7 @@ const DECK_DIR = path.join(CLAUDE_DIR, 'deck')
 const SESSIONS_DIR = path.join(COCKPIT_DIR, 'sessions')
 const VIEW_FILE = path.join(COCKPIT_DIR, 'view.json')
 const TITLES_FILE = path.join(COCKPIT_DIR, 'ticket-titles.json')
+const BRIEFING_FILE = path.join(COCKPIT_DIR, 'briefing.md')
 const REFRESH_MS = 5_000
 const TRACKER_MS = 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
@@ -923,6 +925,226 @@ const newSession = (folder, provider) => {
   return terminal
 }
 
+
+const findTranscriptFile = session => {
+  const worktreeMatch = session.cwd ? session.cwd.split(/[/\\]\.claude[/\\]worktrees[/\\]/) : null
+  const dirs = [
+    session.initialCwd,
+    worktreeMatch ? worktreeMatch[0] : undefined,
+    session.cwd,
+  ].filter(Boolean)
+  for (const dir of [...new Set(dirs)]) {
+    const file = path.join(CLAUDE_DIR, 'projects', encodeProjectPath(dir), `${session.sessionId}.jsonl`)
+    if (fs.existsSync(file)) return file
+  }
+  return undefined
+}
+
+const cleanPromptText = raw => {
+  if (!raw) return ''
+  const cmd = raw.match(/<command-name>\s*([^<]+?)\s*<\/command-name>/)?.[1]
+  const args = raw.match(/<command-args>\s*([\s\S]*?)\s*<\/command-args>/)?.[1]
+  if (cmd) return `${cmd}${args ? ` ${args}` : ''}`.trim()
+  return raw
+    .replace(/<(system-reminder|local-command-stdout|local-command-caveat|task-notification)>[\s\S]*?<\/\1>/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const clipText = (text, maxLen) => {
+  if (!text || text.length <= maxLen) return text
+  const cut = text.slice(0, maxLen)
+  const lastSpace = cut.lastIndexOf(' ')
+  return (lastSpace > maxLen * 0.75 ? cut.slice(0, lastSpace) : cut) + '…'
+}
+
+const extractSessionSummary = async session => {
+  const filePath = findTranscriptFile(session)
+  if (!filePath) return { userPrompts: session.prompt ? [session.prompt] : [], modifiedFiles: [], assistantNotes: [], lastReply: '' }
+  const userPrompts = []
+  const modifiedFiles = new Set()
+  const assistantNotes = []
+  let lastReply = ''
+  try {
+    const rl = readline.createInterface({
+      input: fs.createReadStream(filePath, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    })
+    for await (const line of rl) {
+      if (!line || (!line.includes('"type":"user"') && !line.includes('"type":"assistant"'))) continue
+      try {
+        const row = JSON.parse(line)
+        if (row.isSidechain || row.isMeta) continue
+        if (row.type === 'user') {
+          const content = row.message?.content
+          if (Array.isArray(content) && content.some(b => b.type === 'tool_result')) continue
+          const raw = typeof content === 'string'
+            ? content
+            : Array.isArray(content)
+              ? content.filter(b => b.type === 'text').map(b => b.text).join(' ')
+              : ''
+          const cleaned = cleanPromptText(raw)
+          if (cleaned) {
+            userPrompts.push(clipText(cleaned, 400))
+            if (userPrompts.length > 8) userPrompts.splice(1, 1)
+          }
+        } else if (row.type === 'assistant' && Array.isArray(row.message?.content)) {
+          for (const block of row.message.content) {
+            if (block.type === 'text' && block.text?.trim()) {
+              const text = block.text.replace(/\s+/g, ' ').trim()
+              lastReply = clipText(text, 2500)
+              if (text.length > 25) {
+                assistantNotes.push(clipText(text, 800))
+                if (assistantNotes.length > 8) assistantNotes.shift()
+              }
+            } else if (block.type === 'tool_use' && ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(block.name)) {
+              const p = block.input?.file_path || block.input?.path || block.input?.notebook_path
+              if (typeof p === 'string' && p) {
+                const rel = session.cwd && p.startsWith(session.cwd) ? path.relative(session.cwd, p) || path.basename(p) : p
+                modifiedFiles.add(rel)
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+  return {
+    userPrompts: userPrompts.length > 0 ? [userPrompts[0], ...userPrompts.slice(1).slice(-5)] : (session.prompt ? [session.prompt] : []),
+    modifiedFiles: [...modifiedFiles].slice(-12),
+    assistantNotes: assistantNotes.slice(-6),
+    lastReply,
+  }
+}
+
+const buildBriefingMarkdown = async provider => {
+  const now = Date.now()
+  const lines = [
+    '# Agent Cockpit Briefing Snapshot',
+    '*Context for executive briefing: This snapshot contains active sessions grouped by Cockpit folders/tickets. Do NOT reproduce raw session lists or directory tables.*',
+    '',
+  ]
+  const visibleGroups = provider.groups ?? []
+  const allVisible = visibleGroups.flatMap(g => g.sessions ?? [])
+  if (allVisible.length === 0) {
+    lines.push('No active sessions currently open in Agent Cockpit.')
+    return lines.join('\n')
+  }
+  const summaries = new Map(
+    await Promise.all(allVisible.map(async s => [s.id, await extractSessionSummary(s)])),
+  )
+  for (const group of visibleGroups) {
+    const key = group.ticket
+    const tKey = folderTicket(key, provider.pattern)
+    const issue = key ? (provider.issues[key] ?? (tKey ? provider.issues[tKey] : undefined)) : undefined
+    const title = key ? (provider.titles[key] ?? (tKey ? provider.titles[tKey] : undefined) ?? issue?.summary ?? '') : ''
+    const prs = key ? (provider.prs[key] ?? (tKey ? provider.prs[tKey] : undefined) ?? []) : []
+    lines.push(`## Folder: ${key ? `${key}${title ? ` — ${title}` : ''}` : 'Ungrouped Sessions'}`)
+    if (issue?.status) lines.push(`- **Ticket Status:** ${issue.status}`)
+    if (prs.length > 0) {
+      lines.push(`- **Open PRs:** ${prs.map(pr => `${pr.repo}#${pr.number} (${pr.title}${pr.isDraft ? ', draft' : ''})`).join('; ')}`)
+    }
+    for (const s of group.sessions ?? []) {
+      const statusLabel = STATUS[s.state]?.label ?? s.state
+      const sum = summaries.get(s.id) ?? { userPrompts: [], modifiedFiles: [], assistantNotes: [], lastReply: '' }
+      lines.push(`### Session: ${withoutTicketSuffix(s.name, provider.pattern) || s.name} [${statusLabel}, ${age(now - s.updatedAt)} ago]`)
+      if (s.cwd) lines.push(`- **Directory:** \`${s.cwd}\``)
+      if (sum.userPrompts.length > 0) {
+        lines.push(`- **User Prompts (${sum.userPrompts.length}):**`)
+        sum.userPrompts.forEach((p, idx) => lines.push(`  ${idx + 1}. "${p}"`))
+      }
+      if (sum.modifiedFiles.length > 0) {
+        lines.push(`- **Modified Files:** ${sum.modifiedFiles.map(f => `\`${f}\``).join(', ')}`)
+      }
+      if (sum.assistantNotes.length > 0) {
+        const notes = sum.assistantNotes.filter(n => !sum.lastReply || !sum.lastReply.includes(n))
+        if (notes.length > 0) {
+          lines.push(`- **Key Progress Notes:**`)
+          notes.forEach(n => lines.push(`  - ${n}`))
+        }
+      }
+      if (sum.lastReply) {
+        lines.push(`- **Latest Assistant Output / Open Question:** "${sum.lastReply}"`)
+      }
+      lines.push('')
+    }
+  }
+  return lines.join('\n')
+}
+
+let briefingTerminal = null
+let briefingInFlight = false
+
+const openBriefing = async (provider, refresh) => {
+  if (briefingInFlight) return
+  briefingInFlight = true
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'Preparing Briefing…' },
+      async () => {
+        await refresh(true)
+      },
+    )
+    const allVisible = (provider.groups ?? []).flatMap(g => g.sessions ?? [])
+    if (allVisible.length === 0) {
+      const action = await vscode.window.showInformationMessage('No active Agent Cockpit sessions.', 'Start New Session')
+      if (action === 'Start New Session') {
+        vscode.commands.executeCommand('agentCockpit.newSession')
+      }
+      return
+    }
+    const markdown = await buildBriefingMarkdown(provider)
+    await fs.promises.mkdir(COCKPIT_DIR, { recursive: true })
+    await fs.promises.writeFile(BRIEFING_FILE, markdown, 'utf8')
+    if (briefingTerminal) {
+      try {
+        briefingTerminal.dispose()
+      } catch {}
+      briefingTerminal = null
+    }
+    const briefingSystemPrompt =
+      'You are an executive assistant for Agent Cockpit. Give an ultra-compact executive dashboard briefing that can be scanned in 10 seconds.\n\n' +
+      'CRITICAL RULES:\n' +
+      '- NO tables, NO directories, NO commit counts/hashes, NO diff stats (+/- lines), NO meta-commentary on what tools/commands were run.\n' +
+      '- Ignore historical/stale branches, routine tool output, and minor git trivia. Focus strictly on actual progress and pending decisions.\n' +
+      '- Keep it extremely brief. Short bullet points only, max 1-2 lines per bullet. No walls of text.\n\n' +
+      'Strictly follow this 3-part layout (translate headings to English if sessions are in English):\n' +
+      '### 📌 Auf einen Blick (nach Ordner / Ticket geclustert)\n' +
+      'Cluster strictly by the Cockpit folders/tickets from the snapshot. Use the folder or ticket name as the bold bullet prefix:\n' +
+      '- **[Ordner / Ticket-Name]**: 1–2 concise lines summarizing actual substantive progress and current standing of the sessions in that folder.\n' +
+      '- (For sessions without a folder, cluster them under **Ohne Ordner**).\n\n' +
+      '### 🚦 Status & Blocker\n' +
+      '- 🟢 **Bereit:** Ready PRs, finished tasks, unblocked items (or "Keine" if none)\n' +
+      '- 🟡 **Entscheidung / Warten:** Decisions needed from user, waiting items (or "Keine" if none)\n' +
+      '- 🔴 **Blocker:** Hard blockers (or "Keine Blocker" if clear)\n\n' +
+      '### 🎯 Empfohlener nächster Schritt\n' +
+      '👉 Exactly ONE concrete, prioritized action recommendation on what to do next (always explicitly name the target session or ticket in quotes).\n\n' +
+      'Respond in the primary language of the session prompts (German if sessions are German, English otherwise).'
+
+    briefingTerminal = vscode.window.createTerminal({
+      name: 'Briefing',
+      shellPath: CLAUDE,
+      shellArgs: [
+        '--model',
+        'sonnet',
+        '-n',
+        'Briefing',
+        '--append-system-prompt',
+        briefingSystemPrompt,
+        'Briefing erstellen',
+      ],
+      cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir(),
+      env: { AGENT_COCKPIT_BRIEFING: '1' },
+      iconPath: new vscode.ThemeIcon('compass'),
+      location: vscode.TerminalLocation.Editor,
+    })
+    briefingTerminal.show()
+  } finally {
+    briefingInFlight = false
+  }
+}
+
 const attach = async (session, provider) => {
   if (provider?.isHidden(session)) {
     await provider.setHidden(session, false)
@@ -1057,6 +1279,7 @@ const activate = async context => {
     attach: ({ id }) => sessionById(id) && attach(sessionById(id), provider),
     openUrl: ({ url }) => vscode.env.openExternal(vscode.Uri.parse(url)),
     openTicket: ({ ticket }) => openJira({ group: { ticket } }),
+    briefing: () => openBriefing(provider, refresh),
     newSession: ({ folder } = {}) => vscode.commands.executeCommand('agentCockpit.newSession', folder && { group: { ticket: folder } }),
     newFolder: () => vscode.commands.executeCommand('agentCockpit.newFolder'),
     renameFolder: ({ folder }) => vscode.commands.executeCommand('agentCockpit.renameFolder', { folder }),
@@ -1182,9 +1405,13 @@ const activate = async context => {
     { dispose: () => clearInterval(timer) },
     ...watchers.map(w => ({ dispose: () => w.close() })),
     vscode.window.onDidChangeActiveTerminal(() => void syncTerminalTitles(provider)),
+    vscode.window.onDidCloseTerminal(t => {
+      if (t === briefingTerminal) briefingTerminal = null
+    }),
     vscode.workspace.onDidChangeConfiguration(
       e => (e.affectsConfiguration('agentCockpit') || e.affectsConfiguration('claudeDeck')) && refresh(true),
     ),
+    ...registerCmd('briefing', () => openBriefing(provider, refresh)),
     ...registerCmd('focus', () => {
       const blocked = provider.sessions.find(s => s.state === 'blocked' && !provider.isHidden(s))
       if (blocked) return attach(blocked, provider)
