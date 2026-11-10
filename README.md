@@ -15,7 +15,7 @@
 
 <p align="center">
   <b>Agent Cockpit</b> brings every background and interactive Claude Code session into one live VS Code sidebar —<br>
-  organized by project folders and smart tickets, with silent auto-naming, terminal tab sync, live status, prompt-cache countdowns, and instant alerts when a session needs you.
+  organized by project folders and smart tickets, with silent auto-naming, terminal tab sync, live status, prompt-cache countdowns, executive briefings, and instant alerts when a session needs you.
 </p>
 
 <p align="center">
@@ -34,21 +34,22 @@
 
 Claude Code makes parallel agent workflows effortless to start — and chaotic to track. Spin up a few `claude --bg` jobs, open a couple of interactive terminals across worktrees, and twenty minutes later you have no idea which session is blocked waiting for approval, which prompt cache is about to expire, and which terminal tab belongs to which topic or ticket.
 
-**Agent Cockpit is your mission control:** one sidebar that automatically names your sessions and terminal tabs, organizes them into topic or ticket folders, shows live status and open PRs, and takes you to the right terminal in a single click.
+**Agent Cockpit is your mission control:** one sidebar that automatically names your sessions and terminal tabs, organizes them into topic or ticket folders, shows live status and open PRs, launches on-demand executive briefings, and takes you to the right terminal in a single click.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/kaiketsu-labs/agent-cockpit/main/assets/sidebar.png" alt="The Agent Cockpit sidebar: sessions grouped by ticket (PROJ-142) and project folder (Auth Refactor), standalone Ungrouped sessions, live status orbs, prompt cache countdowns and keepalive, and History" width="480">
-  <br><sub>Live sidebar overview — ticket folders with issue summaries, clean topic folders, ungrouped sessions, live status orbs, and prompt cache TTL / keepalive</sub>
+  <br><sub>Live sidebar overview — ticket folders with issue summaries, clean topic folders, ungrouped sessions, live status orbs, prompt cache TTL / keepalive, and executive briefing</sub>
 </p>
 
 ## How a session flows
 
 You don't need to change how you use Claude Code or memorize slash commands:
 
-1. **Start working anywhere** — launch `claude` in a terminal, `claude --bg` in the background, or click **`+ Session`** inside any folder in the sidebar.
+1. **Start working anywhere** — launch `claude` in a terminal, `claude --bg` in the background, or click **`+ Session`** inside any folder in the sidebar (pre-filling your prompt with folder topic and ticket context).
 2. **Silent background classification** — ~10 seconds after your first prompt, Agent Cockpit's hook silently asks Haiku (`$.model.complete`) for a concise 3–6 word title and topic folder, writes it to `~/.claude/cockpit/sessions/`, and syncs your active VS Code terminal tab title directly to `<Session Name>` without touching your conversation context.
 3. **Automatic ticket upgrades** — mention `PROJ-123` or `#42` in a prompt, or run `acli`, `jira`, `gh issue`, or `git checkout -b feat/PROJ-123`, and the session automatically binds to a smart ticket folder with live Jira/GitHub status and open PRs.
 4. **Stay in flow** — see at a glance which sessions are working or idle, monitor warm prompt-cache TTL (`⚡ 4:12`), keep caches alive on demand, and click the header **`● 1 waiting`** pill or the VS Code status bar pill (`Claude (1 waiting)`) to jump straight to the session waiting on you.
+5. **Catch up in 10 seconds** — click the **`🧭 Briefing`** icon in the title bar (or run `Agent Cockpit: Briefing`) anytime to launch an executive Sonnet briefing session that synthesizes progress across all active folders and tickets into an ultra-compact traffic-light dashboard with exactly one recommended next action.
 
 ## Features
 
@@ -61,8 +62,9 @@ You don't need to change how you use Claude Code or memorize slash commands:
 | 🚦 **Live session status** | Real-time status orbs (`working`, `needs input`, `idle`, `failed`, `done`) show at a glance which sessions are actively working and what topic they are working on. |
 | 🔔 **Needs-input spotlight** | Highlights blocked or failed sessions with in-place accent borders and a pulsing status orb. Clicking the header **`● X waiting`** pill or the VS Code status bar navigates directly to the session with a smooth pulse animation, alongside VS Code toast notifications. |
 | 📊 **Status bar telemetry** | Shows `Claude (1 waiting)` or `Claude (2 running)` in the VS Code status bar; clicking it immediately focuses the session needing input or opens the cockpit. |
+| 🧭 **Executive Briefing** | Launch an on-demand catch-up session powered by Sonnet with one click on the titlebar compass icon (`$(compass)`). Streams and parses active transcripts (stripping tool spam) and gives a 10-second traffic-light dashboard (🟢 On track, 🟡 Waiting on input, 🔴 Blockers) and exactly one prioritized next action. |
 | ⏱️ **Prompt cache countdown** | Tracks each session's 5m / 1h prompt cache TTL with a countdown badge (`⚡ 4:12`) so you can reply before a warm cache goes cold. |
-| ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Agent Cockpit pings the session prefix before cache expiry so you never lose your warm cache while switching tasks or stepping away. |
+| ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Pings the session prefix before cache expiry with a 30-minute sliding window that persists across turns, so you never lose your warm cache while switching tasks or stepping away. |
 | 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and open PRs via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
 | 🎯 **Scoped PR & issue lookup** | Automatically scopes GitHub searches to your repository or organization (`agentCockpit.githubOrg`) so you never get false matches from unrelated public repositories. Click the `⚙️` gear icon to instantly toggle scope between Organization, specific Repositories, or Disabled. |
 | 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use inline hover actions to rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
@@ -157,6 +159,7 @@ All actions are available directly from the sidebar or via the VS Code Command P
 | Command | Description |
 |---|---|
 | `Agent Cockpit: Focus / Open Session Needing Input` | Jumps straight to the first session waiting on input, or focuses the Agent Cockpit sidebar. Great for binding to a keyboard shortcut. |
+| `Agent Cockpit: Briefing` | Spins up an on-demand executive Sonnet briefing in the editor area, synthesizing active session progress, blockers, and next steps into a 10-second traffic-light dashboard. |
 | `Agent Cockpit: Search Sessions` | Quick-pick across all active and archived sessions by name, folder, ticket key, or issue summary. |
 | `Agent Cockpit: New Session` | Opens a new interactive Claude Code terminal in the editor area (optionally pre-bound to a folder). |
 | `Agent Cockpit: New Folder or Ticket` | Creates a custom topic folder (e.g. `Auth Refactor`) or pins a ticket folder (e.g. `PROJ-123`, `#42`). |
