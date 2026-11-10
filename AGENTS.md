@@ -47,6 +47,16 @@ If Bun is installed, also run the plugin hook tests:
 bun test plugin/hooks/group.test.ts
 ```
 
+## Asset & Visual Rendering (Mandatory Rules)
+
+- **Always re-render `assets/sidebar.png` whenever `assets/sidebar.svg` changes**:
+  - Run `sh assets/render.sh` to generate the 2x raster image (`960x1080`) required by the VS Code Marketplace.
+- **Never use CSS color keywords like `transparent` in SVG elements**:
+  - Native macOS AppKit and CoreGraphics vector renderers do NOT recognize CSS keywords like `transparent` in `fill` attributes. They treat them as unknown values and fallback to solid opaque black (`#000000`), creating unwanted dark boxes/artifacts around icons.
+  - Always use valid SVG `fill="none"` or omit invisible background bounding boxes altogether.
+- **Header action icons must match Codicons outline stroke style**:
+  - Keep title bar icons matching VS Code's native Codicons: thin 1.1–1.3px line strokes (`stroke="#cccccc" stroke-width="1.2" fill="none"`). Do not use solid filled polygons or unstroked blobs for action icons.
+
 ## Development & Branch Hygiene (Mandatory)
 
 - **Always start from latest `origin/main`**:
