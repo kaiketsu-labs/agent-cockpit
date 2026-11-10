@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.7...v0.7.0) (2026-11-10)
+
+
+### Features
+
+* add on-demand briefing session (Sonnet) ([#53](https://github.com/kaiketsu-labs/agent-cockpit/issues/53)) ([7d0b790](https://github.com/kaiketsu-labs/agent-cockpit/commit/7d0b7905b387d0fb928be8a2f8e67343656409f6))
+* **keep-warm:** persist keep-warm across turns with sliding window and distinct badge ([#50](https://github.com/kaiketsu-labs/agent-cockpit/issues/50)) ([f7f6805](https://github.com/kaiketsu-labs/agent-cockpit/commit/f7f68058df63a67d69e8729fdd8c5c3046f85b57))
+* prefill session prompt with folder and story title on new session ([#54](https://github.com/kaiketsu-labs/agent-cockpit/issues/54)) ([6a966a6](https://github.com/kaiketsu-labs/agent-cockpit/commit/6a966a65ec085e920f6207b41694bf88f5c430a3))
+
+
+### Bug Fixes
+
+* prioritize tracker summaries, lock session folders, and sort history by recency ([#52](https://github.com/kaiketsu-labs/agent-cockpit/issues/52)) ([e159efd](https://github.com/kaiketsu-labs/agent-cockpit/commit/e159efd94f4631146076758ffdfa08c0deb0e51e))
+
 ## [0.6.7](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.6...v0.6.7) (2026-11-07)
 
 
