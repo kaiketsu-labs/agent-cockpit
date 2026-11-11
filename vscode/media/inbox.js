@@ -55,6 +55,24 @@ const clock = ms => {
   return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0')
 }
 
+let drag = null
+const hasType = (event, type) => Array.from(event.dataTransfer?.types ?? []).includes(type)
+const isFolderDrag = event => hasType(event, 'application/x-cockpit-folder') || drag?.kind === 'folder'
+const isSessionDrag = event => !isFolderDrag(event) && (hasType(event, 'application/x-cockpit-session') || drag?.kind === 'session')
+const clearDropClasses = () => {
+  for (const el of document.querySelectorAll('.drop, .drop-before, .drop-after, .dragging')) {
+    el.classList.remove('drop', 'drop-before', 'drop-after', 'dragging')
+  }
+}
+const showDropEdge = (node, isBefore) => {
+  for (const other of document.querySelectorAll('.drop, .drop-before, .drop-after')) {
+    if (other !== node) other.classList.remove('drop', 'drop-before', 'drop-after')
+  }
+  node.classList.remove('drop')
+  node.classList.toggle('drop-before', isBefore)
+  node.classList.toggle('drop-after', !isBefore)
+}
+
 const sessionRow = row => {
   const hasExpires = Boolean(row.cacheExpiresAt && row.cacheExpiresAt > 0)
   const now = Date.now()
@@ -69,8 +87,21 @@ const sessionRow = row => {
     title: row.name + ' · ' + row.stateLabel,
     onclick: () => send('attach', { id: row.id }),
     ondragstart: event => {
+      if (event.target.closest('button, .cache-pill')) {
+        event.preventDefault()
+        return
+      }
+      event.stopPropagation()
+      drag = { kind: 'session', id: row.id }
+      event.dataTransfer.setData('application/x-cockpit-session', row.id)
       event.dataTransfer.setData('text/plain', row.id)
       event.dataTransfer.effectAllowed = 'move'
+      const target = event.currentTarget
+      requestAnimationFrame(() => target.classList.add('dragging'))
+    },
+    ondragend: () => {
+      drag = null
+      clearDropClasses()
     },
   }
   if (hasExpires && left > 0) {
@@ -106,23 +137,26 @@ const sessionRow = row => {
       }, '⚡ ' + (row.keepWarm ? 'warm' : (timeStr || 'warm')))))
 
   node.addEventListener('dragover', event => {
+    if (row.isHidden || !isSessionDrag(event)) return
     event.preventDefault()
     event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
     const rect = node.getBoundingClientRect()
     const isBefore = (event.clientY - rect.top) < rect.height / 2
-    node.classList.toggle('drop-before', isBefore)
-    node.classList.toggle('drop-after', !isBefore)
+    showDropEdge(node, isBefore)
   })
   node.addEventListener('dragleave', () => {
     node.classList.remove('drop-before', 'drop-after')
   })
   node.addEventListener('drop', event => {
+    if (row.isHidden || !isSessionDrag(event)) return
     event.preventDefault()
     event.stopPropagation()
     const isBefore = node.classList.contains('drop-before')
-    node.classList.remove('drop-before', 'drop-after')
-    const movedId = event.dataTransfer.getData('text/plain')
-    if (movedId && movedId !== row.id && !row.isHidden) {
+    clearDropClasses()
+    const movedId = event.dataTransfer.getData('application/x-cockpit-session') || event.dataTransfer.getData('text/plain') || (drag?.kind === 'session' ? drag.id : '')
+    drag = null
+    if (movedId && movedId !== row.id) {
       send('reorderSession', { movedId, targetId: row.id, before: isBefore, folder: row.folder })
     }
   })
@@ -146,12 +180,64 @@ const counts = card => {
 }
 
 const dropTarget = (node, ticket) => {
-  node.addEventListener('dragover', event => { event.preventDefault(); node.classList.add('drop') })
+  node.addEventListener('dragover', event => {
+    if (!isSessionDrag(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    node.classList.add('drop')
+  })
   node.addEventListener('dragleave', event => { if (!node.contains(event.relatedTarget)) node.classList.remove('drop') })
   node.addEventListener('drop', event => {
+    if (!isSessionDrag(event)) return
     event.preventDefault()
-    node.classList.remove('drop')
-    send('assign', { id: event.dataTransfer.getData('text/plain'), ticket })
+    clearDropClasses()
+    const id = event.dataTransfer.getData('application/x-cockpit-session') || event.dataTransfer.getData('text/plain') || (drag?.kind === 'session' ? drag.id : '')
+    drag = null
+    if (id) send('assign', { id, ticket })
+  })
+}
+
+const folderReorderTarget = (node, head, folderKey) => {
+  head.setAttribute('draggable', 'true')
+  head.addEventListener('dragstart', event => {
+    if (event.target.closest('button')) {
+      event.preventDefault()
+      return
+    }
+    drag = { kind: 'folder', key: folderKey }
+    event.dataTransfer.setData('application/x-cockpit-folder', folderKey)
+    event.dataTransfer.setData('text/plain', folderKey)
+    event.dataTransfer.effectAllowed = 'move'
+    requestAnimationFrame(() => node.classList.add('dragging'))
+  })
+  head.addEventListener('dragend', () => {
+    drag = null
+    clearDropClasses()
+  })
+  node.addEventListener('dragover', event => {
+    if (!isFolderDrag(event)) return
+    if (drag?.kind === 'folder' && drag.key === folderKey) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    const rect = node.getBoundingClientRect()
+    const isBefore = (event.clientY - rect.top) < rect.height / 2
+    showDropEdge(node, isBefore)
+  })
+  node.addEventListener('dragleave', event => {
+    if (!node.contains(event.relatedTarget)) node.classList.remove('drop-before', 'drop-after')
+  })
+  node.addEventListener('drop', event => {
+    if (!isFolderDrag(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const isBefore = node.classList.contains('drop-before')
+    clearDropClasses()
+    const movedFolder = event.dataTransfer.getData('application/x-cockpit-folder') || (drag?.kind === 'folder' ? drag.key : '')
+    drag = null
+    if (movedFolder && movedFolder !== folderKey) {
+      send('reorderFolder', { movedFolder, targetFolder: folderKey, before: isBefore })
+    }
   })
 }
 
@@ -181,7 +267,10 @@ const card = (c, isLoose, isHistory = false) => {
       sessions.length > 0 && [prs.length > 0 && el('div', { class: 'sub' }, 'Sessions'), sessions.map(sessionRow)],
       sessions.length === 0 && prs.length === 0 && el('div', { class: 'empty-folder' }, 'Drop a session here or click + to start one')))
   }
-  if (!isHistory) dropTarget(node, c.key)
+  if (!isHistory) {
+    if (c.key) folderReorderTarget(node, head, c.key)
+    dropTarget(node, c.key)
+  }
   return node
 }
 
