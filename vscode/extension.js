@@ -15,7 +15,7 @@ const {
   encodeProjectPath,
   customTitleLine,
   groupSessions,
-  moveBefore,
+  reorderSiblings,
   parseGithubRemote,
   searchQueries,
   prsByTicket,
@@ -733,15 +733,23 @@ class SessionsProvider {
       session.folder = folder ?? null
       session.ticket = folder ?? null
     }
-    const all = this.sessions.filter(s => !this.isHidden(s))
-    const dest = all.filter(s => (s.folder ?? s.ticket ?? null) === (folder ?? null))
-    let siblingIds = dest.map(s => s.id)
+    const destGroup = this.groups.find(g => (g.ticket ?? undefined) === folder)
+    const siblingIds = (destGroup
+      ? destGroup.sessions
+      : this.sessions.filter(s => !this.isHidden(s) && (s.folder ?? s.ticket ?? undefined) === folder)
+    ).map(s => s.id)
     if (!siblingIds.includes(session.id)) {
       siblingIds.push(session.id)
     }
-    const targetIdx = siblingIds.indexOf(targetId)
-    const insertBeforeId = targetIdx === -1 ? undefined : (before ? targetId : siblingIds[targetIdx + 1])
-    const newOrder = moveBefore(this.order, siblingIds, session.id, insertBeforeId)
+    const newOrder = reorderSiblings(this.order, siblingIds, session.id, targetId, before)
+    await this.saveView({ order: newOrder })
+  }
+
+  async reorderFolder(movedFolder, targetFolder, before) {
+    if (typeof movedFolder !== 'string' || typeof targetFolder !== 'string') return
+    const siblingKeys = this.groups.filter(g => g.ticket !== null).map(g => g.ticket)
+    const newOrder = reorderSiblings(this.order, siblingKeys, movedFolder, targetFolder, before)
+    if (newOrder === this.order) return
     await this.saveView({ order: newOrder })
   }
 }
@@ -1311,6 +1319,11 @@ const activate = async context => {
       const session = sessionById(movedId)
       if (!session) return
       await provider.reorderSession(session, targetId, before, folder)
+      refresh(true)
+    },
+    reorderFolder: async ({ movedFolder, targetFolder, before }) => {
+      if (!movedFolder || !targetFolder) return
+      await provider.reorderFolder(movedFolder, targetFolder, before)
       refresh(true)
     },
   }, context.extensionUri)

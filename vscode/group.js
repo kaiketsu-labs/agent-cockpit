@@ -117,6 +117,16 @@ const moveBefore = (order, siblings, moved, target) => {
   return [...order.filter(key => !rest.includes(key)), ...rest]
 }
 
+// Places `moved` before or after `target` within `siblings`, preserving all unrelated keys in `order`.
+const reorderSiblings = (order, siblings, moved, target, before) => {
+  if (!moved || !target || moved === target) return order
+  if (!siblings.includes(moved)) return order
+  const targetIdx = siblings.indexOf(target)
+  if (targetIdx === -1) return order
+  const insertBefore = before ? target : siblings[targetIdx + 1]
+  return moveBefore(order, siblings, moved, insertBefore)
+}
+
 const groupSessions = (sessions, order = [], options = {}) => {
   const opts = Array.isArray(order) ? options : order
   const orderList = Array.isArray(order) ? order : []
@@ -512,6 +522,7 @@ module.exports = {
   customTitleLine,
   sortByOrder,
   moveBefore,
+  reorderSiblings,
   groupSessions,
   parseGithubRemote,
   searchQueries,

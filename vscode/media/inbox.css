@@ -295,6 +295,16 @@ h2.toggle:hover {
   outline: 1.5px dashed var(--claude-accent);
   background: var(--claude-accent-soft);
 }
+.card.dragging,
+.session-card.dragging {
+  opacity: 0.5;
+}
+.card.drop-before {
+  border-top: 2px solid var(--vscode-focusBorder, #007acc) !important;
+}
+.card.drop-after {
+  border-bottom: 2px solid var(--vscode-focusBorder, #007acc) !important;
+}
 
 .card > .head {
   height: 32px;

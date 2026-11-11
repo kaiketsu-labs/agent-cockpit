@@ -18,6 +18,7 @@ const {
   customTitleLine,
   groupSessions,
   moveBefore,
+  reorderSiblings,
   parseGithubRemote,
   searchQueries,
   prsByTicket,
@@ -140,6 +141,55 @@ test('drag and drop reordered sessions maintain their manual order regardless of
   sessions[0].name = 'Aardvark task'
   const groupsAfterRename = groupSessions(sessions, reordered)
   assert.deepEqual(groupsAfterRename[0].sessions.map(s => s.id), ['s2', 's1', 's3'])
+})
+
+test('reorderSiblings moves folders before/after targets while preserving session order and empty folders', () => {
+  const sessions = [
+    { id: 's1', name: 'Session 1', folder: 'Alpha', state: 'working' },
+    { id: 's2', name: 'Session 2', folder: 'Alpha', state: 'idle' },
+    { id: 's3', name: 'Session 3', folder: 'PROJ-10', state: 'idle' },
+  ]
+  const folders = ['Empty']
+  const initialGroups = groupSessions(sessions, ['s2', 's1'], { folders })
+  const initialKeys = initialGroups.filter(g => g.ticket !== null).map(g => g.ticket)
+  assert.deepEqual(initialKeys, ['Alpha', 'Empty', 'PROJ-10'])
+
+  // Move PROJ-10 before Alpha
+  const order1 = reorderSiblings(['s2', 's1'], initialKeys, 'PROJ-10', 'Alpha', true)
+  const groups1 = groupSessions(sessions, order1, { folders })
+  assert.deepEqual(groups1.filter(g => g.ticket !== null).map(g => g.ticket), ['PROJ-10', 'Alpha', 'Empty'])
+  // Session order inside Alpha stays intact
+  assert.deepEqual(groups1.find(g => g.ticket === 'Alpha').sessions.map(s => s.id), ['s2', 's1'])
+
+  // Move PROJ-10 after Empty (to the end)
+  const keys1 = groups1.filter(g => g.ticket !== null).map(g => g.ticket)
+  const order2 = reorderSiblings(order1, keys1, 'PROJ-10', 'Empty', false)
+  const groups2 = groupSessions(sessions, order2, { folders })
+  assert.deepEqual(groups2.filter(g => g.ticket !== null).map(g => g.ticket), ['Alpha', 'Empty', 'PROJ-10'])
+
+  // Move PROJ-10 after Alpha (between Alpha and Empty)
+  const keys2 = groups2.filter(g => g.ticket !== null).map(g => g.ticket)
+  const order3 = reorderSiblings(order2, keys2, 'PROJ-10', 'Alpha', false)
+  const groups3 = groupSessions(sessions, order3, { folders })
+  assert.deepEqual(groups3.filter(g => g.ticket !== null).map(g => g.ticket), ['Alpha', 'PROJ-10', 'Empty'])
+
+  // Model tickets preserve reordered folder order
+  const model = inboxModel({
+    groups: groups3,
+    hidden: [],
+    prs: {},
+    issues: {},
+    titles: {},
+    pattern: anyKey,
+    cacheTtl: 300000,
+    now: 1000,
+  })
+  assert.deepEqual(model.tickets.map(t => t.key), ['Alpha', 'PROJ-10', 'Empty'])
+
+  // Guards: self-drop, missing moved key, or missing target key are no-ops
+  assert.equal(reorderSiblings(order3, keys2, 'Alpha', 'Alpha', true), order3)
+  assert.equal(reorderSiblings(order3, keys2, 'Missing', 'Alpha', true), order3)
+  assert.equal(reorderSiblings(order3, keys2, 'Alpha', 'Missing', true), order3)
 })
 
 test('PR searches batch six keys and match PRs to every key their title names', () => {
