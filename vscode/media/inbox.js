@@ -1,5 +1,6 @@
 const api = acquireVsCodeApi()
-const ui = Object.assign({ filter: 'all', q: '', open: {}, history: false }, api.getState())
+const ui = Object.assign({ filter: 'all', q: '', open: {}, prOpen: {}, history: false }, api.getState())
+if (!ui.prOpen) ui.prOpen = {}
 let data = { model: null, message: '' }
 const save = () => api.setState(ui)
 const send = (type, extra) => api.postMessage({ type, ...extra })
@@ -262,8 +263,14 @@ const card = (c, isLoose, isHistory = false) => {
   const node = el('div', { class: 'card' + (c.isBusy ? ' busy' : '') }, head)
   if (isOpen) {
     const prs = c.prs.filter(pr => !ui.q || matches(pr.title + pr.repo, ui.q) || matches(c.key + c.title, ui.q))
+    const prsOpen = forced || (ui.prOpen[id] ?? true)
+    const prToggle = el('div', {
+      class: 'sub toggle',
+      title: (prsOpen ? 'Collapse' : 'Expand') + ' pull requests',
+      onclick: () => { ui.prOpen[id] = !prsOpen; save(); renderList() },
+    }, icon('chev', prsOpen ? 'open' : ''), 'Pull requests', el('span', { class: 'sub-count' }, '(' + prs.length + ')'))
     node.append(el('div', { class: 'body' },
-      prs.length > 0 && [el('div', { class: 'sub' }, 'Pull requests'), prs.map(prRow)],
+      prs.length > 0 && [prToggle, prsOpen && prs.map(prRow)],
       sessions.length > 0 && [prs.length > 0 && el('div', { class: 'sub' }, 'Sessions'), sessions.map(sessionRow)],
       sessions.length === 0 && prs.length === 0 && el('div', { class: 'empty-folder' }, 'Drop a session here or click + to start one')))
   }
