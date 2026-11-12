@@ -818,9 +818,12 @@ const findSessionForTerminal = async (terminal, provider) => {
   const direct = terminalSessionMap.get(terminal)
   if (direct) {
     const matched = provider.sessions.find(s => s.id === direct || s.sessionId === direct)
-    if (matched && !matched.ended) return matched
+    if (matched && (!matched.ended || (terminal.exitStatus === undefined && isAttachTerminal(terminal, matched)))) {
+      return matched
+    }
     terminalSessionMap.delete(terminal)
   }
+  if (provider.sessions.every(s => s.ended)) return undefined
   for (const session of provider.sessions) {
     if (session.ended) continue
     const term = await findTerminalForSession(session)

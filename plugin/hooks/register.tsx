@@ -300,10 +300,11 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
   kind = jobId !== undefined && (await $.session.id()).startsWith(jobId) ? 'bg' : 'interactive'
   isListed = kind === 'bg' || e.isInteractive
   const existing = await storedRecord($)
-  const existingFolder = existing && (existing.folder !== undefined || existing.ticket !== undefined)
-    ? (existing.folder ?? existing.ticket)
-    : undefined
-  const folder = existingFolder ?? (initialFolder ? normalizeFolder(initialFolder, projects) : undefined)
+  const hasStoredFolder = existing && (existing.folder !== undefined || existing.ticket !== undefined)
+  const existingFolder = hasStoredFolder ? (existing.folder ?? existing.ticket) : undefined
+  const folder = hasStoredFolder
+    ? existingFolder
+    : (initialFolder ? normalizeFolder(initialFolder, projects) : undefined)
   await save($, { cwd: e.cwd, ...(folder ? { folder, ticket: folder } : {}) })
 
   const envTtl =

@@ -121,7 +121,7 @@ const sessionRow = row => {
   if (row.isActiveTerminal) {
     topElements.push(
       el('span', { class: 'active-term-badge', title: 'Open in active terminal tab' },
-        icon('terminal', 11),
+        icon('terminal'),
         el('span', {}, 'Active')
       )
     )
