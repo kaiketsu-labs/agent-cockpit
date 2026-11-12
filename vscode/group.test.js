@@ -31,6 +31,7 @@ const {
   cacheTtlMs,
   cacheLeft,
   clock,
+  inboxRow,
   inboxModel,
   prefillForFolder,
 } = require('./group')
@@ -792,4 +793,39 @@ test('all manifest and config JSON files are valid JSON', () => {
       JSON.parse(fs.readFileSync(full, 'utf8'))
     }, `Invalid JSON in ${rel}`)
   }
+})
+
+test('inboxRow and inboxModel mark active terminal session when activeSessionId matches', () => {
+  const session = {
+    id: 's1',
+    sessionId: 's1',
+    name: 'Active session',
+    state: 'working',
+    updatedAt: 1000,
+  }
+  const inactiveRow = inboxRow(session, { hidden: {}, titles: {}, pattern: proj, now: 2000 })
+  assert.equal(inactiveRow.isActiveTerminal, false)
+
+  const activeRow = inboxRow(session, { hidden: {}, titles: {}, pattern: proj, now: 2000, activeSessionId: 's1' })
+  assert.equal(activeRow.isActiveTerminal, true)
+
+  const model = inboxModel({
+    groups: [
+      {
+        folder: 'PROJ-10',
+        ticket: 'PROJ-10',
+        sessions: [session],
+        activityAt: 1000,
+      },
+    ],
+    hidden: [],
+    prs: {},
+    issues: {},
+    titles: {},
+    pattern: proj,
+    now: 2000,
+    activeSessionId: 's1',
+  })
+  assert.equal(model.activeSessionId, 's1')
+  assert.equal(model.folders[0].sessions[0].isActiveTerminal, true)
 })

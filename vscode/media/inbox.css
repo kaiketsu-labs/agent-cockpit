@@ -415,6 +415,34 @@ h2.toggle:hover {
   background: var(--vscode-list-hoverBackground);
   border-color: var(--card-border);
 }
+.session-card.active-terminal {
+  outline: 1.5px solid var(--vscode-focusBorder, #007acc);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 10%, var(--card-bg));
+}
+.session-card.active-terminal:hover {
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 15%, var(--card-bg));
+}
+.active-term-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 1.5px 5px;
+  border-radius: 3px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, #ffffff);
+  border: 1px solid var(--vscode-focusBorder, #007acc);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+.active-term-badge svg {
+  display: block;
+  width: 11px;
+  height: 11px;
+}
 .session-card.working {
   border-left: 2.5px solid var(--vscode-charts-blue, #3794ff);
 }

@@ -33,6 +33,7 @@ const SHAPES = {
   external: '<path d="M9 3h4v4M13 3 7.5 8.5M6 4H4a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>',
   close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
   gear: '<path d="M9.1 1.5H6.9l-.3 1.5a5 5 0 0 0-1.2.7L4 3 2.5 4.5l.7 1.4a5 5 0 0 0-.7 1.2l-1.5.3v2.2l1.5.3a5 5 0 0 0 .7 1.2L2.5 12 4 13.5l1.4-.7a5 5 0 0 0 1.2.7l.3 1.5h2.2l.3-1.5a5 5 0 0 0 1.2-.7l1.4.7 1.5-1.5-.7-1.4a5 5 0 0 0 .7-1.2l1.5-.3V6.9l-1.5-.3a5 5 0 0 0-.7-1.2l.7-1.4L13.5 3 12 2.5l-1.4.7a5 5 0 0 0-1.2-.7l-.3-1.5zM8 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>',
+  terminal: '<path d="m3 4.5 4 3.5-4 3.5M8.5 11.5H13"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -83,9 +84,9 @@ const sessionRow = row => {
 
   const cardProps = {
     id: 'session-' + row.id,
-    class: 'session-card ' + row.state,
+    class: 'session-card ' + row.state + (row.isActiveTerminal ? ' active-terminal' : ''),
     draggable: 'true',
-    title: row.name + ' · ' + row.stateLabel,
+    title: row.name + ' · ' + row.stateLabel + (row.isActiveTerminal ? ' (Active Terminal)' : ''),
     onclick: () => send('attach', { id: row.id }),
     ondragstart: event => {
       if (event.target.closest('button, .cache-pill')) {
@@ -112,30 +113,45 @@ const sessionRow = row => {
     cardProps['data-keep-warm'] = '1'
   }
 
+  const topElements = [
+    el('span', { class: 'status-orb ' + row.state }),
+    el('span', { class: 'session-name' }, row.name),
+  ]
+
+  if (row.isActiveTerminal) {
+    topElements.push(
+      el('span', { class: 'active-term-badge', title: 'Open in active terminal tab' },
+        icon('terminal', 11),
+        el('span', {}, 'Active')
+      )
+    )
+  }
+
+  topElements.push(
+    el('span', { class: 'meta hide-on-hover' }, el('span', {}, row.age ?? row.activity)),
+    el('span', { class: 'actions' },
+      iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
+      iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
+      row.isHidden
+        ? iconBtn('restore', 'Restore from history', () => {
+            if (row.folder) {
+              ui.open[row.folder] = true
+              save()
+            }
+            send('show', { id: row.id })
+          })
+        : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))),
+    isWarm && el('span', {
+      class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
+      title: row.keepWarm
+        ? 'Prompt cache keepalive active' + (timeStr ? ' (auto-refreshing in ' + timeStr + ')' : '') + ' · Click to disable'
+        : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
+      onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
+    }, '⚡ ' + (row.keepWarm ? 'warm' : (timeStr || 'warm')))
+  )
+
   const node = el('div', cardProps,
-    el('div', { class: 'session-top' },
-      el('span', { class: 'status-orb ' + row.state }),
-      el('span', { class: 'session-name' }, row.name),
-      el('span', { class: 'meta hide-on-hover' }, el('span', {}, row.age ?? row.activity)),
-      el('span', { class: 'actions' },
-        iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
-        iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
-        row.isHidden
-          ? iconBtn('restore', 'Restore from history', () => {
-              if (row.folder) {
-                ui.open[row.folder] = true
-                save()
-              }
-              send('show', { id: row.id })
-            })
-          : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))),
-      isWarm && el('span', {
-        class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
-        title: row.keepWarm
-          ? 'Prompt cache keepalive active' + (timeStr ? ' (auto-refreshing in ' + timeStr + ')' : '') + ' · Click to disable'
-          : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
-        onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-      }, '⚡ ' + (row.keepWarm ? 'warm' : (timeStr || 'warm')))))
+    el('div', { class: 'session-top' }, ...topElements))
 
   node.addEventListener('dragover', event => {
     if (row.isHidden || !isSessionDrag(event)) return

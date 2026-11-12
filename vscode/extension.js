@@ -159,12 +159,17 @@ const loadSessions = async pattern => {
 const updateSessionRecord = async (session, change) => {
   await fs.promises.mkdir(SESSIONS_DIR, { recursive: true })
   const file = path.join(SESSIONS_DIR, `${session.sessionId}.json`)
-  const record = await readJson(file, {
+  const legacyFile = path.join(DECK_DIR, 'sessions', `${session.sessionId}.json`)
+  const initial = fs.existsSync(file)
+    ? await readJson(file)
+    : (fs.existsSync(legacyFile) ? await readJson(legacyFile) : {})
+  const record = {
     sessionId: session.sessionId,
     kind: session.interactive === false ? 'bg' : 'interactive',
     cwd: session.cwd,
     startedAt: session.updatedAt || Date.now(),
-  })
+    ...(initial || {}),
+  }
   const updated = { ...record, ...change }
   await fs.promises.writeFile(file, JSON.stringify(updated, null, 2))
   if (change.name && updated.cwd) {
@@ -710,6 +715,7 @@ class SessionsProvider {
       cacheTtl: this.cacheTtl,
       now: Date.now(),
       githubScope,
+      activeSessionId: this.activeSessionId ?? null,
     })
   }
 
@@ -805,6 +811,26 @@ const findAncestors = pid => {
 
 const terminalForPid = new Map()
 const appliedTerminalTitles = new WeakMap()
+const terminalSessionMap = new WeakMap()
+
+const findSessionForTerminal = async (terminal, provider) => {
+  if (!terminal || !provider?.sessions) return undefined
+  const direct = terminalSessionMap.get(terminal)
+  if (direct) {
+    const matched = provider.sessions.find(s => s.id === direct || s.sessionId === direct)
+    if (matched && !matched.ended) return matched
+    terminalSessionMap.delete(terminal)
+  }
+  for (const session of provider.sessions) {
+    if (session.ended) continue
+    const term = await findTerminalForSession(session)
+    if (term === terminal) {
+      terminalSessionMap.set(terminal, session.id || session.sessionId)
+      return session
+    }
+  }
+  return undefined
+}
 
 const terminalTitleFor = (session, pattern) => {
   const folder = session.folder ?? session.ticket
@@ -850,17 +876,25 @@ const applyTerminalTitleIfActive = async (terminal, desired) => {
   } catch {}
 }
 
-const syncTerminalTitles = async provider => {
+const syncTerminalTitles = async (provider, inbox) => {
   const active = vscode.window.activeTerminal
-  if (!active || active.exitStatus !== undefined) return
-  for (const session of provider.sessions) {
-    if (session.ended) continue
-    const desired = terminalTitleFor(session, provider.pattern)
-    if (!desired) continue
-    const terminal = await findTerminalForSession(session)
-    if (terminal === active) {
-      await applyTerminalTitleIfActive(terminal, desired)
-      return
+  if (!active || active.exitStatus !== undefined) {
+    if (provider.activeSessionId) {
+      provider.activeSessionId = null
+      inbox?.refresh()
+    }
+    return
+  }
+  const activeSession = await findSessionForTerminal(active, provider)
+  const newActiveSessionId = activeSession ? (activeSession.id || activeSession.sessionId) : null
+  if (provider.activeSessionId !== newActiveSessionId) {
+    provider.activeSessionId = newActiveSessionId
+    inbox?.refresh()
+  }
+  if (activeSession) {
+    const desired = terminalTitleFor(activeSession, provider.pattern)
+    if (desired) {
+      await applyTerminalTitleIfActive(active, desired)
     }
   }
 }
@@ -1170,17 +1204,21 @@ const attach = async (session, provider) => {
   const cwd = session.cwd && fs.existsSync(session.cwd)
     ? session.cwd
     : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir())
-  vscode.window
-    .createTerminal({
-      name: short,
-      shellPath: CLAUDE,
-      shellArgs: attachArgs(session),
-      cwd,
-      env: (session.folder || session.ticket) ? { AGENT_COCKPIT_FOLDER: session.folder || session.ticket, CLAUDE_DECK_FOLDER: session.folder || session.ticket } : undefined,
-      iconPath: new vscode.ThemeIcon('hubot'),
-      location: vscode.TerminalLocation.Editor,
-    })
-    .show()
+  const hasFolder = Boolean(session.folder || session.ticket)
+  const env = hasFolder
+    ? { AGENT_COCKPIT_FOLDER: session.folder || session.ticket, CLAUDE_DECK_FOLDER: session.folder || session.ticket }
+    : { AGENT_COCKPIT_FOLDER: '', CLAUDE_DECK_FOLDER: '' }
+  const terminal = vscode.window.createTerminal({
+    name: short,
+    shellPath: CLAUDE,
+    shellArgs: attachArgs(session),
+    cwd,
+    env,
+    iconPath: new vscode.ThemeIcon('hubot'),
+    location: vscode.TerminalLocation.Editor,
+  })
+  terminalSessionMap.set(terminal, session.id || session.sessionId)
+  terminal.show()
 }
 
 // Migrate from legacy claude-tickets and claude-deck
@@ -1375,7 +1413,7 @@ const activate = async context => {
       .then(blocked => {
         blocked.forEach(notify)
         updateStatusBar()
-        void syncTerminalTitles(provider)
+        void syncTerminalTitles(provider, inbox)
       })
       .finally(() => (running = undefined)))
   // Sessions refresh while the view is hidden too, so a session needing input still notifies.
@@ -1417,9 +1455,14 @@ const activate = async context => {
   context.subscriptions.push(
     { dispose: () => clearInterval(timer) },
     ...watchers.map(w => ({ dispose: () => w.close() })),
-    vscode.window.onDidChangeActiveTerminal(() => void syncTerminalTitles(provider)),
+    vscode.window.onDidChangeActiveTerminal(() => void syncTerminalTitles(provider, inbox)),
     vscode.window.onDidCloseTerminal(t => {
       if (t === briefingTerminal) briefingTerminal = null
+      const id = terminalSessionMap.get(t)
+      if (id && provider.activeSessionId === id) {
+        provider.activeSessionId = null
+        inbox?.refresh()
+      }
     }),
     vscode.workspace.onDidChangeConfiguration(
       e => (e.affectsConfiguration('agentCockpit') || e.affectsConfiguration('claudeDeck')) && refresh(true),

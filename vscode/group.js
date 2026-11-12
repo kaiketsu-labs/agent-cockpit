@@ -447,11 +447,14 @@ const age = ms => {
 const NEEDS_YOU = new Set(['blocked', 'failed'])
 const IS_BUSY = new Set(['blocked', 'failed', 'working'])
 
-const inboxRow = (session, { pattern, now, cacheTtl, isHidden }) => {
+const inboxRow = (session, { pattern, now, cacheTtl, isHidden, activeSessionId }) => {
   const status = STATUS[session.state] ?? { label: session.state }
   const left = session.state !== 'working' && session.lastWriteAt ? cacheLeft(session.lastWriteAt, cacheTtl, now) : 0
   const folder = session.folder ?? session.ticket ?? null
   const ageStr = age(now - session.updatedAt)
+  const isActiveTerminal = Boolean(
+    activeSessionId && (session.id === activeSessionId || session.sessionId === activeSessionId)
+  )
   return {
     id: session.id,
     sessionId: session.sessionId,
@@ -468,12 +471,13 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden }) => {
     contextTokens: session.contextTokens,
     model: session.model,
     isHidden,
+    isActiveTerminal,
   }
 }
 
 // What the Inbox webview draws: sessions that need the person first, then one card per folder/ticket.
-const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now, githubScope }) => {
-  const options = { pattern, now, cacheTtl }
+const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now, githubScope, activeSessionId }) => {
+  const options = { pattern, now, cacheTtl, activeSessionId }
   const card = (group, isHidden) => {
     const key = group.ticket
     const ticketKey = folderTicket(key, pattern)
@@ -505,6 +509,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
     loose,
     history: hidden.map(group => card(group, true)),
     githubScope: githubScope ?? 'auto',
+    activeSessionId: activeSessionId ?? null,
   }
 }
 
