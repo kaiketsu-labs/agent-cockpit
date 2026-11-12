@@ -372,6 +372,30 @@ h2.toggle:hover {
   color: var(--vscode-descriptionForeground);
   opacity: 0.75;
 }
+.sub.toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin: 2px 0 1px;
+  border-radius: var(--radius-md);
+  user-select: none;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+.sub.toggle:hover {
+  background: var(--vscode-list-hoverBackground);
+  color: var(--vscode-foreground);
+  opacity: 1;
+}
+.sub.toggle .ico.chev {
+  width: 11px;
+  height: 11px;
+}
+.sub.toggle .sub-count {
+  opacity: 0.8;
+  font-weight: 500;
+}
 
 /* Session Agent Cards inside a Folder */
 .session-card {
