@@ -56,7 +56,7 @@ You don't need to change how you use Claude Code or memorize slash commands:
 | Feature | What it does |
 |---|---|
 | 🗂️ **Folders & smart tickets** | Group sessions into free-form project/topic folders (`Auth Refactor`, `Release Prep`) or smart ticket folders (`PROJ-123`, `#42`, `owner/repo#42`). Ticket folders show live issue summaries from Jira or GitHub, while project folders stay clean and concise. |
-| ✨ **Silent auto-naming** | Unnamed sessions automatically receive a concise title and folder in the background (~10s after your first prompt via Haiku) without polluting your prompt or transcript, and sync back to `claude --resume`. |
+| ✨ **Silent auto-naming & full-history retitle** | Unnamed sessions automatically receive a concise title and folder in the background via Haiku without polluting your prompt or transcript, and sync back to `claude --resume`. Anytime a session evolves, click the **sparkle button** on its card or run `/retitle [hint]` in Claude Code to re-name it across the **entire conversation history**. |
 | 🎫 **Automatic ticket detection** | Detects ticket keys in user prompts and CLI commands (`acli`, `jira`, `gh issue`, `git switch/checkout`) and binds the session to that ticket folder automatically. |
 | 🖥️ **VS Code terminal tab sync** | Automatically syncs your interactive VS Code terminal tab to your concise `<Session Name>` as soon as a session is classified or renamed. |
 | 🚦 **Live session status** | Real-time status orbs (`working`, `needs input`, `idle`, `failed`, `done`) show at a glance which sessions are actively working and what topic they are working on. |
@@ -67,7 +67,7 @@ You don't need to change how you use Claude Code or memorize slash commands:
 | ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Pings the session prefix before cache expiry with a 30-minute sliding window that persists across turns, so you never lose your warm cache while switching tasks or stepping away. |
 | 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and collapsible open PR lists via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
 | 🎯 **Scoped PR & issue lookup** | Automatically scopes GitHub searches to your repository or organization (`agentCockpit.githubOrg`) so you never get false matches from unrelated public repositories. Click the `⚙️` gear icon to instantly toggle scope between Organization, specific Repositories, or Disabled. |
-| 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use inline hover actions to rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
+| 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use inline hover actions to AI auto-rename, rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
 
 ## Install
 
@@ -177,6 +177,7 @@ Sessions are named and organized automatically without any slash commands. When 
 | `/start-task [KEY] <task>` | Fetches the ticket (via MCP, `gh`, `acli`, `jira`, or Jira REST), names the session via `name_session`, aligns on the approach, and creates git worktrees on demand. |
 | `/finish-task [KEY]` | Drafts a structured handoff comment (status, acceptance criteria, PRs, test results) and posts it to the ticket once you approve. |
 | `/cleanup-worktrees` | Cleans up local git worktrees whose associated pull request has been merged or closed. |
+| `/retitle [hint]` | Re-evaluates and updates the session title across the entire conversation history (via `$.model.fork` with transcript fallback). |
 
 ## Configuration
 
