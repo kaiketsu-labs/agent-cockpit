@@ -176,7 +176,7 @@ const applyClassificationReply = async (
   const resolvedFolder =
     existingFolder && !(suggestedFolder && isTicketKey(suggestedFolder, projects) && suggestedFolder !== existingFolder)
       ? normalizeFolder(existingFolder, projects)
-      : (suggestedFolder ?? ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
+      : (suggestedFolder ?? extractTicket(parsed.summary, projects) ?? ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
   const name = sessionName(parsed.summary, resolvedFolder, suffix)
   await save($, { name, ...(resolvedFolder ? { folder: resolvedFolder, ticket: resolvedFolder } : {}) })
   const sessionId = await $.session.id()

@@ -79,9 +79,13 @@ const readJson = async (file, fallback) => {
 
 const run = (file, args, input, options = {}) =>
   new Promise((resolve, reject) => {
-    const child = execFile(file, args, { maxBuffer: 16 * 1024 * 1024, ...options }, (err, stdout) =>
-      err ? reject(err) : resolve(stdout),
-    )
+    const child = execFile(file, args, { maxBuffer: 16 * 1024 * 1024, ...options }, (err, stdout, stderr) => {
+      if (err) {
+        err.stderr = stderr
+        return reject(err)
+      }
+      resolve(stdout)
+    })
     // A process that exits before reading its stdin would otherwise throw EPIPE.
     child.stdin.on('error', () => {})
     child.stdin.end(input)
@@ -279,7 +283,11 @@ const autoRenameSession = async (session, provider, refresh) => {
       },
     )
   } catch (err) {
-    vscode.window.showWarningMessage(`Auto-rename failed: ${err?.message || err}`)
+    const reason = err?.killed
+      ? 'Timed out waiting for Claude'
+      : String(err?.stderr ?? '').trim().split('\n').pop() ||
+        (err?.code === 'ENOENT' ? 'Claude CLI not found' : 'Claude CLI returned an error')
+    vscode.window.showWarningMessage(`Auto-rename failed: ${reason}`)
   } finally {
     renamingSessions.delete(session.id)
   }
