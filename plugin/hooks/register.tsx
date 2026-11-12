@@ -1,12 +1,15 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import {
+  buildClassificationInstruction,
   customTitleLine,
   encodeProjectPath,
   extractTicket,
+  extractTranscriptContext,
   isTicketKey,
   normalizeFolder,
   normalizeTicket,
+  parseClassificationReply,
   promptName,
   sessionName,
   ticketOf,
@@ -97,13 +100,30 @@ const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const DEFAULT_KEEP_WARM_WINDOW_MS = 30 * 60_000
 
+const transcriptCandidates = async ($: EngineInterface, sessionId: string, cwd: string) => {
+  const base = `${await claudeDir($)}/projects`
+  const worktreeRoot = cwd.split(/[/\\]\.claude[/\\]worktrees[/\\]/)[0]
+  const dirs = worktreeRoot && worktreeRoot !== cwd ? [cwd, worktreeRoot] : [cwd]
+  return dirs.map(dir => `${base}/${encodeProjectPath(dir)}/${sessionId}.jsonl`)
+}
+
+const readTranscript = async ($: EngineInterface, sessionId: string, cwd: string): Promise<string | undefined> => {
+  for (const file of await transcriptCandidates($, sessionId, cwd)) {
+    const content = await $.fs.read(file).catch(() => undefined)
+    if (content) return content
+  }
+  return undefined
+}
+
 // Appends a custom-title entry to Claude Code's native JSONL transcript if the file exists.
 const writeTranscriptTitle = async ($: EngineInterface, sessionId: string, cwd: string, title: string) => {
   try {
-    const file = `${await claudeDir($)}/projects/${encodeProjectPath(cwd)}/${sessionId}.jsonl`
-    const existing = await $.fs.read(file).catch(() => undefined)
-    if (existing !== undefined) {
-      await $.fs.write(file, existing + (existing.endsWith('\n') ? '' : '\n') + customTitleLine(sessionId, title))
+    for (const file of await transcriptCandidates($, sessionId, cwd)) {
+      const existing = await $.fs.read(file).catch(() => undefined)
+      if (existing !== undefined) {
+        await $.fs.write(file, existing + (existing.endsWith('\n') ? '' : '\n') + customTitleLine(sessionId, title))
+        return
+      }
     }
   } catch {}
 }
@@ -140,42 +160,29 @@ const isTrivialPrompt = (text?: string): boolean => {
   return clean.length < 4 || /^(hi|hey|hello|hallo|moin|test|ok|okay|yes|ja|nein|no)\b[!?.]*$/i.test(clean)
 }
 
-const buildClassificationInstruction = (knownFolders: string[], presetFolder?: string) => {
-  const folderRule = presetFolder
-    ? `The session is already in folder "${presetFolder}". Keep "folder": "${presetFolder}" unless the session clearly switches to a different ticket.`
-    : knownFolders.length > 0
-      ? `Existing folders: ${JSON.stringify(knownFolders)}. Strongly prefer picking one of these existing folders if the session relates to it; otherwise create a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or use a ticket key if mentioned (e.g. "PROJ-123", "#42").`
-      : `Choose a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or a ticket key if mentioned (e.g. "PROJ-123", "#42").`
-  return (
-    `You classify coding sessions for the Agent Cockpit sidebar. Determine the overarching goal or main objective of the entire session. ` +
-    `Focus on the high-level purpose (e.g. feature being built, bug being fixed, or component being refactored). ` +
-    `Do NOT name after temporary micro-steps, follow-ups, or routine actions (e.g. avoid naming after running tests, fixing a typo, inspecting files, or git commands). ` +
-    `Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
-    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>"}. ` +
-    folderRule
-  )
-}
-
-const applyClassificationReply = async ($: EngineInterface, text: string, presetFolder?: string) => {
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) return false
-  const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; folder?: string; title?: string; skip?: boolean }
-  if (parsed.skip || !parsed.summary?.trim()) return false
+const applyClassificationReply = async (
+  $: EngineInterface,
+  text: string,
+  options: { presetFolder?: string; force?: boolean } = {},
+): Promise<{ name: string; folder?: string } | undefined> => {
+  const parsed = parseClassificationReply(text)
+  if (!parsed) return undefined
 
   const latest = await storedRecord($)
-  if (latest?.name) return true
+  if (latest?.name && !options.force) return { name: latest.name, folder: latest.folder ?? latest.ticket }
 
-  const existingFolder = presetFolder ?? latest?.folder ?? latest?.ticket
-  const rawFolder = (existingFolder ?? parsed.folder)?.trim()
-  const resolvedFolder = rawFolder
-    ? normalizeFolder(rawFolder, projects)
-    : (ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
-  const name = sessionName(parsed.summary.trim(), resolvedFolder, suffix)
+  const existingFolder = options.presetFolder ?? latest?.folder ?? latest?.ticket
+  const suggestedFolder = parsed.folder ? normalizeFolder(parsed.folder, projects) : undefined
+  const resolvedFolder =
+    existingFolder && !(suggestedFolder && isTicketKey(suggestedFolder, projects) && suggestedFolder !== existingFolder)
+      ? normalizeFolder(existingFolder, projects)
+      : (suggestedFolder ?? ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
+  const name = sessionName(parsed.summary, resolvedFolder, suffix)
   await save($, { name, ...(resolvedFolder ? { folder: resolvedFolder, ticket: resolvedFolder } : {}) })
   const sessionId = await $.session.id()
   const cwd = latest?.cwd ?? (await $.session.cwd())
   await writeTranscriptTitle($, sessionId, cwd, name)
-  return true
+  return { name, folder: resolvedFolder }
 }
 
 // Silently names and classifies the session in the background via Haiku so no tool call or system-reminder clutters the transcript.
@@ -188,20 +195,25 @@ const autoNameInBackground = async ($: EngineInterface, userPrompt: string, pres
     const existing = await storedRecord($)
     if (existing?.name) return
     const knownFolders = await listKnownFolders($)
-    const contextPrompt =
-      existing?.prompt && existing.prompt !== clean && !isTrivialPrompt(existing.prompt)
+    const sessionId = await $.session.id()
+    const cwd = existing?.cwd ?? (await $.session.cwd())
+    const transcript = await readTranscript($, sessionId, cwd)
+    const historyContext = transcript ? extractTranscriptContext(transcript, cwd, 8_000) : ''
+    const contextPrompt = historyContext
+      ? `${historyContext}\nCurrent prompt: ${clean}`
+      : existing?.prompt && existing.prompt !== clean && !isTrivialPrompt(existing.prompt)
         ? `Initial task prompt: ${existing.prompt}\nCurrent prompt: ${clean}`
         : clean
     const reply = await $.model.complete({
       model: 'haiku',
       effort: 'low',
       maxTokens: 160,
-      timeoutMs: 8_000,
-      system: buildClassificationInstruction(knownFolders, presetFolder),
-      prompt: contextPrompt.slice(0, 1500),
+      timeoutMs: 10_000,
+      system: buildClassificationInstruction(knownFolders, { presetFolder }),
+      prompt: contextPrompt.slice(0, 12_000),
     })
     if (reply.isAnswered) {
-      await applyClassificationReply($, reply.text, presetFolder)
+      await applyClassificationReply($, reply.text, { presetFolder })
     }
   } catch {
     // Ignore background classification errors silently.
@@ -295,6 +307,13 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
       required: ['enabled'],
     },
   })
+  await $.command
+    .register({
+      name: 'retitle',
+      description: 'Re-name this session from the entire conversation history',
+      argumentHint: '[hint]',
+    })
+    .catch(() => {})
   // A job's directory is named after its session's first id, before any /clear.
   const jobId = (await $.env.get('CLAUDE_JOB_DIR'))?.split('/').pop()
   kind = jobId !== undefined && (await $.session.id()).startsWith(jobId) ? 'bg' : 'interactive'
@@ -505,10 +524,10 @@ const handleTurnComplete = async ($: EngineInterface, e: any, next: (e: any) => 
         const presetFolder = latest?.folder ?? latest?.ticket
         const forked = await $.model.fork({
           effort: 'low',
-          prompt: buildClassificationInstruction(knownFolders, presetFolder),
+          prompt: buildClassificationInstruction(knownFolders, { presetFolder }),
         })
         if (forked.isAnswered) {
-          await applyClassificationReply($, forked.text, presetFolder)
+          await applyClassificationReply($, forked.text, { presetFolder })
         }
       } catch {} finally {
         namingInFlight = false
@@ -518,10 +537,81 @@ const handleTurnComplete = async ($: EngineInterface, e: any, next: (e: any) => 
   return next(e)
 }
 
+const handleRetitleCommand = async ($: EngineInterface, e: any) => {
+  if (!isListed) return { text: 'Retitle is only available in listed sessions.' }
+  if (namingInFlight) return { text: 'Session naming is already in progress.' }
+  namingInFlight = true
+  try {
+    const existing = await storedRecord($)
+    const knownFolders = await listKnownFolders($)
+    const presetFolder = existing?.folder ?? existing?.ticket
+    const hint = e.args?.trim() || undefined
+    const instruction = buildClassificationInstruction(knownFolders, {
+      presetFolder,
+      currentName: existing?.name,
+      hint,
+      isRetitle: true,
+    })
+
+    let replyText: string | undefined
+    const forked = await $.model
+      .fork({
+        effort: 'low',
+        prompt: instruction,
+      })
+      .catch(() => undefined)
+    if (forked?.isAnswered && forked.text) {
+      replyText = forked.text
+    } else {
+      const sessionId = await $.session.id()
+      const cwd = existing?.cwd ?? (await $.session.cwd())
+      const transcript = await readTranscript($, sessionId, cwd)
+      const historyContext = transcript ? extractTranscriptContext(transcript, cwd, 12_000) : ''
+      const promptText = [
+        historyContext,
+        !historyContext && existing?.prompt ? `Initial prompt: ${existing.prompt}` : '',
+        hint ? `User hint: ${hint}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+      if (!promptText) {
+        return { text: 'No conversation history yet to retitle this session.' }
+      }
+      const completed = await $.model.complete({
+        model: 'haiku',
+        effort: 'low',
+        maxTokens: 160,
+        timeoutMs: 12_000,
+        system: instruction,
+        prompt: promptText.slice(0, 12_000),
+      })
+      if (completed.isAnswered) replyText = completed.text
+    }
+
+    if (!replyText) {
+      return { text: 'Could not generate a new session title right now.' }
+    }
+    const applied = await applyClassificationReply($, replyText, { presetFolder, force: true })
+    if (!applied) {
+      return { text: 'Could not parse a valid session title from the model reply.' }
+    }
+    return {
+      text: applied.folder
+        ? `Renamed session to "${applied.name}" (folder: ${applied.folder}).`
+        : `Renamed session to "${applied.name}".`,
+    }
+  } catch (err) {
+    return { text: `Retitle failed: ${err instanceof Error ? err.message : String(err)}` }
+  } finally {
+    namingInFlight = false
+  }
+}
+
 export const register: Register = on => {
   on('session.start', handleSessionStart)
   on('prompt.submit', handlePromptSubmit)
   on('command.run', { command: 'rename' }, handleRenameCommand)
+  on('command.run', { command: 'retitle' }, handleRetitleCommand)
   on('tool.call', { tool: NAME_TOOL }, handleNameTool)
   on('tool.call', { tool: LEGACY_NAME_TOOL }, handleNameTool)
   on('tool.call', { tool: TITLES_TOOL }, handleTitlesTool)

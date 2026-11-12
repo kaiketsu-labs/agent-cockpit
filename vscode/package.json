@@ -180,6 +180,11 @@
         "icon": "$(edit)"
       },
       {
+        "command": "agentCockpit.autoRename",
+        "title": "Auto-rename session from history",
+        "icon": "$(sparkle)"
+      },
+      {
         "command": "agentCockpit.toggleKeepWarm",
         "title": "Toggle Keep Warm (Prompt Cache Keepalive)",
         "icon": "$(zap)",
@@ -239,6 +244,10 @@
         },
         {
           "command": "agentCockpit.rename",
+          "when": "false"
+        },
+        {
+          "command": "agentCockpit.autoRename",
           "when": "false"
         },
         {

@@ -1,12 +1,16 @@
 import { expect, test } from 'bun:test'
 
 import {
+  buildClassificationInstruction,
+  cleanTranscriptPrompt,
   customTitleLine,
   encodeProjectPath,
   extractTicket,
+  extractTranscriptContext,
   isTicketKey,
   normalizeFolder,
   normalizeTicket,
+  parseClassificationReply,
   promptName,
   sessionName,
   ticketOf,
@@ -70,4 +74,41 @@ test('a prompt names a session by its first non-empty content line, stripping ba
 
 test('register.tsx parses cleanly and exports register hook entrypoint', () => {
   expect(typeof register).toBe('function')
+})
+
+test('extractTranscriptContext extracts full session turns and modified files', () => {
+  const jsonl = [
+    JSON.stringify({ type: 'user', message: { content: 'Implement dark mode toggle' } }),
+    JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'text', text: 'Added theme context.' },
+          { type: 'tool_use', name: 'Edit', input: { file_path: '/app/src/theme.tsx' } },
+        ],
+      },
+    }),
+    JSON.stringify({ type: 'user', message: { content: 'Persist choice in localStorage' } }),
+  ].join('\n')
+  const context = extractTranscriptContext(jsonl, '/app', 12_000)
+  expect(context).toContain('Modified files: src/theme.tsx')
+  expect(context).toContain('User: Implement dark mode toggle')
+  expect(context).toContain('Assistant: Added theme context.')
+  expect(context).toContain('User: Persist choice in localStorage')
+  expect(cleanTranscriptPrompt('<command-name>/retitle</command-name>')).toBe('/retitle')
+})
+
+test('buildClassificationInstruction and parseClassificationReply handle retitle options', () => {
+  const instruction = buildClassificationInstruction(['UI Polish'], {
+    presetFolder: 'UI Polish',
+    currentName: 'Dark mode',
+    isRetitle: true,
+  })
+  expect(instruction).toContain('ENTIRE conversation history')
+  expect(instruction).toContain('Current session name: "Dark mode"')
+  expect(parseClassificationReply('{"summary": "Add persistent dark mode", "folder": "UI Polish"}')).toEqual({
+    summary: 'Add persistent dark mode',
+    folder: 'UI Polish',
+    title: undefined,
+  })
 })
