@@ -96,6 +96,17 @@ test('extractTranscriptContext extracts full session turns and modified files', 
   expect(context).toContain('Assistant: Added theme context.')
   expect(context).toContain('User: Persist choice in localStorage')
   expect(cleanTranscriptPrompt('<command-name>/retitle</command-name>')).toBe('/retitle')
+
+  // Tight maxChars budget where head + tail exceeds maxChars still preserves both initial and latest turns
+  const manyRows: string[] = []
+  for (let i = 1; i <= 10; i++) {
+    manyRows.push(JSON.stringify({ type: 'user', message: { content: `Turn ${i}: implement feature step ${i} with details` } }))
+    manyRows.push(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: `Completed step ${i} of the refactor.` }] } }))
+  }
+  const tight = extractTranscriptContext(manyRows.join('\n'), '/app', 220)
+  expect(tight.length).toBeLessThanOrEqual(220)
+  expect(tight).toContain('Turn 1:')
+  expect(tight).toContain('Turn 10:')
 })
 
 test('buildClassificationInstruction and parseClassificationReply handle retitle options', () => {

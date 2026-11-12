@@ -878,6 +878,12 @@ test('extractTranscriptContext captures full conversation history, modified file
   assert.ok(bounded.includes('Turn 1:'), 'Must keep initial prompt')
   assert.ok(bounded.includes('Turn 20:'), 'Must keep latest prompt')
   assert.ok(bounded.includes('intermediate turns'), 'Must note condensed middle turns')
+
+  // Tight budget where fixedLen (header + head + tail) exceeds maxChars must still preserve both head and tail
+  const tight = extractTranscriptContext(manyRows.join('\n'), '/repo', 220)
+  assert.ok(tight.length <= 220, `Expected <= 220 chars, got ${tight.length}`)
+  assert.ok(tight.includes('Turn 1:'), 'Must keep initial prompt under tight budget')
+  assert.ok(tight.includes('Turn 20:'), 'Must keep latest prompt under tight budget')
 })
 
 test('buildClassificationInstruction and parseClassificationReply handle retitle context and JSON extraction', () => {

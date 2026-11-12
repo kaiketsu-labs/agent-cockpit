@@ -251,6 +251,14 @@ const autoRenameSession = async (session, provider, refresh) => {
           currentName: session.name,
           isRetitle: true,
         })
+        const readCurrentRecord = async () => {
+          if (!session.sessionId) return undefined
+          return (
+            (await readJson(path.join(SESSIONS_DIR, `${session.sessionId}.json`))) ??
+            (await readJson(path.join(DECK_DIR, 'sessions', `${session.sessionId}.json`)))
+          )
+        }
+        const initialRecordName = (await readCurrentRecord())?.name
         const cwd = session.cwd && fs.existsSync(session.cwd) ? session.cwd : os.homedir()
         const stdout = await run(
           CLAUDE,
@@ -277,6 +285,10 @@ const autoRenameSession = async (session, provider, refresh) => {
         if (resolvedFolder && resolvedFolder !== presetFolder) {
           change.folder = resolvedFolder
           change.ticket = resolvedFolder
+        }
+        const currentRecord = await readCurrentRecord()
+        if (currentRecord?.name !== initialRecordName) {
+          return
         }
         await updateSessionRecord(session, change)
         await refresh(true)

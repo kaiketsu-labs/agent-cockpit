@@ -112,8 +112,21 @@ const relativeSessionPath = (filePath, cwd) => {
   return filePath
 }
 
+const fitContextLines = (lines, budget, fromEnd = false) => {
+  if (lines.length === 0 || budget <= 0) return []
+  if (lines.join('\n').length <= budget) return lines
+  const maxLines = Math.max(1, Math.floor((budget + 1) / 25))
+  const subset = lines.length > maxLines ? (fromEnd ? lines.slice(-maxLines) : lines.slice(0, maxLines)) : lines
+  const textBudget = Math.max(0, budget - (subset.length - 1))
+  const totalLen = subset.reduce((sum, l) => sum + l.length, 0) || 1
+  return subset.map(line => {
+    const share = Math.max(1, Math.floor((line.length / totalLen) * textBudget))
+    return line.length <= share ? line : clipText(line, Math.max(1, share - 1))
+  })
+}
+
 const extractTranscriptContext = (jsonl, cwd, maxChars = 12_000) => {
-  if (!jsonl) return ''
+  if (!jsonl || maxChars <= 0) return ''
   const entries = []
   const modifiedFiles = new Set()
 
@@ -201,7 +214,27 @@ const extractTranscriptContext = (jsonl, cwd, maxChars = 12_000) => {
     sampledMiddle.push(`[... ${middle.length} intermediate turns omitted ...]`)
   }
 
-  return clipText([header, ...head, ...sampledMiddle, ...tail].filter(Boolean).join('\n'), maxChars)
+  const result = [header, ...head, ...sampledMiddle, ...tail].filter(Boolean).join('\n')
+  if (result.length <= maxChars) return result
+
+  // When maxChars is too tight for header + head + tail (+ marker), fit header, head, and tail within budget so latest turns are preserved.
+  const headerBudget = header ? Math.min(header.length, Math.max(24, Math.floor(maxChars * 0.25))) : 0
+  const activeHeader = header && header.length > headerBudget ? clipText(header, Math.max(1, headerBudget - 1)) : header
+  const avail = Math.max(0, maxChars - (activeHeader ? activeHeader.length + 1 : 0))
+  if (head.length > 0 && tail.length > 0) {
+    const marker = middle.length > 0 && avail > 120 ? `[... ${middle.length} intermediate turns omitted ...]` : ''
+    const turnsAvail = Math.max(0, avail - (marker ? marker.length + 1 : 0))
+    const tailBudget = Math.ceil(turnsAvail * 0.6)
+    const headBudget = Math.max(0, turnsAvail - tailBudget - 1)
+    const fittedHead = fitContextLines(head, headBudget, false)
+    const fittedTail = fitContextLines(tail, tailBudget, true)
+    return [activeHeader, ...fittedHead, ...(marker ? [marker] : []), ...fittedTail]
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, maxChars)
+  }
+  const fitted = head.length > 0 ? fitContextLines(head, avail, false) : fitContextLines(tail, avail, true)
+  return [activeHeader, ...fitted].filter(Boolean).join('\n').slice(0, maxChars)
 }
 
 const buildClassificationInstruction = (knownFolders, options = {}) => {
