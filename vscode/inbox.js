@@ -73,6 +73,10 @@ class InboxView {
   post() {
     this.view?.webview.postMessage({ model: this.provider.inboxModel(), message: this.provider.message ?? '' })
   }
+
+  refresh() {
+    this.post()
+  }
 }
 
 module.exports = { InboxView, html }

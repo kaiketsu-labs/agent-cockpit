@@ -299,7 +299,12 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
   const jobId = (await $.env.get('CLAUDE_JOB_DIR'))?.split('/').pop()
   kind = jobId !== undefined && (await $.session.id()).startsWith(jobId) ? 'bg' : 'interactive'
   isListed = kind === 'bg' || e.isInteractive
-  const folder = initialFolder ? normalizeFolder(initialFolder, projects) : undefined
+  const existing = await storedRecord($)
+  const hasStoredFolder = existing && (existing.folder !== undefined || existing.ticket !== undefined)
+  const existingFolder = hasStoredFolder ? (existing.folder ?? existing.ticket) : undefined
+  const folder = hasStoredFolder
+    ? existingFolder
+    : (initialFolder ? normalizeFolder(initialFolder, projects) : undefined)
   await save($, { cwd: e.cwd, ...(folder ? { folder, ticket: folder } : {}) })
 
   const envTtl =
