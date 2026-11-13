@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.7.0...v0.8.0) (2026-11-13)
+
+
+### Features
+
+* add full-history auto-retitle command and sidebar button ([#60](https://github.com/kaiketsu-labs/agent-cockpit/issues/60)) ([8af2064](https://github.com/kaiketsu-labs/agent-cockpit/commit/8af2064a9d7ee7bb2c40f651bd42b4d71e46975c))
+* highlight active terminal session and preserve folder assignment on restart ([#62](https://github.com/kaiketsu-labs/agent-cockpit/issues/62)) ([b0042f9](https://github.com/kaiketsu-labs/agent-cockpit/commit/b0042f918a9007b0a8ebf8148e51031870139112))
+* **vscode:** allow collapsing pull request lists ([#61](https://github.com/kaiketsu-labs/agent-cockpit/issues/61)) ([ccffd4c](https://github.com/kaiketsu-labs/agent-cockpit/commit/ccffd4c3e8c0cbe8cc874ad137a8d755851cdcf3))
+* **vscode:** allow reordering folders via drag-and-drop ([#58](https://github.com/kaiketsu-labs/agent-cockpit/issues/58)) ([887a06f](https://github.com/kaiketsu-labs/agent-cockpit/commit/887a06f80f3ad8c97e5da0751d78cffa1ad73156))
+
 ## [0.7.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.6.7...v0.7.0) (2026-11-10)
 
 
