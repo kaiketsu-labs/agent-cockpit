@@ -38,6 +38,7 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
+          git fetch origin --tags --force
           if [ -n "$INPUT_TAG" ]; then
             TAG="$INPUT_TAG"
           else
