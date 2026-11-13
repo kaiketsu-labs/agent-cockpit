@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.8.0...v0.8.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ci:** fetch tags before checking out release tag on workflow_dispatch ([#64](https://github.com/kaiketsu-labs/agent-cockpit/issues/64)) ([84e812b](https://github.com/kaiketsu-labs/agent-cockpit/commit/84e812b596505dfda2929dabbe2dc45978f955bb))
+
 ## [0.8.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.7.0...v0.8.0) (2026-11-13)
 
 
