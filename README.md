@@ -67,7 +67,8 @@ You don't need to change how you use Claude Code or memorize slash commands:
 | ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Pings the session prefix before cache expiry with a 30-minute sliding window that persists across turns, so you never lose your warm cache while switching tasks or stepping away. |
 | 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and collapsible open PR lists via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
 | 🎯 **Scoped PR & issue lookup** | Automatically scopes GitHub searches to your repository or organization (`agentCockpit.githubOrg`) so you never get false matches from unrelated public repositories. Click the `⚙️` gear icon to instantly toggle scope between Organization, specific Repositories, or Disabled. |
-| 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use inline hover actions to AI auto-rename, rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
+| 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use zero-layout-jump inline action overlays to AI auto-rename, rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
+| ⌨️ **Keyboard navigation** | Navigate the cockpit entirely hands-on-keyboard: press `/` or `Cmd+F` to search, `Esc` to clear, `↓`/`↑` to browse session cards, and `Enter` to jump straight into the active terminal session. |
 
 ## Install
 
@@ -167,6 +168,17 @@ All actions are available directly from the sidebar or via the VS Code Command P
 | `Agent Cockpit: Configure GitHub PR Search Scope` | Configures GitHub pull request search scope (Organization, specific Repositories, or Disabled) via interactive QuickPick. |
 | `Agent Cockpit: Toggle Keep Warm (Prompt Cache Keepalive)` | Toggles automatic prompt cache keepalive for a session so warm cache stays alive while switching tasks. |
 | `Agent Cockpit: Refresh` | Forces an immediate refresh of sessions, tracker statuses, and open pull requests. |
+
+### Sidebar keyboard navigation
+
+When focused inside the Agent Cockpit sidebar, you can navigate without touching the mouse:
+
+| Key | Action |
+|---|---|
+| `/` or `Cmd+F` / `Ctrl+F` | Focus the search input and select all text |
+| `Esc` | Clear search query, or blur search bar and return to card list |
+| `↓` / `↑` | Navigate between session cards with accessible focus outline |
+| `Enter` | Open / attach to focused session (or first matching search result) |
 
 ## Optional ticket workflow skills
 

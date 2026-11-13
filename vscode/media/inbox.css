@@ -218,6 +218,12 @@ input[type="search"]:focus {
   padding: 0 8px;
   margin-top: 10px;
 }
+.section-block.ungrouped-empty {
+  display: none;
+}
+body.dragging-session .section-block.ungrouped-empty {
+  display: block;
+}
 .section-block.drop {
   outline: 1.5px dashed var(--claude-accent);
   border-radius: var(--radius-lg);
@@ -415,28 +421,30 @@ h2.toggle:hover {
   background: var(--vscode-list-hoverBackground);
   border-color: var(--card-border);
 }
-.session-card.active-terminal {
+.session-card:focus-visible,
+.session-card.kb-focus {
   outline: 1.5px solid var(--vscode-focusBorder, #007acc);
   outline-offset: -1px;
-  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 10%, var(--card-bg));
+}
+.session-card.active-terminal {
+  border-color: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 55%, var(--card-border));
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 11%, var(--card-bg));
 }
 .session-card.active-terminal:hover {
-  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 15%, var(--card-bg));
+  border-color: var(--vscode-focusBorder, #007acc);
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 16%, var(--card-bg));
 }
 .active-term-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 1.5px 5px;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
   border-radius: 3px;
   background: var(--vscode-badge-background, #4d4d4d);
   color: var(--vscode-badge-foreground, #ffffff);
   border: 1px solid var(--vscode-focusBorder, #007acc);
   flex-shrink: 0;
-  letter-spacing: 0.02em;
 }
 .active-term-badge svg {
   display: block;
@@ -446,13 +454,34 @@ h2.toggle:hover {
 .session-card.working {
   border-left: 2.5px solid var(--vscode-charts-blue, #3794ff);
 }
+.session-card.working.active-terminal {
+  border-left-color: var(--vscode-charts-blue, #3794ff);
+}
 .session-card.blocked {
   border-left: 3px solid var(--vscode-charts-yellow, #cca700);
   background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 8%, var(--row-bg));
 }
+.session-card.blocked.active-terminal {
+  border-left-color: var(--vscode-charts-yellow, #cca700);
+}
 .session-card.failed {
   border-left: 3px solid var(--vscode-charts-red, #f14c4c);
   background: color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 8%, var(--row-bg));
+}
+.session-card.failed.active-terminal {
+  border-left-color: var(--vscode-charts-red, #f14c4c);
+}
+.session-card.renaming .session-name {
+  opacity: 0.65;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.session-card.renaming .ico.sparkle {
+  animation: spin 1s linear infinite;
+  color: var(--claude-accent);
+}
+@keyframes shimmer {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
 }
 .session-card.spotlight-pulse {
   animation: cardHighlight 1.2s ease-out;
@@ -562,6 +591,14 @@ h2.toggle:hover {
   height: 20px;
   flex: none;
 }
+.session-right {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 20px;
+}
 .actions {
   display: none;
   gap: 2px;
@@ -569,8 +606,27 @@ h2.toggle:hover {
   height: 20px;
   flex: none;
 }
+.session-card .actions {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  align-items: center;
+  gap: 2px;
+  background: color-mix(in srgb, var(--vscode-list-hoverBackground) 92%, var(--card-bg));
+  box-shadow: -8px 0 8px color-mix(in srgb, var(--vscode-list-hoverBackground) 90%, transparent);
+  border-radius: var(--radius-sm);
+  padding-left: 2px;
+}
+.session-card.has-cache .session-right .actions,
+.session-right.has-cache .actions {
+  right: 0;
+}
 .head:hover .actions, .session-card:hover .actions { display: inline-flex; }
-.head:hover .meta.hide-on-hover, .session-card:hover .meta.hide-on-hover { display: none; }
+.head:hover .meta.hide-on-hover { display: none; }
+.session-card:hover .meta.hide-on-hover { visibility: hidden; pointer-events: none; }
 
 /* Icons */
 .ico { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }

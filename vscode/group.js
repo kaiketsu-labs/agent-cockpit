@@ -640,6 +640,16 @@ const age = ms => {
   return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`
 }
 
+const shortCwd = cwd => {
+  if (!cwd || typeof cwd !== 'string') return undefined
+  const norm = cwd.replace(/[/\\]+$/, '')
+  if (!norm) return undefined
+  const worktreeMatch = norm.match(/[/\\]\.claude[/\\]worktrees[/\\]([^/\\]+)/)
+  if (worktreeMatch) return worktreeMatch[1]
+  const last = norm.split(/[/\\]/).pop()
+  return last || undefined
+}
+
 const NEEDS_YOU = new Set(['blocked', 'failed'])
 const IS_BUSY = new Set(['blocked', 'failed', 'working'])
 
@@ -651,6 +661,7 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden, activeSessionId }
   const isActiveTerminal = Boolean(
     activeSessionId && (session.id === activeSessionId || session.sessionId === activeSessionId)
   )
+  const cwdShort = shortCwd(session.cwd)
   return {
     id: session.id,
     sessionId: session.sessionId,
@@ -666,6 +677,8 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden, activeSessionId }
     keepWarm: Boolean(session.keepWarm),
     contextTokens: session.contextTokens,
     model: session.model,
+    cwd: session.cwd,
+    cwdShort,
     isHidden,
     isActiveTerminal,
   }
@@ -744,6 +757,7 @@ module.exports = {
   cacheLeft,
   clock,
   age,
+  shortCwd,
   inboxRow,
   inboxModel,
   prefillForFolder,
