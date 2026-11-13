@@ -16,6 +16,10 @@ const {
   assignTicket,
   encodeProjectPath,
   customTitleLine,
+  cleanTranscriptPrompt,
+  extractTranscriptContext,
+  buildClassificationInstruction,
+  parseClassificationReply,
   groupSessions,
   moveBefore,
   reorderSiblings,
@@ -828,4 +832,77 @@ test('inboxRow and inboxModel mark active terminal session when activeSessionId 
   })
   assert.equal(model.activeSessionId, 's1')
   assert.equal(model.folders[0].sessions[0].isActiveTerminal, true)
+})
+
+test('extractTranscriptContext captures full conversation history, modified files, and samples long sessions evenly', () => {
+  const rows = [
+    { type: 'user', message: { content: '<system-reminder>ignore</system-reminder>Build OAuth login flow' } },
+    {
+      type: 'assistant',
+      message: {
+        content: [
+          { type: 'text', text: 'Designing OAuth2 PKCE flow and callback handler.' },
+          { type: 'tool_use', name: 'Write', input: { file_path: '/repo/src/auth/oauth.ts' } },
+        ],
+      },
+    },
+    { type: 'user', isMeta: true, message: { content: 'meta message should be skipped' } },
+    { type: 'user', isSidechain: true, message: { content: 'sidechain message should be skipped' } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: '1', content: 'ok' }] } },
+    { type: 'user', message: { content: 'Add token refresh middleware' } },
+    { type: 'assistant', message: { content: [{ type: 'text', text: 'Implemented refresh middleware.' }] } },
+    { type: 'user', message: { content: '<command-name>/retitle</command-name><command-args></command-args>' } },
+    { type: 'user', message: { content: 'Update login UI tests' } },
+  ]
+  const jsonl = rows.map(r => JSON.stringify(r)).join('\n')
+  const context = extractTranscriptContext(jsonl, '/repo', 12_000)
+
+  assert.ok(context.includes('Modified files: src/auth/oauth.ts'))
+  assert.ok(context.includes('User: Build OAuth login flow'))
+  assert.ok(context.includes('Assistant: Designing OAuth2 PKCE flow and callback handler.'))
+  assert.ok(context.includes('User: Add token refresh middleware'))
+  assert.ok(context.includes('User: Update login UI tests'))
+  assert.ok(!context.includes('meta message'))
+  assert.ok(!context.includes('sidechain message'))
+  assert.ok(!context.includes('/retitle'))
+  assert.equal(cleanTranscriptPrompt('<command-name>/start-task</command-name><command-args>PROJ-12</command-args>'), '/start-task PROJ-12')
+
+  // Long session sampling retains start, middle, and end under tight budget
+  const manyRows = []
+  for (let i = 1; i <= 20; i++) {
+    manyRows.push(JSON.stringify({ type: 'user', message: { content: `Turn ${i}: detailed step description number ${i} for the session` } }))
+    manyRows.push(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: `Completed step ${i} of the overarching refactor.` }] } }))
+  }
+  const bounded = extractTranscriptContext(manyRows.join('\n'), '/repo', 1200)
+  assert.ok(bounded.length <= 1200)
+  assert.ok(bounded.includes('Turn 1:'), 'Must keep initial prompt')
+  assert.ok(bounded.includes('Turn 20:'), 'Must keep latest prompt')
+  assert.ok(bounded.includes('intermediate turns'), 'Must note condensed middle turns')
+
+  // Tight budget where fixedLen (header + head + tail) exceeds maxChars must still preserve both head and tail
+  const tight = extractTranscriptContext(manyRows.join('\n'), '/repo', 220)
+  assert.ok(tight.length <= 220, `Expected <= 220 chars, got ${tight.length}`)
+  assert.ok(tight.includes('Turn 1:'), 'Must keep initial prompt under tight budget')
+  assert.ok(tight.includes('Turn 20:'), 'Must keep latest prompt under tight budget')
+})
+
+test('buildClassificationInstruction and parseClassificationReply handle retitle context and JSON extraction', () => {
+  const instruction = buildClassificationInstruction(['Auth Refactor', 'PROJ-12'], {
+    presetFolder: 'PROJ-12',
+    currentName: 'Initial setup',
+    hint: 'Focus on token refresh',
+    isRetitle: true,
+  })
+  assert.ok(instruction.includes('ENTIRE conversation history'))
+  assert.ok(instruction.includes('Current session name: "Initial setup"'))
+  assert.ok(instruction.includes('User hint: "Focus on token refresh"'))
+  assert.ok(instruction.includes('Keep "folder": "PROJ-12"'))
+
+  assert.deepEqual(
+    parseClassificationReply('Here is the result:\n{"summary": "Implement OAuth token refresh", "folder": "PROJ-12"}'),
+    { summary: 'Implement OAuth token refresh', folder: 'PROJ-12', title: undefined },
+  )
+  assert.equal(parseClassificationReply('{"skip": true, "summary": "Ignored"}'), undefined)
+  assert.equal(parseClassificationReply('{"summary": "   "}'), undefined)
+  assert.equal(parseClassificationReply('not json'), undefined)
 })

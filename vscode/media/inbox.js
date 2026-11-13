@@ -26,6 +26,7 @@ const SHAPES = {
   ticket: '<path d="M3 2h10v12l-5-3-5 3z"/>',
   pr: '<circle cx="4" cy="3.5" r="1.6"/><circle cx="4" cy="12.5" r="1.6"/><circle cx="12" cy="12.5" r="1.6"/><path d="M4 5.1v5.8M12 10.9V7a2 2 0 0 0-2-2H8M9.5 3.5 8 5l1.5 1.5"/>',
   chev: '<path d="m6 3.5 4.5 4.5L6 12.5"/>',
+  sparkle: '<path d="M7 2.2 8.3 5.7 11.8 7 8.3 8.3 7 11.8 5.7 8.3 2.2 7 5.7 5.7Z"/><path d="M12.5 10.7v3.6M10.7 12.5h3.6"/>',
   edit: '<path d="M11.2 2.5a1.5 1.5 0 0 1 2.1 2.1L5.5 12.4l-3 .7.7-3 8-7.6z"/>',
   move: '<path d="M2 4a1.5 1.5 0 0 1 1.5-1.5h3l1.3 1.5h4.7A1.5 1.5 0 0 1 14 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5V4z"/><path d="m7.5 7 2 2-2 2M5.5 9h4"/>',
   archive: '<rect x="2" y="3" width="12" height="3" rx="1"/><path d="M3 6v6.5a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6M6.5 9h3"/>',
@@ -130,6 +131,7 @@ const sessionRow = row => {
   topElements.push(
     el('span', { class: 'meta hide-on-hover' }, el('span', {}, row.age ?? row.activity)),
     el('span', { class: 'actions' },
+      iconBtn('sparkle', 'Auto-rename session from full history', () => send('autoRename', { id: row.id })),
       iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
       iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
       row.isHidden

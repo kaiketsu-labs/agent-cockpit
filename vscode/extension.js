@@ -10,10 +10,16 @@ const {
   STATUS,
   ticketPattern,
   normalizeFolder,
+  isTicketKey,
   folderTicket,
   withoutTicketSuffix,
   encodeProjectPath,
   customTitleLine,
+  cleanTranscriptPrompt,
+  clipText,
+  extractTranscriptContext,
+  buildClassificationInstruction,
+  parseClassificationReply,
   groupSessions,
   reorderSiblings,
   parseGithubRemote,
@@ -73,9 +79,13 @@ const readJson = async (file, fallback) => {
 
 const run = (file, args, input, options = {}) =>
   new Promise((resolve, reject) => {
-    const child = execFile(file, args, { maxBuffer: 16 * 1024 * 1024, ...options }, (err, stdout) =>
-      err ? reject(err) : resolve(stdout),
-    )
+    const child = execFile(file, args, { maxBuffer: 16 * 1024 * 1024, ...options }, (err, stdout, stderr) => {
+      if (err) {
+        err.stderr = stderr
+        return reject(err)
+      }
+      resolve(stdout)
+    })
     // A process that exits before reading its stdin would otherwise throw EPIPE.
     child.stdin.on('error', () => {})
     child.stdin.end(input)
@@ -155,6 +165,20 @@ const loadSessions = async pattern => {
   return mergeSessions(agents, files, pattern)
 }
 
+const findTranscriptFile = session => {
+  const worktreeMatch = session.cwd ? session.cwd.split(/[/\\]\.claude[/\\]worktrees[/\\]/) : null
+  const dirs = [
+    session.initialCwd,
+    worktreeMatch ? worktreeMatch[0] : undefined,
+    session.cwd,
+  ].filter(Boolean)
+  for (const dir of [...new Set(dirs)]) {
+    const file = path.join(CLAUDE_DIR, 'projects', encodeProjectPath(dir), `${session.sessionId}.jsonl`)
+    if (fs.existsSync(file)) return file
+  }
+  return undefined
+}
+
 // Writes session metadata directly to ~/.claude/cockpit/sessions/<sessionId>.json and optionally updates the JSONL custom-title.
 const updateSessionRecord = async (session, change) => {
   await fs.promises.mkdir(SESSIONS_DIR, { recursive: true })
@@ -172,9 +196,11 @@ const updateSessionRecord = async (session, change) => {
   }
   const updated = { ...record, ...change }
   await fs.promises.writeFile(file, JSON.stringify(updated, null, 2))
-  if (change.name && updated.cwd) {
-    const transcript = path.join(CLAUDE_DIR, 'projects', encodeProjectPath(updated.cwd), `${session.sessionId}.jsonl`)
-    if (fs.existsSync(transcript)) {
+  if (change.name) {
+    const transcript =
+      findTranscriptFile(updated) ??
+      (updated.cwd ? path.join(CLAUDE_DIR, 'projects', encodeProjectPath(updated.cwd), `${session.sessionId}.jsonl`) : undefined)
+    if (transcript && fs.existsSync(transcript)) {
       await fs.promises.appendFile(transcript, customTitleLine(session.sessionId, change.name)).catch(() => {})
     }
   }
@@ -190,6 +216,93 @@ const rename = async (session, rawName, pattern) => {
     change.ticket = extracted
   }
   await updateSessionRecord(session, change)
+}
+
+const renamingSessions = new Set()
+
+const autoRenameSession = async (session, provider, refresh) => {
+  if (!session || renamingSessions.has(session.id)) return
+  renamingSessions.add(session.id)
+  const label = withoutTicketSuffix(session.name, provider.pattern) || session.name
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: `Auto-renaming "${label}"…` },
+      async () => {
+        const transcriptPath = findTranscriptFile(session)
+        let context = ''
+        if (transcriptPath) {
+          const jsonl = await fs.promises.readFile(transcriptPath, 'utf8').catch(() => '')
+          context = extractTranscriptContext(jsonl, session.cwd, 12_000)
+        }
+        if (!context && session.prompt) {
+          context = `User: ${session.prompt}`
+        }
+        if (!context) {
+          vscode.window.showInformationMessage('No conversation history found for this session yet.')
+          return
+        }
+        const knownFolders = [...new Set([
+          ...provider.folders,
+          ...provider.sessions.map(s => s.folder ?? s.ticket).filter(Boolean),
+        ])]
+        const presetFolder = session.folder ?? session.ticket
+        const systemPrompt = buildClassificationInstruction(knownFolders, {
+          presetFolder,
+          currentName: session.name,
+          isRetitle: true,
+        })
+        const readCurrentRecord = async () => {
+          if (!session.sessionId) return undefined
+          return (
+            (await readJson(path.join(SESSIONS_DIR, `${session.sessionId}.json`))) ??
+            (await readJson(path.join(DECK_DIR, 'sessions', `${session.sessionId}.json`)))
+          )
+        }
+        const initialRecordName = (await readCurrentRecord())?.name
+        const cwd = session.cwd && fs.existsSync(session.cwd) ? session.cwd : os.homedir()
+        const stdout = await run(
+          CLAUDE,
+          ['-p', '--model', 'haiku', '--no-session-persistence', '--tools', '', '--system-prompt', systemPrompt],
+          context,
+          {
+            cwd,
+            env: { ...process.env, AGENT_COCKPIT_BRIEFING: '1' },
+            timeout: 25_000,
+          },
+        )
+        const parsed = parseClassificationReply(stdout)
+        if (!parsed) {
+          vscode.window.showWarningMessage('Could not determine a new session name from the AI response.')
+          return
+        }
+        const suggestedFolder = parsed.folder ? normalizeFolder(parsed.folder, provider.pattern) : undefined
+        const resolvedFolder =
+          presetFolder && !(suggestedFolder && isTicketKey(suggestedFolder, provider.pattern) && suggestedFolder !== presetFolder)
+            ? normalizeFolder(presetFolder, provider.pattern)
+            : (suggestedFolder ?? folderTicket(parsed.summary, provider.pattern))
+        const name = withoutTicketSuffix(parsed.summary, provider.pattern) || parsed.summary
+        const change = { name }
+        if (resolvedFolder && resolvedFolder !== presetFolder) {
+          change.folder = resolvedFolder
+          change.ticket = resolvedFolder
+        }
+        const currentRecord = await readCurrentRecord()
+        if (currentRecord?.name !== initialRecordName) {
+          return
+        }
+        await updateSessionRecord(session, change)
+        await refresh(true)
+      },
+    )
+  } catch (err) {
+    const reason = err?.killed
+      ? 'Timed out waiting for Claude'
+      : String(err?.stderr ?? '').trim().split('\n').pop() ||
+        (err?.code === 'ENOENT' ? 'Claude CLI not found' : 'Claude CLI returned an error')
+    vscode.window.showWarningMessage(`Auto-rename failed: ${reason}`)
+  } finally {
+    renamingSessions.delete(session.id)
+  }
 }
 
 const mapJiraCategory = status => {
@@ -971,39 +1084,6 @@ const newSession = (folder, provider) => {
 }
 
 
-const findTranscriptFile = session => {
-  const worktreeMatch = session.cwd ? session.cwd.split(/[/\\]\.claude[/\\]worktrees[/\\]/) : null
-  const dirs = [
-    session.initialCwd,
-    worktreeMatch ? worktreeMatch[0] : undefined,
-    session.cwd,
-  ].filter(Boolean)
-  for (const dir of [...new Set(dirs)]) {
-    const file = path.join(CLAUDE_DIR, 'projects', encodeProjectPath(dir), `${session.sessionId}.jsonl`)
-    if (fs.existsSync(file)) return file
-  }
-  return undefined
-}
-
-const cleanPromptText = raw => {
-  if (!raw) return ''
-  const cmd = raw.match(/<command-name>\s*([^<]+?)\s*<\/command-name>/)?.[1]
-  const args = raw.match(/<command-args>\s*([\s\S]*?)\s*<\/command-args>/)?.[1]
-  if (cmd) return `${cmd}${args ? ` ${args}` : ''}`.trim()
-  return raw
-    .replace(/<(system-reminder|local-command-stdout|local-command-caveat|task-notification)>[\s\S]*?<\/\1>/g, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-const clipText = (text, maxLen) => {
-  if (!text || text.length <= maxLen) return text
-  const cut = text.slice(0, maxLen)
-  const lastSpace = cut.lastIndexOf(' ')
-  return (lastSpace > maxLen * 0.75 ? cut.slice(0, lastSpace) : cut) + '…'
-}
-
 const extractSessionSummary = async session => {
   const filePath = findTranscriptFile(session)
   if (!filePath) return { userPrompts: session.prompt ? [session.prompt] : [], modifiedFiles: [], assistantNotes: [], lastReply: '' }
@@ -1029,7 +1109,7 @@ const extractSessionSummary = async session => {
             : Array.isArray(content)
               ? content.filter(b => b.type === 'text').map(b => b.text).join(' ')
               : ''
-          const cleaned = cleanPromptText(raw)
+          const cleaned = cleanTranscriptPrompt(raw)
           if (cleaned) {
             userPrompts.push(clipText(cleaned, 400))
             if (userPrompts.length > 8) userPrompts.splice(1, 1)
@@ -1348,6 +1428,7 @@ const activate = async context => {
       refresh(true)
     },
     rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('agentCockpit.rename', { session: sessionById(id) }),
+    autoRename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('agentCockpit.autoRename', { session: sessionById(id) }),
     hide: ({ id }) => sessionById(id) && hideSession(sessionById(id), provider),
     show: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), false),
     assign: async ({ id, ticket }) => {
@@ -1489,6 +1570,7 @@ const activate = async context => {
       await rename(session, name, provider.pattern)
       refresh()
     }),
+    ...registerCmd('autoRename', ({ session } = {}) => session && autoRenameSession(session, provider, refresh)),
     ...registerCmd('newFolder', async () => {
       const input = (
         await vscode.window.showInputBox({
