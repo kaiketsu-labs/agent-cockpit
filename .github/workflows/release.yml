@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to re-publish (defaults to latest tag)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -15,32 +21,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v5
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
       - uses: actions/checkout@v7
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created }}
+        with:
+          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 0 || 1 }}
+
+      - name: Resolve release tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        id: target
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG=$(git describe --tags --abbrev=0)
+          fi
+          git checkout "refs/tags/${TAG}"
+          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created }}
         uses: actions/setup-node@v7
         with:
           node-version: "22"
 
       - name: Setup Bun
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created }}
         uses: oven-sh/setup-bun@v2
 
       - name: Run tests
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created }}
         run: |
           cd vscode && node --test
           cd .. && bun test plugin/hooks/group.test.ts
 
       - name: Build VSIX
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created }}
         id: build
         run: |
           python3 vscode/package.py
@@ -51,13 +74,13 @@ jobs:
           echo "vsix_latest=vscode/agent-cockpit.vsix" >> "$GITHUB_OUTPUT"
 
       - name: Upload VSIX to GitHub Release
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ steps.release.outputs.tag_name }}" "${{ steps.build.outputs.vsix }}" "${{ steps.build.outputs.vsix_latest }}" --clobber
+        run: gh release upload "${{ steps.release.outputs.tag_name || steps.target.outputs.tag_name }}" "${{ steps.build.outputs.vsix }}" "${{ steps.build.outputs.vsix_latest }}" --clobber
 
       - name: Publish to VS Code Marketplace
-        if: ${{ steps.release.outputs.release_created && (env.VSCE_PAT != '' || vars.VSCE_USE_OIDC == 'true') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created) && (env.VSCE_PAT != '' || vars.VSCE_USE_OIDC == 'true') }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
           USE_OIDC: ${{ vars.VSCE_USE_OIDC }}
@@ -69,7 +92,7 @@ jobs:
           fi
 
       - name: Publish to Open VSX Registry
-        if: ${{ steps.release.outputs.release_created && env.OVSX_PAT != '' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' || steps.release.outputs.release_created) && env.OVSX_PAT != '' }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx --yes ovsx publish "${{ steps.build.outputs.vsix }}" -p "$OVSX_PAT"
