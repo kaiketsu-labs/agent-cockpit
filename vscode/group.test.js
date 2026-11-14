@@ -992,4 +992,28 @@ test('vscode/media/inbox.js and inbox.css implement enhanced sidebar UX features
   assert.ok(js.includes("' renaming'"), 'inbox.js must apply renaming class to session-card')
   assert.ok(css.includes('.session-card.renaming'), 'inbox.css must style renaming animation')
   assert.ok(js.includes('row.cwdShort'), 'inbox.js must include cwdShort in title tooltip')
+
+  // 7. Inline renaming (Feature 4)
+  assert.ok(js.includes('inline-rename-input'), 'inbox.js must render inline-rename-input')
+  assert.ok(js.includes('startSessionRename'), 'inbox.js must have startSessionRename helper')
+  assert.ok(js.includes('startFolderRename'), 'inbox.js must have startFolderRename helper')
+  assert.ok(js.includes('pendingData'), 'inbox.js must preserve incoming messages while inline editing')
+  assert.ok(css.includes('.inline-rename-input'), 'inbox.css must style inline-rename-input')
+
+  // 8. Collapse / Expand All & Folder Archiving (Feature 7)
+  assert.ok(js.includes('collapseAll'), 'inbox.js must declare collapseAll icon')
+  assert.ok(js.includes('expandAll'), 'inbox.js must declare expandAll icon')
+  assert.ok(js.includes('collapse-toggle-btn'), 'inbox.js must render collapse-toggle-btn')
+  assert.ok(js.includes('archiveFolder'), 'inbox.js must support archiveFolder action')
+  assert.ok(css.includes('.collapse-toggle-btn'), 'inbox.css must style collapse-toggle-btn')
+  assert.ok(css.includes('.filter-bar-right'), 'inbox.css must style filter-bar-right')
+})
+
+test('notifyOnWaiting configuration setting is declared with smart, always, off', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
+  const notifyProp = pkg.contributes.configuration.properties['agentCockpit.notifyOnWaiting']
+  assert.ok(notifyProp, 'notifyOnWaiting property must be declared')
+  assert.equal(notifyProp.default, 'smart')
+  assert.deepEqual(notifyProp.enum, ['smart', 'always', 'off'])
+  assert.equal(notifyProp.type, 'string')
 })
