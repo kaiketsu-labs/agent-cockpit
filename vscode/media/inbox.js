@@ -35,6 +35,8 @@ const SHAPES = {
   close: '<path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/>',
   gear: '<path d="M9.1 1.5H6.9l-.3 1.5a5 5 0 0 0-1.2.7L4 3 2.5 4.5l.7 1.4a5 5 0 0 0-.7 1.2l-1.5.3v2.2l1.5.3a5 5 0 0 0 .7 1.2L2.5 12 4 13.5l1.4-.7a5 5 0 0 0 1.2.7l.3 1.5h2.2l.3-1.5a5 5 0 0 0 1.2-.7l1.4.7 1.5-1.5-.7-1.4a5 5 0 0 0 .7-1.2l1.5-.3V6.9l-1.5-.3a5 5 0 0 0-.7-1.2l.7-1.4L13.5 3 12 2.5l-1.4.7a5 5 0 0 0-1.2-.7l-.3-1.5zM8 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>',
   terminal: '<path d="m3 4.5 4 3.5-4 3.5M8.5 11.5H13"/>',
+  collapseAll: '<path d="m3.5 4 4.5 3.5 4.5-3.5M3.5 12l4.5-3.5 4.5 3.5"/>',
+  expandAll: '<path d="m3.5 6.5 4.5-3.5 4.5 3.5M3.5 9.5 4.5 3.5 4.5-3.5"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -59,10 +61,124 @@ const clock = ms => {
 }
 
 let drag = null
+let editing = null
+let pendingData = null
+
+const findSession = id => {
+  if (!data?.model) return null
+  for (const t of data.model.tickets) {
+    const s = t.sessions.find(x => x.id === id)
+    if (s) return s
+  }
+  const loose = data.model.loose.find(x => x.id === id)
+  if (loose) return loose
+  if (data.model.history) {
+    for (const h of data.model.history) {
+      const s = h.sessions.find(x => x.id === id)
+      if (s) return s
+    }
+  }
+  return null
+}
+
+const finishEditing = () => {
+  if (!editing) return
+  editing = null
+  if (pendingData) {
+    data = pendingData
+    pendingData = null
+  }
+  renderList()
+}
+
+const cancelEditing = () => {
+  if (!editing) return
+  finishEditing()
+}
+
+const startSessionRename = row => {
+  if (!row) return
+  editing = { kind: 'session', id: row.id, value: row.name }
+  renderList()
+}
+
+const submitSessionRename = (row, newName) => {
+  if (!editing || editing.kind !== 'session' || editing.id !== row.id) return
+  const trimmed = newName.trim()
+  if (trimmed && trimmed !== row.name) {
+    row.name = trimmed
+    if (data.model) {
+      for (const t of data.model.tickets) {
+        const s = t.sessions.find(x => x.id === row.id)
+        if (s) s.name = trimmed
+      }
+      const sLoose = data.model.loose.find(x => x.id === row.id)
+      if (sLoose) sLoose.name = trimmed
+      for (const h of data.model.history) {
+        const sHist = h.sessions.find(x => x.id === row.id)
+        if (sHist) sHist.name = trimmed
+      }
+    }
+    send('rename', { id: row.id, name: trimmed })
+  }
+  finishEditing()
+}
+
+const startFolderRename = c => {
+  if (!c.key) return
+  editing = { kind: 'folder', key: c.key, value: c.key }
+  renderList()
+}
+
+const submitFolderRename = (c, newName) => {
+  if (!editing || editing.kind !== 'folder' || editing.key !== c.key) return
+  const trimmed = newName.trim()
+  if (trimmed && trimmed !== c.key) {
+    const oldKey = c.key
+    c.key = trimmed
+    if (data.model) {
+      const f = data.model.tickets.find(x => x.key === oldKey)
+      if (f) {
+        f.key = trimmed
+        for (const s of f.sessions) {
+          s.folder = trimmed
+        }
+      }
+    }
+    if (ui.open[oldKey] !== undefined) {
+      ui.open[trimmed] = ui.open[oldKey]
+      delete ui.open[oldKey]
+      save()
+    }
+    send('renameFolder', { folder: oldKey, key: oldKey, name: trimmed })
+  }
+  finishEditing()
+}
+
+const renaming = new Map()
+
+const onAutoRename = id => {
+  const card = document.getElementById('session-' + id)
+  if (card) card.classList.add('renaming')
+  const currentName = data.model
+    ? [...data.model.tickets.flatMap(t => t.sessions), ...data.model.loose].find(s => s.id === id)?.name
+    : ''
+  renaming.set(id, currentName)
+  send('autoRename', { id })
+  setTimeout(() => {
+    if (renaming.has(id)) {
+      renaming.delete(id)
+      const c = document.getElementById('session-' + id)
+      if (c) c.classList.remove('renaming')
+    }
+  }, 30000)
+}
+
 const hasType = (event, type) => Array.from(event.dataTransfer?.types ?? []).includes(type)
 const isFolderDrag = event => hasType(event, 'application/x-cockpit-folder') || drag?.kind === 'folder'
 const isSessionDrag = event => !isFolderDrag(event) && (hasType(event, 'application/x-cockpit-session') || drag?.kind === 'session')
 const clearDropClasses = () => {
+  document.body.classList.remove('dragging-session')
   for (const el of document.querySelectorAll('.drop, .drop-before, .drop-after, .dragging')) {
     el.classList.remove('drop', 'drop-before', 'drop-after', 'dragging')
   }
@@ -83,19 +199,37 @@ const sessionRow = row => {
   const timeStr = left > 0 ? clock(left) : (hasExpires ? null : row.cache)
   const isWarm = Boolean(timeStr || row.keepWarm)
 
+  if (renaming.has(row.id)) {
+    if (renaming.get(row.id) && renaming.get(row.id) !== row.name) {
+      renaming.delete(row.id)
+    }
+  }
+  const isRenaming = renaming.has(row.id)
+  const isEditingSession = Boolean(editing?.kind === 'session' && editing.id === row.id)
+
+  const titleParts = [
+    row.name,
+    row.stateLabel ? (row.stateLabel + (row.isActiveTerminal ? ' (Active Terminal)' : '')) : (row.isActiveTerminal ? '(Active Terminal)' : ''),
+    row.folder,
+    row.model,
+    row.cwdShort,
+  ].filter(Boolean)
+
   const cardProps = {
     id: 'session-' + row.id,
-    class: 'session-card ' + row.state + (row.isActiveTerminal ? ' active-terminal' : ''),
-    draggable: 'true',
-    title: row.name + ' · ' + row.stateLabel + (row.isActiveTerminal ? ' (Active Terminal)' : ''),
-    onclick: () => send('attach', { id: row.id }),
+    class: 'session-card ' + row.state + (row.isActiveTerminal ? ' active-terminal' : '') + (isWarm ? ' has-cache' : '') + (isRenaming ? ' renaming' : '') + (isEditingSession ? ' editing' : ''),
+    draggable: isEditingSession ? 'false' : 'true',
+    tabindex: '0',
+    title: titleParts.join(' · '),
+    onclick: () => { if (!isEditingSession) send('attach', { id: row.id }) },
     ondragstart: event => {
-      if (event.target.closest('button, .cache-pill')) {
+      if (isEditingSession || event.target.closest('button, .cache-pill, .inline-rename-input')) {
         event.preventDefault()
         return
       }
       event.stopPropagation()
       drag = { kind: 'session', id: row.id }
+      document.body.classList.add('dragging-session')
       event.dataTransfer.setData('application/x-cockpit-session', row.id)
       event.dataTransfer.setData('text/plain', row.id)
       event.dataTransfer.effectAllowed = 'move'
@@ -104,6 +238,7 @@ const sessionRow = row => {
     },
     ondragend: () => {
       drag = null
+      document.body.classList.remove('dragging-session')
       clearDropClasses()
     },
   }
@@ -114,43 +249,94 @@ const sessionRow = row => {
     cardProps['data-keep-warm'] = '1'
   }
 
+  let nameEl
+  if (isEditingSession) {
+    let committed = false
+    nameEl = el('input', {
+      class: 'inline-rename-input',
+      type: 'text',
+      value: row.name,
+      onclick: stop(() => {}),
+      ondblclick: stop(() => {}),
+      onmousedown: stop(() => {}),
+      onkeydown: event => {
+        event.stopPropagation()
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          if (committed) return
+          committed = true
+          submitSessionRename(row, nameEl.value)
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          if (committed) return
+          committed = true
+          cancelEditing()
+        }
+      },
+      onblur: () => {
+        if (!committed) {
+          committed = true
+          submitSessionRename(row, nameEl.value)
+        }
+      },
+    })
+    requestAnimationFrame(() => {
+      nameEl.focus()
+      nameEl.select()
+    })
+  } else {
+    nameEl = el('span', {
+      class: 'session-name',
+      ondblclick: stop(() => startSessionRename(row)),
+    }, row.name)
+  }
+
   const topElements = [
     el('span', { class: 'status-orb ' + row.state }),
-    el('span', { class: 'session-name' }, row.name),
+    nameEl,
   ]
 
   if (row.isActiveTerminal) {
     topElements.push(
       el('span', { class: 'active-term-badge', title: 'Open in active terminal tab' },
-        icon('terminal'),
-        el('span', {}, 'Active')
+        icon('terminal')
       )
     )
   }
 
-  topElements.push(
-    el('span', { class: 'meta hide-on-hover' }, el('span', {}, row.age ?? row.activity)),
-    el('span', { class: 'actions' },
-      iconBtn('sparkle', 'Auto-rename session from full history', () => send('autoRename', { id: row.id })),
-      iconBtn('edit', 'Rename session', () => send('rename', { id: row.id })),
-      iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
-      row.isHidden
-        ? iconBtn('restore', 'Restore from history', () => {
-            if (row.folder) {
-              ui.open[row.folder] = true
-              save()
-            }
-            send('show', { id: row.id })
-          })
-        : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))),
-    isWarm && el('span', {
-      class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
-      title: row.keepWarm
-        ? 'Prompt cache keepalive active' + (timeStr ? ' (auto-refreshing in ' + timeStr + ')' : '') + ' · Click to disable'
-        : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
-      onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
-    }, '⚡ ' + (row.keepWarm ? 'warm' : (timeStr || 'warm')))
+  const actions = el('span', { class: 'actions' },
+    iconBtn('sparkle', 'Auto-rename session from full history', () => onAutoRename(row.id)),
+    iconBtn('edit', 'Rename session', () => startSessionRename(row)),
+    iconBtn('move', 'Move to folder…', () => send('moveToFolder', { id: row.id })),
+    row.isHidden
+      ? iconBtn('restore', 'Restore from history', () => {
+          if (row.folder) {
+            ui.open[row.folder] = true
+            save()
+          }
+          send('show', { id: row.id })
+        })
+      : iconBtn('archive', 'Move to history', () => send('hide', { id: row.id }))
   )
+
+  topElements.push(
+    el('span', { class: 'session-right' + (isWarm ? ' has-cache' : '') },
+      el('span', { class: 'meta hide-on-hover' }, el('span', {}, row.age ?? row.activity)),
+      actions
+    )
+  )
+
+  if (isWarm) {
+    topElements.push(
+      el('span', {
+        class: 'cache-pill' + (row.keepWarm ? ' keep-warm' : ''),
+        title: row.keepWarm
+          ? 'Prompt cache keepalive active' + (timeStr ? ' (auto-refreshing in ' + timeStr + ')' : '') + ' · Click to disable'
+          : 'Prompt cache warm for ' + timeStr + ' · Click to keep warm automatically',
+        onclick: stop(() => send('toggleKeepWarm', { id: row.id })),
+      }, '⚡ ' + (row.keepWarm ? 'warm' : (timeStr || 'warm')))
+    )
+  }
 
   const node = el('div', cardProps,
     el('div', { class: 'session-top' }, ...topElements))
@@ -267,17 +453,88 @@ const card = (c, isLoose, isHistory = false) => {
   const sessions = c.sessions.filter(row => sessionMatches(row, ui.q) || (c.key && matches(c.key + c.title, ui.q)))
   const folderIcon = c.key ? (c.isTicket ? icon('ticket', 't-' + (c.category ?? 'none')) : icon('folder')) : false
   const keyClass = 'key' + (c.isTicket ? ' ticket-pill t-' + (c.category ?? 'none') : '')
-  const head = el('div', { class: 'head', onclick: () => { ui.open[id] = !isOpen; save(); renderList() } },
+  const isEditingFolder = Boolean(c.key && editing?.kind === 'folder' && editing.key === c.key)
+
+  const headChildren = [
     icon('chev', isOpen ? 'open' : ''),
     folderIcon,
-    el('span', { class: keyClass }, c.key ?? 'Ungrouped'),
-    el('span', { class: 'grow title' }, c.title),
-    el('span', { class: 'meta hide-on-hover' }, counts(c)),
-    c.key && el('span', { class: 'actions' },
-      iconBtn('plus', 'New session in ' + c.key, () => send('newSession', { folder: c.key })),
-      c.isTicket && iconBtn('external', 'Open ticket in browser', () => send('openTicket', { ticket: c.ticketKey || c.key })),
-      iconBtn('edit', 'Rename folder', () => send('renameFolder', { folder: c.key })),
-      c.sessions.length === 0 && iconBtn('close', 'Remove empty folder', () => send('removeFolder', { folder: c.key }))))
+  ]
+  if (isEditingFolder) {
+    let committed = false
+    const folderInput = el('input', {
+      class: 'inline-rename-input inline-folder-input',
+      type: 'text',
+      value: c.key,
+      onclick: stop(() => {}),
+      ondblclick: stop(() => {}),
+      onmousedown: stop(() => {}),
+      onkeydown: event => {
+        event.stopPropagation()
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          if (committed) return
+          committed = true
+          submitFolderRename(c, folderInput.value)
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          if (committed) return
+          committed = true
+          cancelEditing()
+        }
+      },
+      onblur: () => {
+        if (!committed) {
+          committed = true
+          submitFolderRename(c, folderInput.value)
+        }
+      },
+    })
+    requestAnimationFrame(() => {
+      folderInput.focus()
+      folderInput.select()
+    })
+    headChildren.push(folderInput)
+  } else {
+    headChildren.push(
+      el('span', {
+        class: keyClass,
+        ondblclick: stop(() => c.key && startFolderRename(c)),
+      }, c.key ?? 'Ungrouped'),
+      el('span', {
+        class: 'grow title',
+        ondblclick: stop(() => c.key && startFolderRename(c)),
+      }, c.title),
+    )
+  }
+  headChildren.push(el('span', { class: 'meta hide-on-hover' }, counts(c)))
+
+  const nonWorkingSessions = c.sessions.filter(s => s.state !== 'working')
+  const allIdle = nonWorkingSessions.length === c.sessions.length
+  const archiveTooltip = allIdle
+    ? 'Move folder sessions to history'
+    : 'Archive ' + nonWorkingSessions.length + ' idle/finished session' + (nonWorkingSessions.length === 1 ? '' : 's') + ' to history'
+
+  if (c.key) {
+    headChildren.push(
+      el('span', { class: 'actions' },
+        iconBtn('plus', 'New session in ' + c.key, () => send('newSession', { folder: c.key })),
+        c.isTicket && iconBtn('external', 'Open ticket in browser', () => send('openTicket', { ticket: c.ticketKey || c.key })),
+        iconBtn('edit', 'Rename folder', () => startFolderRename(c)),
+        !isHistory && nonWorkingSessions.length > 0 && iconBtn('archive', archiveTooltip, () => send('archiveFolder', { folder: c.key })),
+        c.sessions.length === 0 && iconBtn('close', 'Remove empty folder', () => send('removeFolder', { folder: c.key })),
+      )
+    )
+  }
+
+  const head = el('div', {
+    class: 'head' + (isEditingFolder ? ' editing' : ''),
+    onclick: () => {
+      if (isEditingFolder) return
+      ui.open[id] = !isOpen
+      save()
+      renderList()
+    },
+  }, ...headChildren)
   const node = el('div', { class: 'card' + (c.isBusy ? ' busy' : '') }, head)
   if (isOpen) {
     const prs = c.prs.filter(pr => !ui.q || matches(pr.title + pr.repo, ui.q) || matches(c.key + c.title, ui.q))
@@ -289,11 +546,11 @@ const card = (c, isLoose, isHistory = false) => {
     }, icon('chev', prsOpen ? 'open' : ''), 'Pull requests', el('span', { class: 'sub-count' }, '(' + prs.length + ')'))
     node.append(el('div', { class: 'body' },
       prs.length > 0 && [prToggle, prsOpen && prs.map(prRow)],
-      sessions.length > 0 && [prs.length > 0 && el('div', { class: 'sub' }, 'Sessions'), sessions.map(sessionRow)],
+      sessions.length > 0 && sessions.map(sessionRow),
       sessions.length === 0 && prs.length === 0 && el('div', { class: 'empty-folder' }, 'Drop a session here or click + to start one')))
   }
   if (!isHistory) {
-    if (c.key) folderReorderTarget(node, head, c.key)
+    if (c.key && !isEditingFolder) folderReorderTarget(node, head, c.key)
     dropTarget(node, c.key)
   }
   return node
@@ -318,7 +575,10 @@ const render = () => {
       search),
     el('div', { class: 'filter-bar' },
       el('div', { class: 'segmented' }, chip('all', 'All'), chip('active', 'Active'), chip('prs', 'PRs')),
-      el('div', { id: 'stats', class: 'stats-pills' }))))
+      el('div', { class: 'filter-bar-right' },
+        el('div', { id: 'stats', class: 'stats-pills' }),
+        el('div', { id: 'filter-tools' }),
+      ))))
   root.append(el('div', { id: 'list' }))
   renderList()
 }
@@ -354,16 +614,39 @@ const focusNextWaiting = () => {
 const renderList = () => {
   const list = document.getElementById('list')
   const stats = document.getElementById('stats')
+  const tools = document.getElementById('filter-tools')
   const model = data.model
   list.replaceChildren()
   if (stats) stats.replaceChildren()
+  if (tools) tools.replaceChildren()
   if (data.message) list.append(el('div', { class: 'error' }, data.message))
   if (!model) return list.append(el('div', { class: 'empty-state' }, 'Loading sessions…'))
+
+  if (tools && model.tickets.length > 1) {
+    const isFolderCardOpen = c => {
+      const id = c.key ?? 'none'
+      return ui.open[id] ?? (c.isBusy || c.sessions.length > 0)
+    }
+    const anyOpen = model.tickets.some(isFolderCardOpen)
+    const btn = el('button', {
+      class: 'icon-btn collapse-toggle-btn',
+      title: anyOpen ? 'Collapse all folders' : 'Expand all folders',
+      onclick: () => {
+        for (const c of model.tickets) {
+          const id = c.key ?? 'none'
+          ui.open[id] = !anyOpen
+        }
+        save()
+        renderList()
+      },
+    }, icon(anyOpen ? 'collapseAll' : 'expandAll'))
+    tools.append(btn)
+  }
 
   // Compute live summary pills for the header bar
   const allRows = [...model.tickets.flatMap(t => t.sessions), ...model.loose]
   const workingCount = allRows.filter(r => r.state === 'working').length
-  const blockedCount = allRows.filter(r => r.state === 'blocked').length
+  const blockedCount = allRows.filter(r => r.state === 'blocked' || r.state === 'failed').length
   if (stats) {
     if (blockedCount > 0) {
       stats.append(el('span', {
@@ -389,15 +672,19 @@ const renderList = () => {
     list.append(el('div', { class: 'section-block' }, folders.map(c => card(c, false))))
   }
   if (showLoose) {
+    const isUngroupedEmpty = looseSessions.length === 0
     const looseBlock = section('Ungrouped', looseSessions.length,
-      looseSessions.length > 0
+      !isUngroupedEmpty
         ? el('div', { class: 'loose-list' }, looseSessions.map(sessionRow))
         : el('div', { class: 'empty-folder' }, 'Drop a session here to remove from folder')
     )
+    if (isUngroupedEmpty) {
+      looseBlock.className = 'section-block ungrouped-empty'
+    }
     dropTarget(looseBlock, null)
     list.append(looseBlock)
   }
-  const history = model.history.filter(c => cardMatches(c, q))
+  const history = (ui.filter === 'all' ? model.history : model.history.filter(c => passesFilter(c))).filter(c => cardMatches(c, q))
   if (history.length > 0) {
     const histTotal = history.reduce((sum, c) => sum + c.sessions.length, 0)
     const isOpen = ui.history || q !== ''
@@ -415,13 +702,36 @@ const renderList = () => {
     }
     list.append(histBlock)
   }
-  if (folders.length === 0 && !showLoose && history.length === 0) {
+  if (ui.filter !== 'all' && folders.length === 0 && looseSessions.length === 0) {
+    list.append(el('div', { class: 'empty-state' },
+      el('div', { class: 'empty-title' },
+        q
+          ? 'No matching sessions or folders'
+          : (ui.filter === 'active' ? 'No active sessions right now' : 'No open pull requests')
+      ),
+      el('div', {},
+        q
+          ? 'Try a different filter or search query.'
+          : (ui.filter === 'active' ? 'All sessions are idle or completed.' : 'No pull requests found matching the current scope.')
+      ),
+      el('div', { class: 'empty-actions' },
+        q && el('button', { class: 'btn-ghost', onclick: () => { ui.q = ''; save(); render() } }, 'Clear search'),
+        el('button', { class: 'btn-ghost', onclick: () => { ui.filter = 'all'; save(); render() } }, 'Show all sessions')
+      )
+    ))
+  } else if (folders.length === 0 && !showLoose && history.length === 0) {
     list.append(el('div', { class: 'empty-state' },
       el('div', { class: 'empty-title' }, q ? 'No matching sessions or folders' : 'Your Agent Cockpit is ready'),
       el('div', {}, q ? 'Try a different filter or search query.' : 'Start an agent session or create a topic/ticket folder to organize your work.'),
-      !q && el('div', { class: 'empty-actions' },
-        el('button', { class: 'btn-primary', onclick: () => send('newSession') }, icon('plus'), 'New Session'),
-        el('button', { class: 'btn-ghost', onclick: () => send('newFolder') }, icon('newFolder'), 'New Folder'))))
+      el('div', { class: 'empty-actions' },
+        q
+          ? el('button', { class: 'btn-ghost', onclick: () => { ui.q = ''; save(); render() } }, 'Clear search')
+          : [
+              el('button', { class: 'btn-primary', onclick: () => send('newSession') }, icon('plus'), 'New Session'),
+              el('button', { class: 'btn-ghost', onclick: () => send('newFolder') }, icon('newFolder'), 'New Folder'),
+            ]
+      )
+    ))
   }
 }
 
@@ -453,6 +763,8 @@ const tickCache = () => {
         }
       } else {
         pill?.remove()
+        node.classList.remove('has-cache')
+        node.querySelector('.session-right')?.classList.remove('has-cache')
       }
       node.removeAttribute('data-cache-expires')
     }
@@ -464,9 +776,108 @@ window.addEventListener('message', event => {
   const nextPayload = JSON.stringify(event.data)
   if (nextPayload === lastPayload) return
   lastPayload = nextPayload
+  if (editing !== null) {
+    pendingData = event.data
+    return
+  }
   data = event.data
   renderList()
 })
+
+window.addEventListener('keydown', event => {
+  const isInput = event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA'
+  if (editing !== null && isInput) return
+
+  const isSearchShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f'
+
+  if (isSearchShortcut || (!isInput && event.key === '/')) {
+    event.preventDefault()
+    const searchInput = document.querySelector('input[type="search"]')
+    if (searchInput) {
+      searchInput.focus()
+      searchInput.select()
+    }
+    return
+  }
+
+  if (event.key === 'Escape') {
+    const searchInput = document.querySelector('input[type="search"]')
+    if (isInput || ui.q) {
+      event.preventDefault()
+      if (ui.q || (searchInput && searchInput.value)) {
+        ui.q = ''
+        if (searchInput) searchInput.value = ''
+        save()
+        renderList()
+      }
+      if (searchInput) searchInput.blur()
+      return
+    }
+  }
+
+  if (event.key === 'F2') {
+    if (!isInput && !editing) {
+      const activeCard = document.activeElement?.closest('.session-card') || document.querySelector('.session-card.kb-focus')
+      if (activeCard) {
+        event.preventDefault()
+        const id = activeCard.id.replace(/^session-/, '')
+        const row = findSession(id)
+        if (row) {
+          startSessionRename(row)
+          return
+        }
+      }
+    }
+  }
+
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (!isInput || (event.target.type === 'search' && event.key === 'ArrowDown')) {
+      const cards = Array.from(document.querySelectorAll('.session-card'))
+      if (cards.length > 0) {
+        event.preventDefault()
+        const activeCard = document.activeElement?.closest('.session-card') || document.querySelector('.session-card.kb-focus')
+        let nextIndex = 0
+        if (activeCard) {
+          const currentIndex = cards.indexOf(activeCard)
+          if (currentIndex !== -1) {
+            nextIndex = event.key === 'ArrowDown'
+              ? (currentIndex + 1) % cards.length
+              : (currentIndex - 1 + cards.length) % cards.length
+          }
+        } else if (event.key === 'ArrowUp') {
+          nextIndex = cards.length - 1
+        }
+        for (const c of cards) c.classList.remove('kb-focus')
+        const targetCard = cards[nextIndex]
+        targetCard.classList.add('kb-focus')
+        targetCard.focus()
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        return
+      }
+    }
+  }
+
+  if (event.key === 'Enter') {
+    if (isInput) {
+      if (event.target.type === 'search' && ui.q) {
+        const firstCard = document.querySelector('.session-card')
+        if (firstCard) {
+          event.preventDefault()
+          firstCard.click()
+          return
+        }
+      }
+      return
+    }
+    const focusedCard = document.activeElement?.closest('.session-card') || document.querySelector('.session-card.kb-focus')
+    if (focusedCard) {
+      event.preventDefault()
+      focusedCard.click()
+      return
+    }
+  }
+})
+
 render()
 send('ready')
 setInterval(tickCache, 1000)

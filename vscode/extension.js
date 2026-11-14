@@ -136,6 +136,7 @@ const getCockpitConfig = env => {
     githubOrg: get('githubOrg', '') || env.GITHUB_ORG || '',
     githubRepositories: get('githubRepositories', ''),
     closeTerminalOnArchive: get('closeTerminalOnArchive', true),
+    notifyOnWaiting: get('notifyOnWaiting', 'smart'),
   }
 }
 
@@ -594,9 +595,17 @@ class SessionsProvider {
   async renameFolder(oldFolder, rawNewFolder) {
     const newFolder = normalizeFolder(rawNewFolder, this.pattern)
     if (!newFolder || newFolder === oldFolder) return
-    const folders = [...new Set(this.folders.map(f => (f === oldFolder ? newFolder : f)))]
-    const order = this.order.map(item => (item === oldFolder ? newFolder : item))
-    const matching = this.sessions.filter(s => (s.folder ?? s.ticket) === oldFolder)
+    const normOld = normalizeFolder(oldFolder, this.pattern)
+    let folders = this.folders.map(f => (f === oldFolder || normalizeFolder(f, this.pattern) === normOld ? newFolder : f))
+    if (!folders.includes(newFolder) && this.folders.some(f => f === oldFolder || normalizeFolder(f, this.pattern) === normOld)) {
+      folders.push(newFolder)
+    }
+    folders = [...new Set(folders)]
+    const order = this.order.map(item => (item === oldFolder || normalizeFolder(item, this.pattern) === normOld ? newFolder : item))
+    const matching = this.sessions.filter(s => {
+      const f = s.folder ?? s.ticket
+      return f === oldFolder || (f && normalizeFolder(f, this.pattern) === normOld)
+    })
     await Promise.all(matching.map(s => updateSessionRecord(s, { folder: newFolder, ticket: newFolder })))
     if (this.titles[oldFolder] && !this.titles[newFolder]) {
       const titles = { ...(await readJson(TITLES_FILE, {})), [newFolder]: this.titles[oldFolder] }
@@ -786,7 +795,11 @@ class SessionsProvider {
     const wasLoaded = this.isLoaded
     this.isLoaded = this.fetchedAt.sessions > 0
     if (!wasLoaded) return []
-    return this.sessions.filter(session => session.state === 'blocked' && before.get(session.id) !== 'blocked')
+    return this.sessions.filter(session =>
+      (session.state === 'blocked' || session.state === 'failed') &&
+      before.has(session.id) &&
+      before.get(session.id) !== session.state,
+    )
   }
 
   async track(label, load, fetched) {
@@ -1411,8 +1424,31 @@ const activate = async context => {
     briefing: () => openBriefing(provider, refresh),
     newSession: ({ folder } = {}) => vscode.commands.executeCommand('agentCockpit.newSession', folder && { group: { ticket: folder } }),
     newFolder: () => vscode.commands.executeCommand('agentCockpit.newFolder'),
-    renameFolder: ({ folder }) => vscode.commands.executeCommand('agentCockpit.renameFolder', { folder }),
-    removeFolder: ({ folder }) => provider.removeFolder(folder),
+    renameFolder: async ({ folder, key, name }) => {
+      const oldFolder = folder || key
+      if (!oldFolder) return
+      if (name !== undefined) {
+        const trimmed = name.trim()
+        if (!trimmed || trimmed === oldFolder) return
+        await provider.renameFolder(oldFolder, trimmed)
+        refresh(true)
+        return
+      }
+      vscode.commands.executeCommand('agentCockpit.renameFolder', { folder: oldFolder })
+    },
+    removeFolder: ({ folder, key }) => provider.removeFolder(folder || key),
+    archiveFolder: async ({ folder, key }) => {
+      const targetFolder = folder || key
+      if (!targetFolder) return
+      const target = normalizeFolder(targetFolder, provider.pattern)
+      const nonWorking = provider.sessions.filter(
+        s => normalizeFolder(s.folder ?? s.ticket, provider.pattern) === target && !provider.isHidden(s) && s.state !== 'working'
+      )
+      for (const s of nonWorking) {
+        await hideSession(s, provider)
+      }
+      refresh(true)
+    },
     configureGithubScope: () => vscode.commands.executeCommand('agentCockpit.configureGithubScope'),
     moveToFolder: ({ id }) => sessionById(id) && moveToFolder(sessionById(id), provider, refresh),
     refresh: () => refresh(true),
@@ -1427,7 +1463,18 @@ const activate = async context => {
       })
       refresh(true)
     },
-    rename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('agentCockpit.rename', { session: sessionById(id) }),
+    rename: async ({ id, name }) => {
+      const session = sessionById(id)
+      if (!session) return
+      if (name !== undefined) {
+        const trimmed = name.trim()
+        if (!trimmed || trimmed === session.name) return
+        await rename(session, trimmed, provider.pattern)
+        refresh(true)
+        return
+      }
+      vscode.commands.executeCommand('agentCockpit.rename', { session })
+    },
     autoRename: ({ id }) => sessionById(id) && vscode.commands.executeCommand('agentCockpit.autoRename', { session: sessionById(id) }),
     hide: ({ id }) => sessionById(id) && hideSession(sessionById(id), provider),
     show: ({ id }) => sessionById(id) && provider.setHidden(sessionById(id), false),
@@ -1461,7 +1508,7 @@ const activate = async context => {
   context.subscriptions.push(statusBar)
 
   const updateStatusBar = () => {
-    const blocked = provider.sessions.filter(s => s.state === 'blocked' && !provider.isHidden(s))
+    const blocked = provider.sessions.filter(s => (s.state === 'blocked' || s.state === 'failed') && !provider.isHidden(s))
     const working = provider.sessions.filter(s => s.state === 'working' && !provider.isHidden(s))
     const live = provider.sessions.filter(s => !provider.isHidden(s) && !s.ended)
     if (blocked.length > 0) {
@@ -1485,19 +1532,37 @@ const activate = async context => {
   }
 
   const notify = session => {
-    const name = withoutTicketSuffix(session.name, provider.pattern) || session.name
-    vscode.window
-      .showWarningMessage(`${session.ticket ? `${session.ticket} · ` : ''}${name} needs input`, 'Open')
-      .then(choice => choice && attach(session, provider))
+    const notifyMode = provider.config?.notifyOnWaiting ?? 'smart'
+    if (notifyMode === 'off') return
+    if (notifyMode === 'smart') {
+      const isActiveTerminal = Boolean(
+        provider.activeSessionId &&
+        (session.id === provider.activeSessionId || session.sessionId === provider.activeSessionId)
+      )
+      const isFocused = Boolean(vscode.window.state.focused)
+      if (isActiveTerminal && isFocused) return
+    }
+    const cleanName = withoutTicketSuffix(session.name, provider.pattern) || session.name
+    const folder = session.folder ?? session.ticket
+    const prefix = folder ? `[${folder}] ` : ''
+    const title = `${prefix}${cleanName}`
+    const msg = session.state === 'failed'
+      ? `Claude session failed: ${title}`
+      : `Claude is waiting for input: ${title}`
+    const showFn = session.state === 'failed'
+      ? vscode.window.showWarningMessage
+      : vscode.window.showInformationMessage
+    showFn(msg, 'Jump to Terminal')
+      .then(choice => choice === 'Jump to Terminal' && attach(session, provider))
   }
   let running
   const refresh = (force = false) =>
     (running ??= provider
       .refresh({ force, withRemote: inbox.visible })
-      .then(blocked => {
-        blocked.forEach(notify)
+      .then(async waitingSessions => {
+        await syncTerminalTitles(provider, inbox)
+        waitingSessions.forEach(notify)
         updateStatusBar()
-        void syncTerminalTitles(provider, inbox)
       })
       .finally(() => (running = undefined)))
   // Sessions refresh while the view is hidden too, so a session needing input still notifies.
@@ -1553,7 +1618,7 @@ const activate = async context => {
     ),
     ...registerCmd('briefing', () => openBriefing(provider, refresh)),
     ...registerCmd('focus', () => {
-      const blocked = provider.sessions.find(s => s.state === 'blocked' && !provider.isHidden(s))
+      const blocked = provider.sessions.find(s => (s.state === 'blocked' || s.state === 'failed') && !provider.isHidden(s))
       if (blocked) return attach(blocked, provider)
       vscode.commands.executeCommand('agentCockpit.inbox.focus').then(
         () => {},
@@ -1564,10 +1629,11 @@ const activate = async context => {
     ...registerCmd('attach', session => attach(session, provider)),
     ...registerCmd('openJira', openJira),
     ...registerCmd('search', () => search(provider)),
-    ...registerCmd('rename', async ({ session }) => {
-      const name = (await vscode.window.showInputBox({ title: 'Rename session', value: session.name }))?.trim()
-      if (!name || name === session.name) return
-      await rename(session, name, provider.pattern)
+    ...registerCmd('rename', async ({ session, name } = {}) => {
+      if (!session) return
+      const newName = name !== undefined ? name.trim() : (await vscode.window.showInputBox({ title: 'Rename session', value: session.name }))?.trim()
+      if (!newName || newName === session.name) return
+      await rename(session, newName, provider.pattern)
       refresh()
     }),
     ...registerCmd('autoRename', ({ session } = {}) => session && autoRenameSession(session, provider, refresh)),
@@ -1583,16 +1649,31 @@ const activate = async context => {
       await provider.addFolder(input)
       refresh(true)
     }),
-    ...registerCmd('renameFolder', async ({ folder } = {}) => {
+    ...registerCmd('renameFolder', async element => {
+      const folder = element?.group?.ticket ?? element?.folder ?? element?.key ?? (typeof element === 'string' ? element : undefined)
+      const name = element?.name
       if (!folder) return
-      const input = (
+      const input = name !== undefined ? name.trim() : (
         await vscode.window.showInputBox({
           title: 'Rename folder',
           value: folder,
+          validateInput: v => (!v.trim() ? 'Folder name cannot be empty' : null),
         })
       )?.trim()
       if (!input || input === folder) return
       await provider.renameFolder(folder, input)
+      refresh(true)
+    }),
+    ...registerCmd('archiveFolder', async element => {
+      const folder = element?.group?.ticket ?? element?.folder ?? element?.key ?? (typeof element === 'string' ? element : undefined)
+      if (!folder) return
+      const target = normalizeFolder(folder, provider.pattern)
+      const nonWorking = provider.sessions.filter(
+        s => normalizeFolder(s.folder ?? s.ticket, provider.pattern) === target && !provider.isHidden(s) && s.state !== 'working'
+      )
+      for (const s of nonWorking) {
+        await hideSession(s, provider)
+      }
       refresh(true)
     }),
     ...registerCmd('newSession', async element => {

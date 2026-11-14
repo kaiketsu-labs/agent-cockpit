@@ -115,6 +115,21 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically close the associated VS Code terminal tab when archiving a session (moving to history)."
+        },
+        "agentCockpit.notifyOnWaiting": {
+          "type": "string",
+          "enum": [
+            "smart",
+            "always",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Notify when a session transitions to waiting for input or failed and its terminal is not currently focused.",
+            "Always notify when a session transitions to waiting for input or failed.",
+            "Never show desktop notifications for session state transitions."
+          ],
+          "default": "smart",
+          "description": "Show a VS Code notification with a 'Jump to Terminal' action when a session needs input or fails."
         }
       }
     },
@@ -158,6 +173,11 @@
         "command": "agentCockpit.renameFolder",
         "title": "Rename folder",
         "icon": "$(edit)"
+      },
+      {
+        "command": "agentCockpit.archiveFolder",
+        "title": "Archive idle sessions in folder",
+        "icon": "$(archive)"
       },
       {
         "command": "agentCockpit.search",
@@ -252,6 +272,10 @@
         },
         {
           "command": "agentCockpit.renameFolder",
+          "when": "false"
+        },
+        {
+          "command": "agentCockpit.archiveFolder",
           "when": "false"
         }
       ]

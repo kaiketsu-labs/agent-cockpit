@@ -67,7 +67,8 @@ You don't need to change how you use Claude Code or memorize slash commands:
 | ⚡ **Prompt cache keepalive** | Click any warm cache badge (`⚡ 4:45`) or use the `keep_warm` MCP tool to automatically keep prompt cache warm. Pings the session prefix before cache expiry with a 30-minute sliding window that persists across turns, so you never lose your warm cache while switching tasks or stepping away. |
 | 🔗 **Zero-config Jira & GitHub** | Enriches ticket folders with issue titles, status colors, and collapsible open PR lists via Jira REST API, Atlassian CLI (`acli`), `jira-cli`, or GitHub CLI (`gh`) — or any custom shell script. |
 | 🎯 **Scoped PR & issue lookup** | Automatically scopes GitHub searches to your repository or organization (`agentCockpit.githubOrg`) so you never get false matches from unrelated public repositories. Click the `⚙️` gear icon to instantly toggle scope between Organization, specific Repositories, or Disabled. |
-| 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use inline hover actions to AI auto-rename, rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
+| 🧹 **Self-tidying & drag-and-drop** | Drag and drop sessions to reorder them within or across folders (persisting custom order over automatic sorting), or use zero-layout-jump inline action overlays to AI auto-rename, rename, move, or archive. Inactive sessions and closed tickets automatically archive to **History**. |
+| ⌨️ **Keyboard navigation** | Navigate the cockpit entirely hands-on-keyboard: press `/` or `Cmd+F` to search, `Esc` to clear, `↓`/`↑` to browse session cards, and `Enter` to jump straight into the active terminal session. |
 
 ## Install
 
@@ -168,6 +169,20 @@ All actions are available directly from the sidebar or via the VS Code Command P
 | `Agent Cockpit: Toggle Keep Warm (Prompt Cache Keepalive)` | Toggles automatic prompt cache keepalive for a session so warm cache stays alive while switching tasks. |
 | `Agent Cockpit: Refresh` | Forces an immediate refresh of sessions, tracker statuses, and open pull requests. |
 
+### Sidebar keyboard navigation & quick actions
+
+When focused inside the Agent Cockpit sidebar, you can navigate and edit without touching the mouse:
+
+| Key / Action | What it does |
+|---|---|
+| `/` or `Cmd+F` / `Ctrl+F` | Focus the search input and select all text |
+| `Esc` | Clear search query, blur search bar, or cancel inline renaming |
+| `↓` / `↑` | Navigate between session cards with accessible focus outline |
+| `Enter` | Open / attach to focused session (or commit inline rename) |
+| Double-click name or click `edit` | Inline rename session or folder card directly in the sidebar (commits on Enter or blur) |
+| Collapse / Expand all | Toggle expanding or collapsing all folders with the header action button |
+| Folder Archive | Archive idle and completed sessions in a folder directly to history |
+
 ## Optional ticket workflow skills
 
 Sessions are named and organized automatically without any slash commands. When you want structured ticket workflows with on-demand git worktrees and handoff comments, the plugin includes three skills:
@@ -193,6 +208,7 @@ Configure Agent Cockpit via **VS Code Settings** (`agentCockpit.*`) or via the `
 | `agentCockpit.ticketProjects` | `TICKET_PROJECTS` | `""` | Comma-separated project keys, e.g. `PROJ,OPS`. Narrows Jira-style keys (case-insensitive). Default: any `ABC-123` or `#42` / `owner/repo#42` key. |
 | `agentCockpit.ticketPattern` | — | `""` | Custom regular expression override for matching ticket keys. |
 | `agentCockpit.closeTerminalOnArchive` | — | `true` | Automatically close the associated VS Code terminal tab when archiving a session (moving to history). |
+| `agentCockpit.notifyOnWaiting` | — | `"smart"` | Notification behavior when a session needs input or fails: `"smart"` (only notifies when its terminal is not currently focused), `"always"`, or `"off"`. Includes a 1-click **Jump to Terminal** action. |
 | — | `JIRA_URL`, `JIRA_TOKEN`, `JIRA_EMAIL` | — | Base URL and PAT/API token for Jira REST lookups (with `JIRA_EMAIL` uses Basic Auth for Jira Cloud; otherwise Bearer PAT). Automatically falls back to `acli` or `jira-cli` when unset. |
 | — | `CLAUDE_CODE_PROMPT_CACHE_TTL=1h` | `5m` | Sets the prompt cache countdown to 1 hour instead of 5 minutes (also honours `ENABLE_PROMPT_CACHING_1H`). |
 

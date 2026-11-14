@@ -13,6 +13,7 @@ import {
   parseClassificationReply,
   promptName,
   sessionName,
+  shortCwd,
   ticketOf,
   ticketSuffix,
   withoutTicketSuffix,
@@ -122,4 +123,15 @@ test('buildClassificationInstruction and parseClassificationReply handle retitle
     folder: 'UI Polish',
     title: undefined,
   })
+})
+
+test('shortCwd extracts last directory segment or worktree name', () => {
+  expect(shortCwd('/Users/david/Developer/agent-cockpit')).toBe('agent-cockpit')
+  expect(shortCwd('/Users/david/Developer/agent-cockpit/')).toBe('agent-cockpit')
+  expect(shortCwd('/repo/.claude/worktrees/feat-ux')).toBe('feat-ux')
+  expect(shortCwd('C:\\Users\\david\\Developer\\agent-cockpit')).toBe('agent-cockpit')
+  expect(shortCwd('C:\\repo\\.claude\\worktrees\\PROJ-123')).toBe('PROJ-123')
+  expect(shortCwd('')).toBeUndefined()
+  expect(shortCwd(undefined)).toBeUndefined()
+  expect(shortCwd('/')).toBeUndefined()
 })
