@@ -33,6 +33,7 @@ type SessionFile = {
   name?: string
   folder?: string
   ticket?: string
+  folderLocked?: boolean
   prompt?: string
   lastTurnEndAt?: number
   keepWarm?: boolean
@@ -324,7 +325,11 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
   const folder = hasStoredFolder
     ? existingFolder
     : (initialFolder ? normalizeFolder(initialFolder, projects) : undefined)
-  await save($, { cwd: e.cwd, ...(folder ? { folder, ticket: folder } : {}) })
+  await save($, {
+    cwd: e.cwd,
+    ...(folder ? { folder, ticket: folder } : {}),
+    ...(!hasStoredFolder && folder ? { folderLocked: true } : {}),
+  })
 
   const envTtl =
     (await $.env.get('CLAUDE_CODE_PROMPT_CACHE_TTL')) ??
@@ -389,7 +394,7 @@ const handlePromptSubmit = async ($: EngineInterface, e: any, next: (e: any) => 
   if (fallback && (!record?.prompt || isTrivialPrompt(record.prompt))) {
     updates.prompt = fallback
   }
-  if (detectedTicket && !record?.name && (!currentFolder || !isTicketKey(currentFolder, projects))) {
+  if (detectedTicket && !record?.folderLocked && (!currentFolder || !isTicketKey(currentFolder, projects))) {
     updates.folder = detectedTicket
     updates.ticket = detectedTicket
   }
@@ -479,11 +484,12 @@ const handleBashTicketDetection = async ($: EngineInterface, e: unknown, next: (
     const cmd = params.command.trim()
     const isTicketCommand = /^\s*(acli|jira|gh\s+issue|git\s+(checkout|switch)\s+-b)\b/i.test(cmd)
     if (isTicketCommand) {
-      const cmdTicket = extractTicket(cmd, projects)
+      const ghRepoIssue = cmd.match(/^gh\s+issue\s+\S+\s+(\d+)\b.*?(?:--repo|-R)\s+([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/i)
+      const cmdTicket = extractTicket(cmd, projects) ?? (ghRepoIssue ? `${ghRepoIssue[2]}#${ghRepoIssue[1]}` : undefined)
       if (cmdTicket) {
         const record = await storedRecord($)
         const currentFolder = record?.folder ?? record?.ticket
-        if (!record?.name && (!currentFolder || !isTicketKey(currentFolder, projects))) {
+        if (!record?.folderLocked && (!currentFolder || !isTicketKey(currentFolder, projects))) {
           await save($, { folder: cmdTicket, ticket: cmdTicket }).catch(() => {})
         }
       }
