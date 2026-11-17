@@ -284,3 +284,13 @@ export const promptName = (text: string): string => {
   }
   return line.slice(0, 80)
 }
+
+export const shortCwd = (cwd?: string): string | undefined => {
+  if (!cwd || typeof cwd !== 'string') return undefined
+  const norm = cwd.replace(/[/\\]+$/, '')
+  if (!norm) return undefined
+  const worktreeMatch = norm.match(/[/\\]\.claude[/\\]worktrees[/\\]([^/\\]+)/)
+  if (worktreeMatch) return worktreeMatch[1]
+  const last = norm.split(/[/\\]/).pop()
+  return last || undefined
+}

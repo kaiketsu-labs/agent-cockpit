@@ -35,6 +35,7 @@ const {
   cacheTtlMs,
   cacheLeft,
   clock,
+  shortCwd,
   inboxRow,
   inboxModel,
   prefillForFolder,
@@ -905,4 +906,114 @@ test('buildClassificationInstruction and parseClassificationReply handle retitle
   assert.equal(parseClassificationReply('{"skip": true, "summary": "Ignored"}'), undefined)
   assert.equal(parseClassificationReply('{"summary": "   "}'), undefined)
   assert.equal(parseClassificationReply('not json'), undefined)
+})
+
+test('shortCwd extracts last directory segment or worktree name', () => {
+  assert.equal(shortCwd('/Users/david/Developer/agent-cockpit'), 'agent-cockpit')
+  assert.equal(shortCwd('/Users/david/Developer/agent-cockpit/'), 'agent-cockpit')
+  assert.equal(shortCwd('/repo/.claude/worktrees/feat-ux'), 'feat-ux')
+  assert.equal(shortCwd('C:\\Users\\david\\Developer\\agent-cockpit'), 'agent-cockpit')
+  assert.equal(shortCwd('C:\\repo\\.claude\\worktrees\\PROJ-123'), 'PROJ-123')
+  assert.equal(shortCwd(''), undefined)
+  assert.equal(shortCwd(undefined), undefined)
+  assert.equal(shortCwd('/'), undefined)
+})
+
+test('inboxRow includes cwd and cwdShort for rich session card tooltips', () => {
+  const sessionWithCwd = {
+    id: 's1',
+    sessionId: 's1',
+    name: 'Work session',
+    state: 'working',
+    updatedAt: 1000,
+    cwd: '/Users/david/Developer/Projekte/agent-cockpit',
+    model: 'claude-3-7-sonnet',
+  }
+  const row = inboxRow(sessionWithCwd, { pattern: anyKey, now: 2000, cacheTtl: 300_000 })
+  assert.equal(row.cwd, '/Users/david/Developer/Projekte/agent-cockpit')
+  assert.equal(row.cwdShort, 'agent-cockpit')
+  assert.equal(row.model, 'claude-3-7-sonnet')
+
+  const sessionWithoutCwd = {
+    id: 's2',
+    sessionId: 's2',
+    name: 'Untitled',
+    state: 'idle',
+    updatedAt: 1000,
+  }
+  const rowNoCwd = inboxRow(sessionWithoutCwd, { pattern: anyKey, now: 2000, cacheTtl: 300_000 })
+  assert.equal(rowNoCwd.cwd, undefined)
+  assert.equal(rowNoCwd.cwdShort, undefined)
+})
+
+test('vscode/media/inbox.js and inbox.css implement enhanced sidebar UX features', () => {
+  const mediaDir = path.resolve(__dirname, 'media')
+  const js = fs.readFileSync(path.join(mediaDir, 'inbox.js'), 'utf8')
+  const css = fs.readFileSync(path.join(mediaDir, 'inbox.css'), 'utf8')
+
+  // 1. Zero-layout-jump action bar overlay
+  assert.ok(js.includes('session-right'), 'inbox.js must wrap right-side elements in session-right')
+  assert.ok(js.includes('has-cache'), 'inbox.js must mark sessions that have warm cache')
+  assert.ok(css.includes('.session-right'), 'inbox.css must style .session-right')
+  assert.ok(css.includes('.session-card .actions'), 'inbox.css must position .session-card .actions as an overlay')
+  assert.ok(css.includes('has-cache'), 'inbox.css must adjust action overlay for warm cache-pill')
+  assert.ok(css.includes('.session-card:hover .meta.hide-on-hover { visibility: hidden'), 'inbox.css must keep meta in layout with visibility: hidden on session hover')
+
+  // 2. Failed sessions counted with blocked in telemetry and filter empty states
+  assert.ok(js.includes("r.state === 'blocked' || r.state === 'failed'"), 'inbox.js must count failed sessions with blocked sessions in stats pill')
+  assert.ok(js.includes('No active sessions right now'), 'inbox.js must provide empty state for active filter')
+  assert.ok(js.includes('No open pull requests'), 'inbox.js must provide empty state for prs filter')
+  assert.ok(js.includes('Show all sessions'), 'inbox.js must provide a button to reset filter to all')
+  assert.ok(js.includes('Clear search'), 'inbox.js must provide a clear search action')
+
+  // 3. Card diet & smart ungrouped dropzone
+  assert.ok(!js.includes("el('div', { class: 'sub' }, 'Sessions')"), 'inbox.js must not render redundant Sessions label in folder card')
+  assert.ok(js.includes('ungrouped-empty'), 'inbox.js must mark empty ungrouped section')
+  assert.ok(js.includes('dragging-session'), 'inbox.js must toggle dragging-session on body during session drag')
+  assert.ok(css.includes('.section-block.ungrouped-empty'), 'inbox.css must hide ungrouped-empty by default')
+  assert.ok(css.includes('body.dragging-session .section-block.ungrouped-empty'), 'inbox.css must show ungrouped-empty during session drag')
+
+  // 4. Refined active terminal badge & focus styling
+  assert.ok(css.includes('.session-card.active-terminal'), 'inbox.css must style .active-terminal with border-color and background')
+  assert.ok(css.includes('border-left-color'), 'inbox.css must preserve left status border on active terminal cards')
+  assert.ok(!/\.active-terminal\s*\{[^}]*outline:/.test(css), 'inbox.css must not use colliding outline on active-terminal')
+
+  // 5. Keyboard navigation
+  assert.ok(js.includes("tabindex: '0'"), 'inbox.js must give session-card tabindex for keyboard focus')
+  assert.ok(js.includes("event.key === '/'"), 'inbox.js must bind / to focus search input')
+  assert.ok(js.includes("event.key === 'Escape'"), 'inbox.js must bind Escape to clear search')
+  assert.ok(js.includes("event.key === 'ArrowDown'"), 'inbox.js must support arrow down card navigation')
+  assert.ok(js.includes("event.key === 'ArrowUp'"), 'inbox.js must support arrow up card navigation')
+  assert.ok(js.includes("event.key === 'Enter'"), 'inbox.js must support Enter to attach session')
+  assert.ok(css.includes('.session-card.kb-focus'), 'inbox.css must style keyboard focused card')
+
+  // 6. Inline auto-rename feedback & rich tooltip
+  assert.ok(js.includes('onAutoRename'), 'inbox.js must have onAutoRename handler')
+  assert.ok(js.includes("' renaming'"), 'inbox.js must apply renaming class to session-card')
+  assert.ok(css.includes('.session-card.renaming'), 'inbox.css must style renaming animation')
+  assert.ok(js.includes('row.cwdShort'), 'inbox.js must include cwdShort in title tooltip')
+
+  // 7. Inline renaming (Feature 4)
+  assert.ok(js.includes('inline-rename-input'), 'inbox.js must render inline-rename-input')
+  assert.ok(js.includes('startSessionRename'), 'inbox.js must have startSessionRename helper')
+  assert.ok(js.includes('startFolderRename'), 'inbox.js must have startFolderRename helper')
+  assert.ok(js.includes('pendingData'), 'inbox.js must preserve incoming messages while inline editing')
+  assert.ok(css.includes('.inline-rename-input'), 'inbox.css must style inline-rename-input')
+
+  // 8. Collapse / Expand All & Folder Archiving (Feature 7)
+  assert.ok(js.includes('collapseAll'), 'inbox.js must declare collapseAll icon')
+  assert.ok(js.includes('expandAll'), 'inbox.js must declare expandAll icon')
+  assert.ok(js.includes('collapse-toggle-btn'), 'inbox.js must render collapse-toggle-btn')
+  assert.ok(js.includes('archiveFolder'), 'inbox.js must support archiveFolder action')
+  assert.ok(css.includes('.collapse-toggle-btn'), 'inbox.css must style collapse-toggle-btn')
+  assert.ok(css.includes('.filter-bar-right'), 'inbox.css must style filter-bar-right')
+})
+
+test('notifyOnWaiting configuration setting is declared with smart, always, off', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
+  const notifyProp = pkg.contributes.configuration.properties['agentCockpit.notifyOnWaiting']
+  assert.ok(notifyProp, 'notifyOnWaiting property must be declared')
+  assert.equal(notifyProp.default, 'smart')
+  assert.deepEqual(notifyProp.enum, ['smart', 'always', 'off'])
+  assert.equal(notifyProp.type, 'string')
 })
