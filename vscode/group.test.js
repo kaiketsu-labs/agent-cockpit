@@ -495,12 +495,12 @@ test('inbox lists sessions that need the person first and one card per folder or
   assert.deepEqual(model.loose.map(row => row.id), ['d'])
 })
 
-test('tracker issue summary takes precedence over cached ticket titles, falling back to cached titles when tracker is unconfigured or returns nothing', () => {
+test('ticket folders show only tracker issue summary and stay blank when unconfigured', () => {
   const session = (id, folder) => ({ id, name: `work ${id}`, folder, ticket: folder, state: 'idle', updatedAt: 0 })
   const sessions = [
     session('s1', 'PROJ-1'),
     session('s2', 'PROJ-2'),
-    session('s3', 'PROJ-3'),
+    session('s3', 'Auth Refactor'),
   ]
   const model = inboxModel({
     groups: groupSessions(sessions),
@@ -509,10 +509,6 @@ test('tracker issue summary takes precedence over cached ticket titles, falling 
     issues: {
       'PROJ-1': { category: 'indeterminate', summary: 'Canonical Jira Title', status: 'In Progress' },
     },
-    titles: {
-      'PROJ-1': 'Stale AI Guess',
-      'PROJ-2': 'Manual Fallback Title',
-    },
     pattern: proj,
     cacheTtl: 300_000,
     now: 60_000,
@@ -520,9 +516,9 @@ test('tracker issue summary takes precedence over cached ticket titles, falling 
   assert.deepEqual(
     model.tickets.map(t => [t.key, t.title]),
     [
+      ['Auth Refactor', ''],
       ['PROJ-1', 'Canonical Jira Title'],
-      ['PROJ-2', 'Manual Fallback Title'],
-      ['PROJ-3', ''],
+      ['PROJ-2', ''],
     ],
   )
 })
@@ -738,22 +734,10 @@ test('prefillForFolder formats ticket or folder with title or clean key', () => 
     'PROJ-123 (OAuth Token Refresh): ',
   )
 
-  // Ticket with fallback to cached titles
-  assert.equal(
-    prefillForFolder('PROJ-123', { titles: { 'PROJ-123': 'OAuth Token Refresh' } }),
-    'PROJ-123 (OAuth Token Refresh): ',
-  )
-
   // Ticket without title
   assert.equal(prefillForFolder('PROJ-123', {}), 'PROJ-123: ')
 
-  // Non-ticket folder with title
-  assert.equal(
-    prefillForFolder('Auth Refactor', { titles: { 'Auth Refactor': 'Clean up middleware' } }),
-    'Auth Refactor (Clean up middleware): ',
-  )
-
-  // Non-ticket folder without title
+  // Non-ticket folder
   assert.equal(prefillForFolder('Auth Refactor', {}), 'Auth Refactor: ')
 
   // Sanitizes newlines in summary and folder
@@ -768,10 +752,6 @@ test('prefillForFolder formats ticket or folder with title or clean key', () => 
   assert.equal(prefillForFolder('Auth\r\nRefactor', {}), 'Auth Refactor: ')
 
   // Omits redundant title when title matches folder name case-insensitively
-  assert.equal(
-    prefillForFolder('Auth Refactor', { titles: { 'Auth Refactor': 'Auth Refactor' } }),
-    'Auth Refactor: ',
-  )
   assert.equal(
     prefillForFolder('PROJ-123', { issues: { 'PROJ-123': { summary: 'proj-123' } } }),
     'PROJ-123: ',
@@ -1019,16 +999,14 @@ test('notifyOnWaiting configuration setting is declared with smart, always, off'
   assert.equal(notifyProp.type, 'string')
 })
 
-test('folderTitle resolves tracker summary first, then cached titles, and respects ticketsOnly', () => {
+test('folderTitle returns tracker summary for ticket folders and empty string otherwise', () => {
   const proj = ticketPattern(['PROJ'])
   const opts = {
     issues: { 'PROJ-10': { summary: 'Exact Jira Summary' } },
-    titles: { 'PROJ-10': 'Old Stale Subtitle', 'PROJ-11': 'Fallback Title', 'Auth Refactor': 'OAuth2 Cleanup' },
     pattern: proj,
   }
   assert.equal(folderTitle('PROJ-10', opts), 'Exact Jira Summary')
-  assert.equal(folderTitle('PROJ-11', opts), 'Fallback Title')
-  assert.equal(folderTitle('Auth Refactor', opts), 'OAuth2 Cleanup')
-  assert.equal(folderTitle('Auth Refactor', { ...opts, ticketsOnly: true }), '')
+  assert.equal(folderTitle('PROJ-11', opts), '')
+  assert.equal(folderTitle('Auth Refactor', opts), '')
   assert.equal(folderTitle(null, opts), '')
 })

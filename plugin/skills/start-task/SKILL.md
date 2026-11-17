@@ -30,7 +30,6 @@ Call `mcp__cockpit__name_session` right after the fetch (or right after step 1 w
 - `summary`: 3-6 English words on what this session does, written by you from the prompt's task, else from the ticket's content. Not the ticket summary verbatim.
 - `ticket`: the key (e.g. `PROJ-123`, `#42`, `owner/repo#42`). Omit when there is no ticket.
 - `folder`: optional project/topic folder name (2-4 words) when there is no ticket.
-- `title`: the ticket's exact `summary` / title from the fetched ticket verbatim (do not shorten, translate, or paraphrase). The Agent Cockpit sidebar shows it beside the key. Leave it out when there is no ticket or the fetch failed.
 
 `mcp__cockpit__name_session` updates the Agent Cockpit sidebar and native Claude session title immediately. **Do not end the turn after calling `name_session`** — continue directly with step 4 in the same turn. If the tool is missing (plugin not loaded), tell the user to run `/rename <summary>` and go on.
 

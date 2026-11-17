@@ -278,21 +278,21 @@ const parseClassificationReply = text => {
   }
 }
 
-const folderTitle = (folder, { issues = {}, titles = {}, pattern = ticketPattern(), ticketsOnly = false } = {}) => {
+const folderTitle = (folder, { issues = {}, pattern = ticketPattern() } = {}) => {
   if (!folder || typeof folder !== 'string') return ''
   const trimmed = folder.trim()
   if (!trimmed) return ''
   const ticketKey = folderTicket(trimmed, pattern)
-  if (ticketsOnly && !ticketKey) return ''
-  const issue = issues[trimmed] ?? (ticketKey ? issues[ticketKey] : undefined)
-  return issue?.summary ?? titles[trimmed] ?? (ticketKey ? titles[ticketKey] : undefined) ?? ''
+  if (!ticketKey) return ''
+  const issue = issues[trimmed] ?? issues[ticketKey]
+  return issue?.summary ?? ''
 }
 
-const prefillForFolder = (folder, { issues = {}, titles = {}, pattern = ticketPattern() } = {}) => {
+const prefillForFolder = (folder, { issues = {}, pattern = ticketPattern() } = {}) => {
   if (!folder || typeof folder !== 'string') return ''
   const trimmed = folder.replace(/[\r\n]+/g, ' ').trim()
   if (!trimmed) return ''
-  const rawTitle = folderTitle(trimmed, { issues, titles, pattern })
+  const rawTitle = folderTitle(trimmed, { issues, pattern })
   const title = typeof rawTitle === 'string' ? rawTitle.replace(/[\r\n]+/g, ' ').trim() : ''
   const hasDistinctTitle = title && title.toLowerCase() !== trimmed.toLowerCase()
   return hasDistinctTitle ? `${trimmed} (${title}): ` : `${trimmed}: `
@@ -690,7 +690,7 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden, activeSessionId }
 }
 
 // What the Inbox webview draws: sessions that need the person first, then one card per folder/ticket.
-const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now, githubScope, activeSessionId }) => {
+const inboxModel = ({ groups, hidden, prs, issues, pattern, cacheTtl, now, githubScope, activeSessionId }) => {
   const options = { pattern, now, cacheTtl, activeSessionId }
   const card = (group, isHidden) => {
     const key = group.ticket
@@ -703,7 +703,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
       key,
       ticketKey: ticketKey ?? null,
       isTicket,
-      title: folderTitle(key, { issues, titles, pattern, ticketsOnly: true }),
+      title: folderTitle(key, { issues, pattern }),
       category: issue?.category ?? null,
       status: issue?.status ?? null,
       sessions,
