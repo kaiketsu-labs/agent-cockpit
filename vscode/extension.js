@@ -77,15 +77,20 @@ const readJson = async (file, fallback) => {
   }
 }
 
+const ephemeralPids = new Set()
+
 const run = (file, args, input, options = {}) =>
   new Promise((resolve, reject) => {
-    const child = execFile(file, args, { maxBuffer: 16 * 1024 * 1024, ...options }, (err, stdout, stderr) => {
+    const { ephemeral, ...execOptions } = options
+    const child = execFile(file, args, { maxBuffer: 16 * 1024 * 1024, ...execOptions }, (err, stdout, stderr) => {
+      if (ephemeral && child.pid) ephemeralPids.delete(child.pid)
       if (err) {
         err.stderr = stderr
         return reject(err)
       }
       resolve(stdout)
     })
+    if (ephemeral && child.pid) ephemeralPids.add(child.pid)
     // A process that exits before reading its stdin would otherwise throw EPIPE.
     child.stdin.on('error', () => {})
     child.stdin.end(input)
@@ -140,7 +145,10 @@ const getCockpitConfig = env => {
   }
 }
 
-const listAgents = async () => JSON.parse(await run(CLAUDE, ['agents', '--json', '--all']))
+const listAgents = async () => {
+  const agents = JSON.parse(await run(CLAUDE, ['agents', '--json', '--all']))
+  return ephemeralPids.size > 0 ? agents.filter(agent => !ephemeralPids.has(agent.pid)) : agents
+}
 
 const readSessionFiles = async () => {
   const readDir = async dir => {
@@ -269,6 +277,7 @@ const autoRenameSession = async (session, provider, refresh) => {
             cwd,
             env: { ...process.env, AGENT_COCKPIT_BRIEFING: '1' },
             timeout: 25_000,
+            ephemeral: true,
           },
         )
         const parsed = parseClassificationReply(stdout)
