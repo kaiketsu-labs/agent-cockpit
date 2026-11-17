@@ -296,14 +296,6 @@ const sessionRow = row => {
     nameEl,
   ]
 
-  if (row.isActiveTerminal) {
-    topElements.push(
-      el('span', { class: 'active-term-badge', title: 'Open in active terminal tab' },
-        icon('terminal')
-      )
-    )
-  }
-
   const actions = el('span', { class: 'actions' },
     iconBtn('sparkle', 'Auto-rename session from full history', () => onAutoRename(row.id)),
     iconBtn('edit', 'Rename session', () => startSessionRename(row)),
@@ -325,6 +317,14 @@ const sessionRow = row => {
       actions
     )
   )
+
+  if (row.isActiveTerminal) {
+    topElements.push(
+      el('span', { class: 'active-term-badge', title: 'Open in active terminal tab' },
+        icon('terminal')
+      )
+    )
+  }
 
   if (isWarm) {
     topElements.push(
