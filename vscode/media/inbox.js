@@ -158,11 +158,10 @@ const submitFolderRename = (c, newName) => {
 const renaming = new Map()
 
 const onAutoRename = id => {
+  if (renaming.has(id)) return
   const card = document.getElementById('session-' + id)
   if (card) card.classList.add('renaming')
-  const currentName = data.model
-    ? [...data.model.tickets.flatMap(t => t.sessions), ...data.model.loose].find(s => s.id === id)?.name
-    : ''
+  const currentName = findSession(id)?.name ?? ''
   renaming.set(id, currentName)
   send('autoRename', { id })
   setTimeout(() => {

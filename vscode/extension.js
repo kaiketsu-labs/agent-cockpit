@@ -230,8 +230,9 @@ const rename = async (session, rawName, pattern) => {
 const renamingSessions = new Set()
 
 const autoRenameSession = async (session, provider, refresh) => {
-  if (!session || renamingSessions.has(session.id)) return
-  renamingSessions.add(session.id)
+  const renameKey = session?.sessionId ?? session?.id
+  if (!renameKey || renamingSessions.has(renameKey)) return
+  renamingSessions.add(renameKey)
   const label = withoutTicketSuffix(session.name, provider.pattern) || session.name
   try {
     await vscode.window.withProgress(
@@ -311,7 +312,7 @@ const autoRenameSession = async (session, provider, refresh) => {
         (err?.code === 'ENOENT' ? 'Claude CLI not found' : 'Claude CLI returned an error')
     vscode.window.showWarningMessage(`Auto-rename failed: ${reason}`)
   } finally {
-    renamingSessions.delete(session.id)
+    renamingSessions.delete(renameKey)
   }
 }
 
