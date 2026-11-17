@@ -345,12 +345,12 @@ const parseJiraIssuePayload = (issue, baseUrl) => {
     : undefined
 }
 
-const loadJiraViaAcli = async (keys, baseUrl, cwd) => {
+const loadJiraViaAcli = async (keys, baseUrl, cwd, env) => {
   const issues = {}
   await Promise.all(
     keys.map(async key => {
       try {
-        const out = await run(ACLI, ['jira', 'workitem', 'view', key, '--json'], undefined, { cwd })
+        const out = await run(ACLI, ['jira', 'workitem', 'view', key, '--json'], undefined, { cwd, env })
         const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
         if (parsed) issues[parsed.key] = parsed.value
       } catch {}
@@ -359,10 +359,10 @@ const loadJiraViaAcli = async (keys, baseUrl, cwd) => {
   return issues
 }
 
-const loadJiraViaJiraCli = async (keys, baseUrl, cwd) => {
+const loadJiraViaJiraCli = async (keys, baseUrl, cwd, env) => {
   try {
     const jql = `key in (${keys.join(',')})`
-    const out = await run(JIRA_CLI, ['issue', 'list', '--jql', jql, '--raw'], undefined, { cwd })
+    const out = await run(JIRA_CLI, ['issue', 'list', '--jql', jql, '--raw'], undefined, { cwd, env })
     const data = JSON.parse(out)
     const list = Array.isArray(data) ? data : (data.issues ?? [])
     const issues = {}
@@ -376,7 +376,7 @@ const loadJiraViaJiraCli = async (keys, baseUrl, cwd) => {
   await Promise.all(
     keys.map(async key => {
       try {
-        const out = await run(JIRA_CLI, ['issue', 'view', key, '--raw'], undefined, { cwd })
+        const out = await run(JIRA_CLI, ['issue', 'view', key, '--raw'], undefined, { cwd, env })
         const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
         if (parsed) issues[parsed.key] = parsed.value
       } catch {}
@@ -393,28 +393,61 @@ const loadJiraViaRest = async (env, keys) => {
   const authHeader = email
     ? `Authorization: Basic ${Buffer.from(`${email}:${token}`).toString('base64')}\n`
     : `Authorization: Bearer ${token}\n`
-  const jql = encodeURIComponent(`key in (${keys.join(',')})`)
-  const endpoints = [
-    `${baseUrl}/rest/api/3/search/jql?maxResults=${keys.length}&fields=status,summary&jql=${jql}`,
-    `${baseUrl}/rest/api/2/search?validateQuery=warn&maxResults=${keys.length}&fields=status,summary&jql=${jql}`,
-  ]
-  let lastErr
-  for (const url of endpoints) {
+
+  const fetchBatch = async batchKeys => {
+    const jql = encodeURIComponent(`key in (${batchKeys.join(',')})`)
+    const endpoints = [
+      `${baseUrl}/rest/api/3/search/jql?maxResults=${batchKeys.length}&fields=status,summary&jql=${jql}`,
+      `${baseUrl}/rest/api/2/search?validateQuery=warn&maxResults=${batchKeys.length}&fields=status,summary&jql=${jql}`,
+    ]
+    let lastErr
+    for (const url of endpoints) {
+      try {
+        // The token goes in on stdin, so it never shows in the process list.
+        const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader)
+        const issues = {}
+        for (const issue of JSON.parse(body).issues ?? []) {
+          const parsed = parseJiraIssuePayload(issue, baseUrl)
+          if (parsed) issues[parsed.key] = parsed.value
+        }
+        return issues
+      } catch (err) {
+        lastErr = err
+      }
+    }
+    throw lastErr
+  }
+
+  const fetchSingle = async key => {
+    const encoded = encodeURIComponent(key)
+    for (const version of ['3', '2']) {
+      try {
+        const url = `${baseUrl}/rest/api/${version}/issue/${encoded}?fields=status,summary`
+        const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader)
+        return parseJiraIssuePayload(JSON.parse(body), baseUrl)
+      } catch {}
+    }
+    return undefined
+  }
+
+  const issues = {}
+  let firstBatchErr
+  for (let i = 0; i < keys.length; i += 50) {
+    const batch = keys.slice(i, i + 50)
     try {
-      // The token goes in on stdin, so it never shows in the process list.
-      const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader)
-      const issues = {}
-      for (const issue of JSON.parse(body).issues ?? []) {
-        const parsed = parseJiraIssuePayload(issue, baseUrl)
+      Object.assign(issues, await fetchBatch(batch))
+    } catch (err) {
+      if (!firstBatchErr) firstBatchErr = err
+      // A single invalid/inaccessible key in `key in (...)` makes Jira return 400 for the whole batch;
+      // fall back to per-key requests so valid tickets still resolve.
+      const singles = await Promise.all(batch.map(fetchSingle))
+      for (const parsed of singles) {
         if (parsed) issues[parsed.key] = parsed.value
       }
-      return issues
-    } catch (err) {
-      lastErr = err
     }
   }
-  if (lastErr) throw lastErr
-  return {}
+  if (Object.keys(issues).length === 0 && firstBatchErr) throw firstBatchErr
+  return issues
 }
 
 // Cascade for Jira issues: 1) REST when JIRA_URL + JIRA_TOKEN are set, 2) Atlassian CLI (acli), 3) jira-cli (jira).
@@ -427,9 +460,9 @@ const loadJiraIssues = async (env, keys, cwd) => {
       if (Object.keys(rest).length > 0) return rest
     } catch {}
   }
-  const viaAcli = await loadJiraViaAcli(keys, baseUrl, cwd)
+  const viaAcli = await loadJiraViaAcli(keys, baseUrl, cwd, env)
   if (Object.keys(viaAcli).length > 0) return viaAcli
-  const viaJiraCli = await loadJiraViaJiraCli(keys, baseUrl, cwd)
+  const viaJiraCli = await loadJiraViaJiraCli(keys, baseUrl, cwd, env)
   if (Object.keys(viaJiraCli).length > 0) return viaJiraCli
   if (baseUrl && (env.JIRA_TOKEN || env.JIRA_API_TOKEN)) {
     return loadJiraViaRest(env, keys)
@@ -568,6 +601,7 @@ class SessionsProvider {
     this.view = {}
     this.cacheTtl = cacheTtlMs({})
     this.isLoaded = false
+    this.attemptedIssueKeys = new Set()
   }
 
   get order() {
@@ -791,10 +825,35 @@ class SessionsProvider {
     }
 
     // PRs only for live ticket folders: each six keys cost one of GitHub's 30 searches a minute.
-    const repoOptions = isDue('issues', TRACKER_MS) || isDue('prs', PRS_MS) ? await resolveRepoOptions() : {}
+    const issuesDue = isDue('issues', TRACKER_MS)
+    const missingIssueKeys =
+      withRemote && !issuesDue
+        ? allTicketKeys.filter(k => !(k in this.issues) && !this.attemptedIssueKeys.has(k))
+        : []
+    const shouldFetchIssues = issuesDue || missingIssueKeys.length > 0
+    const issueKeysToFetch = issuesDue ? allTicketKeys : missingIssueKeys
+    const repoOptions = shouldFetchIssues || isDue('prs', PRS_MS) ? await resolveRepoOptions() : {}
     await Promise.all([
-      isDue('issues', TRACKER_MS) &&
-        this.track('tracker', async () => (this.issues = await loadIssues(this.env, allTicketKeys, this.config, cwd, repoOptions)), 'issues'),
+      shouldFetchIssues &&
+        this.track(
+          'tracker',
+          async () => {
+            const loaded = await loadIssues(this.env, issueKeysToFetch, this.config, cwd, repoOptions)
+            for (const k of issueKeysToFetch) this.attemptedIssueKeys.add(k)
+            if (issuesDue) {
+              this.attemptedIssueKeys = new Set(allTicketKeys)
+              const next = {}
+              for (const k of allTicketKeys) {
+                if (loaded[k]) next[k] = loaded[k]
+                else if (this.issues[k]) next[k] = this.issues[k]
+              }
+              this.issues = next
+            } else if (Object.keys(loaded).length > 0) {
+              this.issues = { ...this.issues, ...loaded }
+            }
+          },
+          issuesDue ? 'issues' : undefined,
+        ),
       isDue('prs', PRS_MS) &&
         this.track('gh search', async () => {
           this.prs = await loadPrs(activeTicketKeys, this.config, repoOptions)
@@ -1186,7 +1245,7 @@ const buildBriefingMarkdown = async provider => {
     const key = group.ticket
     const tKey = folderTicket(key, provider.pattern)
     const issue = key ? (provider.issues[key] ?? (tKey ? provider.issues[tKey] : undefined)) : undefined
-    const title = key ? (provider.titles[key] ?? (tKey ? provider.titles[tKey] : undefined) ?? issue?.summary ?? '') : ''
+    const title = key ? (issue?.summary ?? provider.titles[key] ?? (tKey ? provider.titles[tKey] : undefined) ?? '') : ''
     const prs = key ? (provider.prs[key] ?? (tKey ? provider.prs[tKey] : undefined) ?? []) : []
     lines.push(`## Folder: ${key ? `${key}${title ? ` — ${title}` : ''}` : 'Ungrouped Sessions'}`)
     if (issue?.status) lines.push(`- **Ticket Status:** ${issue.status}`)

@@ -266,7 +266,7 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
         },
         title: {
           type: 'string',
-          description: 'Optional short subtitle (at most 6 words) shown beside the ticket header in the sidebar (tickets only).',
+          description: 'Optional exact ticket summary/title from the issue tracker shown beside the ticket header in the sidebar (tickets only). Omit if not fetched; do not invent or paraphrase.',
         },
       },
       required: ['summary'],
@@ -274,13 +274,13 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
   })
   await $.tool.register({
     name: 'set_ticket_titles',
-    description: 'Stores short subtitles for folders or tickets shown beside their headers in the Agent Cockpit sidebar.',
+    description: 'Stores issue-tracker subtitles for ticket folders shown beside their headers in the Agent Cockpit sidebar.',
     inputSchema: {
       type: 'object',
       properties: {
         titles: {
           type: 'object',
-          description: 'Folder name or ticket key to its short subtitle (at most 6 words), e.g. {"PROJ-1234": "Add PDF endpoint", "Auth Refactor": "OAuth2 token flow"}',
+          description: 'Ticket key to its exact issue summary from the tracker, e.g. {"PROJ-1234": "Add PDF export endpoint"}',
           additionalProperties: { type: 'string' },
         },
       },
