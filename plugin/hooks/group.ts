@@ -31,7 +31,9 @@ export const normalizeTicket = (ticket: string): string => {
 
 export const extractTicket = (text: string, projects: readonly string[] = []): string | undefined => {
   const match = text.match(ticketSearchRegex(projects))?.[0]
-  return match ? normalizeTicket(match) : undefined
+  if (match) return normalizeTicket(match)
+  const ghUrl = text.match(/https?:\/\/[^/\s]+\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/(\d+)\b/i)
+  return ghUrl ? `${ghUrl[1]}#${ghUrl[2]}` : undefined
 }
 
 export const normalizeFolder = (folder: string, projects: readonly string[] = []): string => {
