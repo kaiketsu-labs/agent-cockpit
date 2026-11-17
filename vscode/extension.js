@@ -32,6 +32,7 @@ const {
   cacheTtlMs,
   age,
   inboxModel,
+  folderTitle,
   prefillForFolder,
 } = require('./group')
 const { InboxView } = require('./inbox')
@@ -454,19 +455,20 @@ const loadJiraViaRest = async (env, keys) => {
 const loadJiraIssues = async (env, keys, cwd) => {
   if (keys.length === 0) return {}
   const baseUrl = env.JIRA_URL
+  let restErr
   if (baseUrl && (env.JIRA_TOKEN || env.JIRA_API_TOKEN)) {
     try {
       const rest = await loadJiraViaRest(env, keys)
       if (Object.keys(rest).length > 0) return rest
-    } catch {}
+    } catch (err) {
+      restErr = err
+    }
   }
   const viaAcli = await loadJiraViaAcli(keys, baseUrl, cwd, env)
   if (Object.keys(viaAcli).length > 0) return viaAcli
   const viaJiraCli = await loadJiraViaJiraCli(keys, baseUrl, cwd, env)
   if (Object.keys(viaJiraCli).length > 0) return viaJiraCli
-  if (baseUrl && (env.JIRA_TOKEN || env.JIRA_API_TOKEN)) {
-    return loadJiraViaRest(env, keys)
-  }
+  if (restErr) throw restErr
   return {}
 }
 
@@ -840,6 +842,7 @@ class SessionsProvider {
           async () => {
             const loaded = await loadIssues(this.env, issueKeysToFetch, this.config, cwd, repoOptions)
             for (const k of issueKeysToFetch) this.attemptedIssueKeys.add(k)
+            await this.healStaleTitles(loaded)
             if (issuesDue) {
               this.attemptedIssueKeys = new Set(allTicketKeys)
               const next = {}
@@ -869,6 +872,22 @@ class SessionsProvider {
       before.has(session.id) &&
       before.get(session.id) !== session.state,
     )
+  }
+
+  async healStaleTitles(loaded) {
+    if (!loaded || typeof loaded !== 'object') return
+    let changed = false
+    const nextTitles = { ...this.titles }
+    for (const [key, issue] of Object.entries(loaded)) {
+      if (issue?.summary && nextTitles[key] && nextTitles[key] !== issue.summary) {
+        nextTitles[key] = issue.summary
+        changed = true
+      }
+    }
+    if (!changed) return
+    this.titles = nextTitles
+    await fs.promises.mkdir(COCKPIT_DIR, { recursive: true }).catch(() => {})
+    await fs.promises.writeFile(TITLES_FILE, JSON.stringify(nextTitles, null, 2)).catch(() => {})
   }
 
   async track(label, load, fetched) {
@@ -1245,7 +1264,7 @@ const buildBriefingMarkdown = async provider => {
     const key = group.ticket
     const tKey = folderTicket(key, provider.pattern)
     const issue = key ? (provider.issues[key] ?? (tKey ? provider.issues[tKey] : undefined)) : undefined
-    const title = key ? (issue?.summary ?? provider.titles[key] ?? (tKey ? provider.titles[tKey] : undefined) ?? '') : ''
+    const title = folderTitle(key, { issues: provider.issues, titles: provider.titles, pattern: provider.pattern, ticketsOnly: true })
     const prs = key ? (provider.prs[key] ?? (tKey ? provider.prs[tKey] : undefined) ?? []) : []
     lines.push(`## Folder: ${key ? `${key}${title ? ` — ${title}` : ''}` : 'Ungrouped Sessions'}`)
     if (issue?.status) lines.push(`- **Ticket Status:** ${issue.status}`)
@@ -1414,13 +1433,7 @@ const search = async provider => {
     .map(session => {
       const status = STATUS[session.state] ?? { label: session.state, icon: 'circle-outline' }
       const folder = session.folder ?? session.ticket
-      const tKey = folderTicket(folder, provider.pattern)
-      const title =
-        tKey &&
-        (provider.issues[folder]?.summary ??
-          provider.issues[tKey]?.summary ??
-          provider.titles[folder] ??
-          provider.titles[tKey])
+      const title = folderTitle(folder, { issues: provider.issues, titles: provider.titles, pattern: provider.pattern, ticketsOnly: true })
       const when = `${age(now - session.updatedAt)}${provider.isHidden(session) ? ' · hidden' : ''}`
       return {
         label: `$(${status.icon}) ${withoutTicketSuffix(session.name, provider.pattern) || session.name}`,
@@ -1445,14 +1458,11 @@ const moveToFolder = async (session, provider, refresh) => {
   ])
   const items = [
     { label: '$(add) New folder or ticket…', action: 'new' },
-    ...([...known].map(f => {
-      const tKey = folderTicket(f, provider.pattern)
-      return {
-        label: `$(folder) ${f}`,
-        description: tKey ? (provider.issues[tKey]?.summary ?? provider.titles[f] ?? provider.titles[tKey] ?? '') : '',
-        folder: f,
-      }
-    })),
+    ...([...known].map(f => ({
+      label: `$(folder) ${f}`,
+      description: folderTitle(f, { issues: provider.issues, titles: provider.titles, pattern: provider.pattern, ticketsOnly: true }),
+      folder: f,
+    }))),
     ...(session.folder || session.ticket ? [{ label: '$(close) Remove from folder (Ungrouped)', action: 'none' }] : []),
   ]
   const picked = await vscode.window.showQuickPick(items, {

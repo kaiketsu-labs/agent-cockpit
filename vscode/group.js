@@ -278,16 +278,21 @@ const parseClassificationReply = text => {
   }
 }
 
+const folderTitle = (folder, { issues = {}, titles = {}, pattern = ticketPattern(), ticketsOnly = false } = {}) => {
+  if (!folder || typeof folder !== 'string') return ''
+  const trimmed = folder.trim()
+  if (!trimmed) return ''
+  const ticketKey = folderTicket(trimmed, pattern)
+  if (ticketsOnly && !ticketKey) return ''
+  const issue = issues[trimmed] ?? (ticketKey ? issues[ticketKey] : undefined)
+  return issue?.summary ?? titles[trimmed] ?? (ticketKey ? titles[ticketKey] : undefined) ?? ''
+}
+
 const prefillForFolder = (folder, { issues = {}, titles = {}, pattern = ticketPattern() } = {}) => {
   if (!folder || typeof folder !== 'string') return ''
   const trimmed = folder.replace(/[\r\n]+/g, ' ').trim()
   if (!trimmed) return ''
-  const ticketKey = folderTicket(trimmed, pattern)
-  const rawTitle =
-    issues[trimmed]?.summary ??
-    (ticketKey ? issues[ticketKey]?.summary : undefined) ??
-    titles[trimmed] ??
-    (ticketKey ? titles[ticketKey] : undefined)
+  const rawTitle = folderTitle(trimmed, { issues, titles, pattern })
   const title = typeof rawTitle === 'string' ? rawTitle.replace(/[\r\n]+/g, ' ').trim() : ''
   const hasDistinctTitle = title && title.toLowerCase() !== trimmed.toLowerCase()
   return hasDistinctTitle ? `${trimmed} (${title}): ` : `${trimmed}: `
@@ -698,7 +703,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
       key,
       ticketKey: ticketKey ?? null,
       isTicket,
-      title: isTicket ? (issue?.summary ?? titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? '') : '',
+      title: folderTitle(key, { issues, titles, pattern, ticketsOnly: true }),
       category: issue?.category ?? null,
       status: issue?.status ?? null,
       sessions,
@@ -760,5 +765,6 @@ module.exports = {
   shortCwd,
   inboxRow,
   inboxModel,
+  folderTitle,
   prefillForFolder,
 }

@@ -38,6 +38,7 @@ const {
   shortCwd,
   inboxRow,
   inboxModel,
+  folderTitle,
   prefillForFolder,
 } = require('./group')
 
@@ -1016,4 +1017,18 @@ test('notifyOnWaiting configuration setting is declared with smart, always, off'
   assert.equal(notifyProp.default, 'smart')
   assert.deepEqual(notifyProp.enum, ['smart', 'always', 'off'])
   assert.equal(notifyProp.type, 'string')
+})
+
+test('folderTitle resolves tracker summary first, then cached titles, and respects ticketsOnly', () => {
+  const proj = ticketPattern(['PROJ'])
+  const opts = {
+    issues: { 'PROJ-10': { summary: 'Exact Jira Summary' } },
+    titles: { 'PROJ-10': 'Old Stale Subtitle', 'PROJ-11': 'Fallback Title', 'Auth Refactor': 'OAuth2 Cleanup' },
+    pattern: proj,
+  }
+  assert.equal(folderTitle('PROJ-10', opts), 'Exact Jira Summary')
+  assert.equal(folderTitle('PROJ-11', opts), 'Fallback Title')
+  assert.equal(folderTitle('Auth Refactor', opts), 'OAuth2 Cleanup')
+  assert.equal(folderTitle('Auth Refactor', { ...opts, ticketsOnly: true }), '')
+  assert.equal(folderTitle(null, opts), '')
 })
