@@ -458,10 +458,10 @@ h2.toggle:hover {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 3px;
-  background: var(--vscode-badge-background, #4d4d4d);
-  color: var(--vscode-badge-foreground, #ffffff);
-  border: 1px solid var(--vscode-focusBorder, #007acc);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 20%, transparent);
+  color: var(--vscode-charts-blue, #3794ff);
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #007acc) 55%, transparent);
   flex-shrink: 0;
 }
 .active-term-badge svg {
@@ -664,13 +664,19 @@ h2.toggle:hover {
   border-radius: var(--radius-sm);
   padding-left: 2px;
 }
+.session-card.active-terminal .actions {
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 16%, var(--card-bg));
+  box-shadow: -8px 0 8px color-mix(in srgb, var(--vscode-focusBorder, #007acc) 16%, var(--card-bg));
+}
 .session-card.has-cache .session-right .actions,
 .session-right.has-cache .actions {
   right: 0;
 }
 .head:hover .actions, .session-card:hover .actions { display: inline-flex; }
+.head.editing .actions, .session-card.editing .actions { display: none !important; }
 .head:hover .meta.hide-on-hover { display: none; }
 .session-card:hover .meta.hide-on-hover { visibility: hidden; pointer-events: none; }
+.session-card.editing .meta.hide-on-hover { display: none; }
 
 /* Icons */
 .ico { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
