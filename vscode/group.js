@@ -278,16 +278,21 @@ const parseClassificationReply = text => {
   }
 }
 
-const prefillForFolder = (folder, { issues = {}, titles = {}, pattern = ticketPattern() } = {}) => {
+const folderTitle = (folder, { issues = {}, pattern = ticketPattern() } = {}) => {
+  if (!folder || typeof folder !== 'string') return ''
+  const trimmed = folder.trim()
+  if (!trimmed) return ''
+  const ticketKey = folderTicket(trimmed, pattern)
+  if (!ticketKey) return ''
+  const issue = issues[trimmed] ?? issues[ticketKey]
+  return issue?.summary ?? ''
+}
+
+const prefillForFolder = (folder, { issues = {}, pattern = ticketPattern() } = {}) => {
   if (!folder || typeof folder !== 'string') return ''
   const trimmed = folder.replace(/[\r\n]+/g, ' ').trim()
   if (!trimmed) return ''
-  const ticketKey = folderTicket(trimmed, pattern)
-  const rawTitle =
-    issues[trimmed]?.summary ??
-    (ticketKey ? issues[ticketKey]?.summary : undefined) ??
-    titles[trimmed] ??
-    (ticketKey ? titles[ticketKey] : undefined)
+  const rawTitle = folderTitle(trimmed, { issues, pattern })
   const title = typeof rawTitle === 'string' ? rawTitle.replace(/[\r\n]+/g, ' ').trim() : ''
   const hasDistinctTitle = title && title.toLowerCase() !== trimmed.toLowerCase()
   return hasDistinctTitle ? `${trimmed} (${title}): ` : `${trimmed}: `
@@ -685,7 +690,7 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden, activeSessionId }
 }
 
 // What the Inbox webview draws: sessions that need the person first, then one card per folder/ticket.
-const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, now, githubScope, activeSessionId }) => {
+const inboxModel = ({ groups, hidden, prs, issues, pattern, cacheTtl, now, githubScope, activeSessionId }) => {
   const options = { pattern, now, cacheTtl, activeSessionId }
   const card = (group, isHidden) => {
     const key = group.ticket
@@ -698,7 +703,7 @@ const inboxModel = ({ groups, hidden, prs, issues, titles, pattern, cacheTtl, no
       key,
       ticketKey: ticketKey ?? null,
       isTicket,
-      title: isTicket ? (issue?.summary ?? titles[key] ?? (ticketKey ? titles[ticketKey] : undefined) ?? '') : '',
+      title: folderTitle(key, { issues, pattern }),
       category: issue?.category ?? null,
       status: issue?.status ?? null,
       sessions,
@@ -760,5 +765,6 @@ module.exports = {
   shortCwd,
   inboxRow,
   inboxModel,
+  folderTitle,
   prefillForFolder,
 }

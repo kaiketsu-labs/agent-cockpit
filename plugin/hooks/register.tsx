@@ -17,11 +17,9 @@ import {
 } from './group'
 
 const NAME_TOOL = 'mcp__cockpit__name_session'
-const TITLES_TOOL = 'mcp__cockpit__set_ticket_titles'
 const KEEP_WARM_TOOL = 'mcp__cockpit__keep_warm'
 
 const LEGACY_NAME_TOOL = 'mcp__deck__name_session'
-const LEGACY_TITLES_TOOL = 'mcp__deck__set_ticket_titles'
 const LEGACY_KEEP_WARM_TOOL = 'mcp__deck__keep_warm'
 
 // What the Agent Cockpit VS Code sidebar lists; it reads these files, never the transcripts.
@@ -45,15 +43,7 @@ type SessionFile = {
 
 const claudeDir = async ($: EngineInterface) => `${await $.env.get('HOME')}/.claude`
 
-const titlesFile = async ($: EngineInterface) => `${await claudeDir($)}/cockpit/ticket-titles.json`
-
 const viewFile = async ($: EngineInterface) => `${await claudeDir($)}/cockpit/view.json`
-
-const storedTitles = async ($: EngineInterface) =>
-  JSON.parse(await $.fs.read(await titlesFile($)).catch(() => '{}')) as Record<string, string>
-
-const storeTitles = async ($: EngineInterface, added: Record<string, string>) =>
-  $.fs.write(await titlesFile($), JSON.stringify({ ...(await storedTitles($)), ...added }, null, 2))
 
 const sessionFile = async ($: EngineInterface, sessionId: string) => `${await claudeDir($)}/cockpit/sessions/${sessionId}.json`
 
@@ -264,27 +254,8 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
           type: 'string',
           description: 'Alias for folder when binding to a ticket key (e.g. PROJ-123, #42).',
         },
-        title: {
-          type: 'string',
-          description: 'Optional short subtitle (at most 6 words) shown beside the ticket header in the sidebar (tickets only).',
-        },
       },
       required: ['summary'],
-    },
-  })
-  await $.tool.register({
-    name: 'set_ticket_titles',
-    description: 'Stores short subtitles for folders or tickets shown beside their headers in the Agent Cockpit sidebar.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        titles: {
-          type: 'object',
-          description: 'Folder name or ticket key to its short subtitle (at most 6 words), e.g. {"PROJ-1234": "Add PDF endpoint", "Auth Refactor": "OAuth2 token flow"}',
-          additionalProperties: { type: 'string' },
-        },
-      },
-      required: ['titles'],
     },
   })
   await $.tool.register({
@@ -420,11 +391,10 @@ const handleRenameCommand = async ($: EngineInterface, e: any, next: (e: any) =>
 }
 
 const handleNameTool = async ($: EngineInterface, e: unknown) => {
-  const { summary, folder, ticket, title } = e as unknown as {
+  const { summary, folder, ticket } = e as unknown as {
     summary: string
     folder?: string
     ticket?: string
-    title?: string
   }
   const record = await storedRecord($)
   const rawFolder = (folder ?? ticket)?.trim()
@@ -433,7 +403,6 @@ const handleNameTool = async ($: EngineInterface, e: unknown) => {
     : (ticketOf(summary, suffix) ?? record?.folder ?? record?.ticket)
   const name = sessionName(summary, resolvedFolder, suffix)
   await save($, { name, folder: resolvedFolder, ticket: resolvedFolder })
-  if (resolvedFolder && isTicketKey(resolvedFolder, projects) && title) await storeTitles($, { [resolvedFolder]: title })
   const sessionId = await $.session.id()
   const cwd = record?.cwd ?? (await $.session.cwd())
   await writeTranscriptTitle($, sessionId, cwd, name)
@@ -443,16 +412,6 @@ const handleNameTool = async ($: EngineInterface, e: unknown) => {
       ? `Named session "${name}" in folder "${resolvedFolder}". Continue with the user's request.`
       : `Named session "${name}". Continue with the user's request.`,
   }
-}
-
-const handleTitlesTool = async ($: EngineInterface, e: unknown) => {
-  const { titles: given } = e as unknown as { titles: Record<string, string> }
-  const normalized = Object.fromEntries(
-    Object.entries(given).map(([key, title]) => [normalizeFolder(key, projects) || normalizeTicket(key), title]),
-  )
-  await storeTitles($, normalized)
-
-  return { result: `Stored ${Object.keys(normalized).length} titles.` }
 }
 
 const handleKeepWarmTool = async ($: EngineInterface, e: unknown) => {
@@ -614,8 +573,6 @@ export const register: Register = on => {
   on('command.run', { command: 'retitle' }, handleRetitleCommand)
   on('tool.call', { tool: NAME_TOOL }, handleNameTool)
   on('tool.call', { tool: LEGACY_NAME_TOOL }, handleNameTool)
-  on('tool.call', { tool: TITLES_TOOL }, handleTitlesTool)
-  on('tool.call', { tool: LEGACY_TITLES_TOOL }, handleTitlesTool)
   on('tool.call', { tool: KEEP_WARM_TOOL }, handleKeepWarmTool)
   on('tool.call', { tool: LEGACY_KEEP_WARM_TOOL }, handleKeepWarmTool)
   on('tool.call', handleBashTicketDetection)
