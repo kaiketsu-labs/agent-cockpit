@@ -32,6 +32,7 @@ const {
   cacheTtlMs,
   age,
   inboxModel,
+  folderTitle,
   prefillForFolder,
 } = require('./group')
 const { InboxView } = require('./inbox')
@@ -42,10 +43,9 @@ const COCKPIT_DIR = path.join(CLAUDE_DIR, 'cockpit')
 const DECK_DIR = path.join(CLAUDE_DIR, 'deck')
 const SESSIONS_DIR = path.join(COCKPIT_DIR, 'sessions')
 const VIEW_FILE = path.join(COCKPIT_DIR, 'view.json')
-const TITLES_FILE = path.join(COCKPIT_DIR, 'ticket-titles.json')
 const BRIEFING_FILE = path.join(COCKPIT_DIR, 'briefing.md')
 const REFRESH_MS = 5_000
-const TRACKER_MS = 60_000
+const TRACKER_MS = 5 * 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
 const PRS_MS = 120_000
 const DEFAULT_KEEP_WARM_WINDOW_MS = 30 * 60_000
@@ -345,12 +345,12 @@ const parseJiraIssuePayload = (issue, baseUrl) => {
     : undefined
 }
 
-const loadJiraViaAcli = async (keys, baseUrl, cwd) => {
+const loadJiraViaAcli = async (keys, baseUrl, cwd, env) => {
   const issues = {}
   await Promise.all(
     keys.map(async key => {
       try {
-        const out = await run(ACLI, ['jira', 'workitem', 'view', key, '--json'], undefined, { cwd })
+        const out = await run(ACLI, ['jira', 'workitem', 'view', key, '--json'], undefined, { cwd, env })
         const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
         if (parsed) issues[parsed.key] = parsed.value
       } catch {}
@@ -359,10 +359,10 @@ const loadJiraViaAcli = async (keys, baseUrl, cwd) => {
   return issues
 }
 
-const loadJiraViaJiraCli = async (keys, baseUrl, cwd) => {
+const loadJiraViaJiraCli = async (keys, baseUrl, cwd, env) => {
   try {
     const jql = `key in (${keys.join(',')})`
-    const out = await run(JIRA_CLI, ['issue', 'list', '--jql', jql, '--raw'], undefined, { cwd })
+    const out = await run(JIRA_CLI, ['issue', 'list', '--jql', jql, '--raw'], undefined, { cwd, env })
     const data = JSON.parse(out)
     const list = Array.isArray(data) ? data : (data.issues ?? [])
     const issues = {}
@@ -376,7 +376,7 @@ const loadJiraViaJiraCli = async (keys, baseUrl, cwd) => {
   await Promise.all(
     keys.map(async key => {
       try {
-        const out = await run(JIRA_CLI, ['issue', 'view', key, '--raw'], undefined, { cwd })
+        const out = await run(JIRA_CLI, ['issue', 'view', key, '--raw'], undefined, { cwd, env })
         const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
         if (parsed) issues[parsed.key] = parsed.value
       } catch {}
@@ -393,47 +393,47 @@ const loadJiraViaRest = async (env, keys) => {
   const authHeader = email
     ? `Authorization: Basic ${Buffer.from(`${email}:${token}`).toString('base64')}\n`
     : `Authorization: Bearer ${token}\n`
-  const jql = encodeURIComponent(`key in (${keys.join(',')})`)
-  const endpoints = [
-    `${baseUrl}/rest/api/3/search/jql?maxResults=${keys.length}&fields=status,summary&jql=${jql}`,
-    `${baseUrl}/rest/api/2/search?validateQuery=warn&maxResults=${keys.length}&fields=status,summary&jql=${jql}`,
-  ]
+  const issues = {}
   let lastErr
-  for (const url of endpoints) {
-    try {
-      // The token goes in on stdin, so it never shows in the process list.
-      const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader)
-      const issues = {}
-      for (const issue of JSON.parse(body).issues ?? []) {
-        const parsed = parseJiraIssuePayload(issue, baseUrl)
-        if (parsed) issues[parsed.key] = parsed.value
+  await Promise.all(
+    keys.map(async key => {
+      const encoded = encodeURIComponent(key)
+      for (const version of ['3', '2']) {
+        try {
+          // The token goes in on stdin, so it never shows in the process list.
+          const url = `${baseUrl}/rest/api/${version}/issue/${encoded}?fields=status,summary`
+          const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader)
+          const parsed = parseJiraIssuePayload(JSON.parse(body), baseUrl)
+          if (parsed) issues[parsed.key] = parsed.value
+          return
+        } catch (err) {
+          lastErr = err
+        }
       }
-      return issues
-    } catch (err) {
-      lastErr = err
-    }
-  }
-  if (lastErr) throw lastErr
-  return {}
+    }),
+  )
+  if (Object.keys(issues).length === 0 && lastErr) throw lastErr
+  return issues
 }
 
 // Cascade for Jira issues: 1) REST when JIRA_URL + JIRA_TOKEN are set, 2) Atlassian CLI (acli), 3) jira-cli (jira).
 const loadJiraIssues = async (env, keys, cwd) => {
   if (keys.length === 0) return {}
   const baseUrl = env.JIRA_URL
+  let restErr
   if (baseUrl && (env.JIRA_TOKEN || env.JIRA_API_TOKEN)) {
     try {
       const rest = await loadJiraViaRest(env, keys)
       if (Object.keys(rest).length > 0) return rest
-    } catch {}
+    } catch (err) {
+      restErr = err
+    }
   }
-  const viaAcli = await loadJiraViaAcli(keys, baseUrl, cwd)
+  const viaAcli = await loadJiraViaAcli(keys, baseUrl, cwd, env)
   if (Object.keys(viaAcli).length > 0) return viaAcli
-  const viaJiraCli = await loadJiraViaJiraCli(keys, baseUrl, cwd)
+  const viaJiraCli = await loadJiraViaJiraCli(keys, baseUrl, cwd, env)
   if (Object.keys(viaJiraCli).length > 0) return viaJiraCli
-  if (baseUrl && (env.JIRA_TOKEN || env.JIRA_API_TOKEN)) {
-    return loadJiraViaRest(env, keys)
-  }
+  if (restErr) throw restErr
   return {}
 }
 
@@ -557,7 +557,6 @@ class SessionsProvider {
     this.sessions = []
     this.groups = []
     this.hidden = []
-    this.titles = {}
     this.issues = {}
     this.prs = {}
     this.fetchedAt = { sessions: 0, issues: 0, prs: 0 }
@@ -617,12 +616,6 @@ class SessionsProvider {
       return f === oldFolder || (f && normalizeFolder(f, this.pattern) === normOld)
     })
     await Promise.all(matching.map(s => updateSessionRecord(s, { folder: newFolder, ticket: newFolder })))
-    if (this.titles[oldFolder] && !this.titles[newFolder]) {
-      const titles = { ...(await readJson(TITLES_FILE, {})), [newFolder]: this.titles[oldFolder] }
-      delete titles[oldFolder]
-      this.titles = titles
-      await fs.promises.writeFile(TITLES_FILE, JSON.stringify(titles, null, 2)).catch(() => {})
-    }
     await this.saveView({ folders, order })
   }
 
@@ -676,13 +669,10 @@ class SessionsProvider {
       .map(project => project.trim())
       .filter(Boolean)
     this.pattern = ticketPattern(projects, this.config.ticketPattern)
-    await Promise.all([
-      this.track('claude agents', async () => {
-        this.sessions = await loadSessions(this.pattern)
-        this.regroup()
-      }, 'sessions'),
-      readJson(TITLES_FILE, {}).then(titles => (this.titles = titles)),
-    ])
+    await this.track('claude agents', async () => {
+      this.sessions = await loadSessions(this.pattern)
+      this.regroup()
+    }, 'sessions')
     const ticketKeysOf = items => [...new Set(items.map(k => folderTicket(k, this.pattern)).filter(Boolean))]
     const activeTicketKeys = ticketKeysOf(this.groups.map(group => group.ticket))
     const allTicketKeys = ticketKeysOf([
@@ -791,10 +781,20 @@ class SessionsProvider {
     }
 
     // PRs only for live ticket folders: each six keys cost one of GitHub's 30 searches a minute.
-    const repoOptions = isDue('issues', TRACKER_MS) || isDue('prs', PRS_MS) ? await resolveRepoOptions() : {}
+    const issuesDue = isDue('issues', TRACKER_MS)
+    const activeSet = new Set(activeTicketKeys)
+    const issueKeysToFetch = force ? allTicketKeys : allTicketKeys.filter(k => activeSet.has(k) || !(k in this.issues))
+    const repoOptions = issuesDue || isDue('prs', PRS_MS) ? await resolveRepoOptions() : {}
     await Promise.all([
-      isDue('issues', TRACKER_MS) &&
-        this.track('tracker', async () => (this.issues = await loadIssues(this.env, allTicketKeys, this.config, cwd, repoOptions)), 'issues'),
+      issuesDue &&
+        this.track(
+          'tracker',
+          async () => {
+            const loaded = await loadIssues(this.env, issueKeysToFetch, this.config, cwd, repoOptions)
+            if (Object.keys(loaded).length > 0) this.issues = { ...this.issues, ...loaded }
+          },
+          'issues',
+        ),
       isDue('prs', PRS_MS) &&
         this.track('gh search', async () => {
           this.prs = await loadPrs(activeTicketKeys, this.config, repoOptions)
@@ -846,7 +846,6 @@ class SessionsProvider {
       hidden: this.hidden,
       prs: this.prs,
       issues: this.issues,
-      titles: this.titles,
       pattern: this.pattern,
       cacheTtl: this.cacheTtl,
       now: Date.now(),
@@ -1186,7 +1185,7 @@ const buildBriefingMarkdown = async provider => {
     const key = group.ticket
     const tKey = folderTicket(key, provider.pattern)
     const issue = key ? (provider.issues[key] ?? (tKey ? provider.issues[tKey] : undefined)) : undefined
-    const title = key ? (provider.titles[key] ?? (tKey ? provider.titles[tKey] : undefined) ?? issue?.summary ?? '') : ''
+    const title = folderTitle(key, { issues: provider.issues, pattern: provider.pattern })
     const prs = key ? (provider.prs[key] ?? (tKey ? provider.prs[tKey] : undefined) ?? []) : []
     lines.push(`## Folder: ${key ? `${key}${title ? ` — ${title}` : ''}` : 'Ungrouped Sessions'}`)
     if (issue?.status) lines.push(`- **Ticket Status:** ${issue.status}`)
@@ -1335,7 +1334,6 @@ const migrateLegacyData = async () => {
     await Promise.all([
       copy(path.join(CLAUDE_DIR, 'tickets', 'sessions'), path.join(DECK_DIR, 'sessions')),
       copy(path.join(CLAUDE_DIR, 'tickets', 'view.json'), path.join(DECK_DIR, 'view.json')),
-      copy(path.join(CLAUDE_DIR, 'ticket-titles.json'), path.join(DECK_DIR, 'ticket-titles.json')),
     ]).catch(() => {})
   }
   if (!fs.existsSync(COCKPIT_DIR) && fs.existsSync(DECK_DIR)) {
@@ -1343,7 +1341,6 @@ const migrateLegacyData = async () => {
     await Promise.all([
       copy(path.join(DECK_DIR, 'sessions'), SESSIONS_DIR),
       copy(path.join(DECK_DIR, 'view.json'), VIEW_FILE),
-      copy(path.join(DECK_DIR, 'ticket-titles.json'), TITLES_FILE),
     ]).catch(() => {})
   }
 }
@@ -1355,13 +1352,7 @@ const search = async provider => {
     .map(session => {
       const status = STATUS[session.state] ?? { label: session.state, icon: 'circle-outline' }
       const folder = session.folder ?? session.ticket
-      const tKey = folderTicket(folder, provider.pattern)
-      const title =
-        tKey &&
-        (provider.issues[folder]?.summary ??
-          provider.issues[tKey]?.summary ??
-          provider.titles[folder] ??
-          provider.titles[tKey])
+      const title = folderTitle(folder, { issues: provider.issues, pattern: provider.pattern })
       const when = `${age(now - session.updatedAt)}${provider.isHidden(session) ? ' · hidden' : ''}`
       return {
         label: `$(${status.icon}) ${withoutTicketSuffix(session.name, provider.pattern) || session.name}`,
@@ -1386,14 +1377,11 @@ const moveToFolder = async (session, provider, refresh) => {
   ])
   const items = [
     { label: '$(add) New folder or ticket…', action: 'new' },
-    ...([...known].map(f => {
-      const tKey = folderTicket(f, provider.pattern)
-      return {
-        label: `$(folder) ${f}`,
-        description: tKey ? (provider.issues[tKey]?.summary ?? provider.titles[f] ?? provider.titles[tKey] ?? '') : '',
-        folder: f,
-      }
-    })),
+    ...([...known].map(f => ({
+      label: `$(folder) ${f}`,
+      description: folderTitle(f, { issues: provider.issues, pattern: provider.pattern }),
+      folder: f,
+    }))),
     ...(session.folder || session.ticket ? [{ label: '$(close) Remove from folder (Ungrouped)', action: 'none' }] : []),
   ]
   const picked = await vscode.window.showQuickPick(items, {
