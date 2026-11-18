@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.8.0...v0.9.0) (2026-11-17)
+
+
+### Features
+
+* **vscode:** polish sidebar UX with overlay actions, inline renaming, folder tools, and smart notifications ([#66](https://github.com/kaiketsu-labs/agent-cockpit/issues/66)) ([fa56bcb](https://github.com/kaiketsu-labs/agent-cockpit/commit/fa56bcb76161256d61415324ab68162f67932360))
+
+
+### Bug Fixes
+
+* **ci:** fetch tags before checking out release tag on workflow_dispatch ([#64](https://github.com/kaiketsu-labs/agent-cockpit/issues/64)) ([84e812b](https://github.com/kaiketsu-labs/agent-cockpit/commit/84e812b596505dfda2929dabbe2dc45978f955bb))
+* use only tracker issue summaries for ticket subtitles ([#67](https://github.com/kaiketsu-labs/agent-cockpit/issues/67)) ([02946a1](https://github.com/kaiketsu-labs/agent-cockpit/commit/02946a11d0e03713ea503eeb301e4369e06c9927))
+
 ## [0.8.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.7.0...v0.8.0) (2026-11-13)
 
 
