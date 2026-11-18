@@ -859,7 +859,7 @@ class SessionsProvider {
     const folder = normalizeFolder(rawFolder, this.pattern)
     const current = session.folder ?? session.ticket ?? undefined
     if (folder === current) return
-    await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null })
+    await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null, folderLocked: true })
     session.folder = folder ?? null
     session.ticket = folder ?? null
     this.regroup()
@@ -870,7 +870,7 @@ class SessionsProvider {
     const folder = normalizeFolder(rawFolder, this.pattern) ?? undefined
     const current = session.folder ?? session.ticket ?? undefined
     if (folder !== current) {
-      await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null })
+      await updateSessionRecord(session, { folder: folder ?? null, ticket: folder ?? null, folderLocked: true })
       session.folder = folder ?? null
       session.ticket = folder ?? null
     }
