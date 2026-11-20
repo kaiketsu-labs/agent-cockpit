@@ -33,6 +33,7 @@ const ticketPattern = (projects = [], customPattern = '') => {
       key: new RegExp(customPattern),
       exact: new RegExp(`^(?:${customPattern})$`),
       suffix: new RegExp(`\\s*\\((${customPattern})\\)\\s*$`),
+      restricted: true,
     }
   }
   if (projects.length > 0) {
@@ -41,6 +42,7 @@ const ticketPattern = (projects = [], customPattern = '') => {
       key: new RegExp(`\\b${key}\\b`, 'i'),
       exact: new RegExp(`^${key}$`, 'i'),
       suffix: new RegExp(`\\s*\\((${key})\\)\\s*$`, 'i'),
+      restricted: true,
     }
   }
   const key = '(?:\\b[A-Z][A-Z0-9]+-\\d+\\b|\\b[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+#\\d+\\b|(?<![A-Za-z0-9_.-])#\\d+\\b)'
@@ -49,13 +51,20 @@ const ticketPattern = (projects = [], customPattern = '') => {
     key: new RegExp(key),
     exact: new RegExp(`^${suffixKey}$`),
     suffix: new RegExp(`\\s*\\((${suffixKey})\\)\\s*$`),
+    restricted: false,
   }
 }
+
+const GITHUB_ISSUE_URL = /https?:\/\/[^/\s]+\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/(\d+)\b/i
 
 const firstTicket = (texts, pattern) => {
   for (const text of texts) {
     const match = text?.match(pattern.key)
     if (match) return normalizeTicket(match[0])
+    if (!pattern.restricted) {
+      const ghUrl = text?.match(GITHUB_ISSUE_URL)
+      if (ghUrl) return `${ghUrl[1]}#${ghUrl[2]}`
+    }
   }
   return undefined
 }
@@ -778,4 +787,5 @@ module.exports = {
   inboxModel,
   folderTitle,
   prefillForFolder,
+  escapeRegExp,
 }

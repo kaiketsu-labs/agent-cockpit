@@ -74,6 +74,10 @@ class InboxView {
     this.view?.webview.postMessage({ model: this.provider.inboxModel(), message: this.provider.message ?? '' })
   }
 
+  notifyAutoRenameDone(id) {
+    if (id) this.view?.webview.postMessage({ type: 'autoRenameDone', id })
+  }
+
   refresh() {
     this.post()
   }

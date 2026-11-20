@@ -47,6 +47,7 @@ test('extractTicket detects Jira and GitHub issue keys in free-form prompt text'
   expect(extractTicket('check out https://github.com/kaiketsu-labs/agent-cockpit/issues/46')).toBe(
     'kaiketsu-labs/agent-cockpit#46',
   )
+  expect(extractTicket('check out https://github.com/kaiketsu-labs/agent-cockpit/issues/46', ['PROJ'])).toBeUndefined()
   expect(extractTicket('just refactor the auth module')).toBeUndefined()
 })
 

@@ -174,18 +174,20 @@ const applyClassificationReply = async (
   const latest = await storedRecord($)
   if (latest?.name && !options.force) return { name: latest.name, folder: latest.folder ?? latest.ticket }
 
+  const isLocked = Boolean(latest?.folderLocked)
   const existingFolder = options.presetFolder ?? latest?.folder ?? latest?.ticket
   const suggestedFolder = parsed.folder ? normalizeFolder(parsed.folder, projects) : undefined
-  const resolvedFolder =
-    existingFolder && !(suggestedFolder && isTicketKey(suggestedFolder, projects) && suggestedFolder !== existingFolder)
+  const resolvedFolder = isLocked
+    ? (latest?.folder ?? latest?.ticket)
+    : existingFolder && !(suggestedFolder && isTicketKey(suggestedFolder, projects) && suggestedFolder !== existingFolder)
       ? normalizeFolder(existingFolder, projects)
       : (suggestedFolder ?? extractTicket(parsed.summary, projects) ?? ticketOf(parsed.summary, suffix) ?? latest?.folder ?? latest?.ticket)
   const name = sessionName(parsed.summary, resolvedFolder, suffix)
-  await save($, { name, ...(resolvedFolder ? { folder: resolvedFolder, ticket: resolvedFolder } : {}) })
+  await save($, { name, ...(!isLocked && resolvedFolder ? { folder: resolvedFolder, ticket: resolvedFolder } : {}) })
   const sessionId = await $.session.id()
   const cwd = latest?.cwd ?? (await $.session.cwd())
   await writeTranscriptTitle($, sessionId, cwd, name)
-  return { name, folder: resolvedFolder }
+  return { name, folder: resolvedFolder || undefined }
 }
 
 // Silently names and classifies the session in the background via Haiku so no tool call or system-reminder clutters the transcript.
