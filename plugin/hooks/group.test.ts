@@ -7,6 +7,7 @@ import {
   encodeProjectPath,
   extractTicket,
   extractTranscriptContext,
+  isHiddenInView,
   isTicketKey,
   normalizeFolder,
   normalizeTicket,
@@ -137,4 +138,25 @@ test('shortCwd extracts last directory segment or worktree name', () => {
   expect(shortCwd('')).toBeUndefined()
   expect(shortCwd(undefined)).toBeUndefined()
   expect(shortCwd('/')).toBeUndefined()
+})
+
+test('isHiddenInView detects archived interactive and background sessions', () => {
+  const view = {
+    hidden: {
+      'sess-bool': true,
+      'sess-ts': 1700000000000,
+      'sess-restored': false,
+      'sess-zero': 0,
+      'bg-job-42': 1700000000001,
+    },
+  }
+  expect(isHiddenInView(view, ['sess-bool'])).toBe(true)
+  expect(isHiddenInView(view, ['sess-ts'])).toBe(true)
+  expect(isHiddenInView(view, ['sess-restored'])).toBe(false)
+  expect(isHiddenInView(view, ['sess-zero'])).toBe(false)
+  expect(isHiddenInView(view, ['sess-unknown'])).toBe(false)
+  expect(isHiddenInView(view, ['bg-job-42-full-uuid', 'bg-job-42'])).toBe(true)
+  expect(isHiddenInView(view, ['bg-job-42-full-uuid', undefined])).toBe(false)
+  expect(isHiddenInView(undefined, ['sess-bool'])).toBe(false)
+  expect(isHiddenInView({}, ['sess-bool'])).toBe(false)
 })

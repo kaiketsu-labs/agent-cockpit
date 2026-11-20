@@ -591,21 +591,29 @@ test('inboxRow preserves keepWarm flag and calculates cache expiration', () => {
   assert.equal(hiddenWarmRow.keepWarm, false)
 })
 
-test('archiving a session disables keepWarm in extension.js and plugin/hooks/register.tsx', () => {
-  const extCode = fs.readFileSync(path.resolve(__dirname, 'extension.js'), 'utf8')
-  const hideMatch = extCode.match(/const hideSession = async \(session, provider\) => \{[\s\S]*?\n\}/)
-  assert.ok(hideMatch, 'hideSession must be defined in extension.js')
-  assert.ok(hideMatch[0].includes('session.keepWarm = false'), 'hideSession must clear session.keepWarm in memory')
-  assert.ok(
-    hideMatch[0].includes('updateSessionRecord(session, { keepWarm: false, keepWarmUntil: null })'),
-    'hideSession must persist keepWarm: false and keepWarmUntil: null',
-  )
-
-  const registerCode = fs.readFileSync(path.resolve(__dirname, '../plugin/hooks/register.tsx'), 'utf8')
-  assert.ok(
-    registerCode.includes('view.hidden?.[sessionId]'),
-    'register.tsx keepalive loop must check view.hidden and disable keepWarm for archived sessions',
-  )
+test('isHiddenInView detects archived interactive and background sessions', () => {
+  const { isHiddenInView } = require('./group')
+  const view = {
+    hidden: {
+      'sess-bool': true,
+      'sess-ts': 1700000000000,
+      'sess-restored': false,
+      'sess-zero': 0,
+      'bg-job-42': 1700000000001,
+    },
+  }
+  assert.equal(isHiddenInView(view, ['sess-bool']), true)
+  assert.equal(isHiddenInView(view, ['sess-ts']), true)
+  assert.equal(isHiddenInView(view, ['sess-restored']), false)
+  assert.equal(isHiddenInView(view, ['sess-zero']), false)
+  assert.equal(isHiddenInView(view, ['sess-unknown']), false)
+  // Background session: view.hidden is keyed by jobId (agent.id), not full sessionId
+  assert.equal(isHiddenInView(view, ['bg-job-42-full-uuid', 'bg-job-42']), true)
+  assert.equal(isHiddenInView(view, ['bg-job-42-full-uuid', undefined]), false)
+  // Missing or malformed view objects
+  assert.equal(isHiddenInView(undefined, ['sess-bool']), false)
+  assert.equal(isHiddenInView({}, ['sess-bool']), false)
+  assert.equal(isHiddenInView({ hidden: null }, ['sess-bool']), false)
 })
 
 test('plugin/hooks/register.tsx parses cleanly without TypeScript or async/await syntax errors', () => {

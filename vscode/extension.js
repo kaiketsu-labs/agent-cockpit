@@ -801,6 +801,10 @@ class SessionsProvider {
         }, 'prs'),
     ])
     this.regroup()
+    const hiddenWarm = this.sessions.filter(session => session.keepWarm && this.isHidden(session))
+    if (hiddenWarm.length > 0) {
+      await Promise.all(hiddenWarm.map(disableKeepWarmOnArchive))
+    }
     this.changed.fire()
     const wasLoaded = this.isLoaded
     this.isLoaded = this.fetchedAt.sessions > 0
@@ -1071,12 +1075,26 @@ const closeTerminalForSession = async session => {
   }
 }
 
+const disableKeepWarmOnArchive = async session => {
+  if (!session?.sessionId) return
+  const wasWarm = Boolean(session.keepWarm)
+  session.keepWarm = false
+  try {
+    if (!wasWarm) {
+      const file = path.join(SESSIONS_DIR, `${session.sessionId}.json`)
+      const legacyFile = path.join(DECK_DIR, 'sessions', `${session.sessionId}.json`)
+      const existing = fs.existsSync(file)
+        ? await readJson(file)
+        : (fs.existsSync(legacyFile) ? await readJson(legacyFile) : undefined)
+      if (!existing?.keepWarm) return
+    }
+    await updateSessionRecord(session, { keepWarm: false, keepWarmUntil: null })
+  } catch {}
+}
+
 const hideSession = async (session, provider) => {
   if (!session) return
-  if (session.keepWarm) {
-    session.keepWarm = false
-    await updateSessionRecord(session, { keepWarm: false, keepWarmUntil: null })
-  }
+  await disableKeepWarmOnArchive(session)
   await provider.setHidden(session, true)
   if (provider?.config?.closeTerminalOnArchive !== false) {
     await closeTerminalForSession(session)
@@ -1458,6 +1476,7 @@ const activate = async context => {
     toggleKeepWarm: async ({ id }) => {
       const session = sessionById(id)
       if (!session) return
+      if (provider.isHidden(session) && !session.keepWarm) return
       const next = !session.keepWarm
       await updateSessionRecord(session, {
         keepWarm: next,
@@ -1697,6 +1716,7 @@ const activate = async context => {
     ...registerCmd('toggleKeepWarm', async element => {
       const session = element?.session ?? (element?.id ? sessionById(element.id) : undefined)
       if (!session) return
+      if (provider.isHidden(session) && !session.keepWarm) return
       const next = !session.keepWarm
       await updateSessionRecord(session, {
         keepWarm: next,
