@@ -296,3 +296,16 @@ export const shortCwd = (cwd?: string): string | undefined => {
   const last = norm.split(/[/\\]/).pop()
   return last || undefined
 }
+
+export const isHiddenInView = (
+  view: { hidden?: Record<string, boolean | number> } | undefined,
+  ids: Array<string | undefined>,
+): boolean => {
+  const hidden = view?.hidden
+  if (!hidden || typeof hidden !== 'object') return false
+  return ids.some(id => {
+    if (!id) return false
+    const flag = hidden[id]
+    return flag === true || (typeof flag === 'number' && flag > 0)
+  })
+}

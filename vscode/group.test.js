@@ -586,6 +586,34 @@ test('inboxRow preserves keepWarm flag and calculates cache expiration', () => {
   assert.equal(warmRow.cache, '4:00')
   assert.equal(regularRow.cache, '4:00')
   assert.equal(warmRow.cacheExpiresAt, now - 60_000 + cacheTtl)
+
+  const hiddenWarmRow = inboxRow(warmSession, { pattern: anyKey, now, cacheTtl, isHidden: true })
+  assert.equal(hiddenWarmRow.keepWarm, false)
+})
+
+test('isHiddenInView detects archived interactive and background sessions', () => {
+  const { isHiddenInView } = require('./group')
+  const view = {
+    hidden: {
+      'sess-bool': true,
+      'sess-ts': 1700000000000,
+      'sess-restored': false,
+      'sess-zero': 0,
+      'bg-job-42': 1700000000001,
+    },
+  }
+  assert.equal(isHiddenInView(view, ['sess-bool']), true)
+  assert.equal(isHiddenInView(view, ['sess-ts']), true)
+  assert.equal(isHiddenInView(view, ['sess-restored']), false)
+  assert.equal(isHiddenInView(view, ['sess-zero']), false)
+  assert.equal(isHiddenInView(view, ['sess-unknown']), false)
+  // Background session: view.hidden is keyed by jobId (agent.id), not full sessionId
+  assert.equal(isHiddenInView(view, ['bg-job-42-full-uuid', 'bg-job-42']), true)
+  assert.equal(isHiddenInView(view, ['bg-job-42-full-uuid', undefined]), false)
+  // Missing or malformed view objects
+  assert.equal(isHiddenInView(undefined, ['sess-bool']), false)
+  assert.equal(isHiddenInView({}, ['sess-bool']), false)
+  assert.equal(isHiddenInView({ hidden: null }, ['sess-bool']), false)
 })
 
 test('plugin/hooks/register.tsx parses cleanly without TypeScript or async/await syntax errors', () => {

@@ -6,6 +6,7 @@ import {
   encodeProjectPath,
   extractTicket,
   extractTranscriptContext,
+  isHiddenInView,
   isTicketKey,
   normalizeFolder,
   normalizeTicket,
@@ -61,6 +62,17 @@ const storedRecord = async ($: EngineInterface) => {
     return JSON.parse(text) as SessionFile
   } catch {
     return undefined
+  }
+}
+
+const readView = async ($: EngineInterface): Promise<{ hidden?: Record<string, boolean | number>; folders?: string[] }> => {
+  const text = await $.fs.read(await viewFile($)).catch(() => undefined)
+  if (!text) return {}
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
   }
 }
 
@@ -313,6 +325,12 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
     try {
       const record = await storedRecord($)
       if (!record?.keepWarm || !record.lastTurnEndAt) return
+      const sessionId = await $.session.id()
+      const view = await readView($)
+      if (isHiddenInView(view, [sessionId, jobId])) {
+        await save($, { keepWarm: false, keepWarmUntil: null })
+        return
+      }
       if (record.keepWarmUntil && Date.now() > record.keepWarmUntil) {
         await save($, { keepWarm: false, keepWarmUntil: null })
         return

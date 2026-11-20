@@ -543,6 +543,16 @@ const isHidden = (session, now, isTicketClosed, flag) => {
   return isTicketClosed || now - session.updatedAt > HIDE_AFTER_MS
 }
 
+const isHiddenInView = (view, ids) => {
+  const hidden = view?.hidden
+  if (!hidden || typeof hidden !== 'object') return false
+  return ids.some(id => {
+    if (!id) return false
+    const flag = hidden[id]
+    return flag === true || (typeof flag === 'number' && flag > 0)
+  })
+}
+
 const ticketOf = (name, pattern) => {
   const match = name?.match(pattern.suffix)?.[1]
   return match ? normalizeTicket(match) : undefined
@@ -679,7 +689,7 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden, activeSessionId }
     activity: ageStr,
     cache: left > 0 ? clock(left) : null,
     cacheExpiresAt: left > 0 ? session.lastWriteAt + cacheTtl : 0,
-    keepWarm: Boolean(session.keepWarm),
+    keepWarm: Boolean(!isHidden && session.keepWarm),
     contextTokens: session.contextTokens,
     model: session.model,
     cwd: session.cwd,
@@ -753,6 +763,7 @@ module.exports = {
   prsByTicket,
   isClosed,
   isHidden,
+  isHiddenInView,
   ticketOf,
   mergeSessions,
   interactiveState,

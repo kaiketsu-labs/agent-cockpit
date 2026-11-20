@@ -196,7 +196,7 @@ const sessionRow = row => {
   const now = Date.now()
   const left = hasExpires ? Math.max(0, row.cacheExpiresAt - now) : 0
   const timeStr = left > 0 ? clock(left) : (hasExpires ? null : row.cache)
-  const isWarm = Boolean(timeStr || row.keepWarm)
+  const isWarm = !row.isHidden && Boolean(timeStr || row.keepWarm)
 
   if (renaming.has(row.id)) {
     if (renaming.get(row.id) && renaming.get(row.id) !== row.name) {
