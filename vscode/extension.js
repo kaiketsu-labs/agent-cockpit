@@ -1594,13 +1594,19 @@ const activate = async context => {
       .then(choice => choice === 'Jump to Terminal' && attach(session, provider))
   }
   let running
-  let pendingRefresh = false
-  let pendingForce = false
+  let pendingForce = null
+  let pendingPromise = null
   const refresh = (force = false) => {
     if (running) {
-      pendingRefresh = true
-      if (force) pendingForce = true
-      return running
+      pendingForce = pendingForce === true || force
+      return (pendingPromise ??= running
+        .catch(() => {})
+        .then(() => {
+          const nextForce = Boolean(pendingForce)
+          pendingForce = null
+          pendingPromise = null
+          return refresh(nextForce)
+        }))
     }
     running = provider
       .refresh({ force, withRemote: inbox.visible })
@@ -1611,12 +1617,6 @@ const activate = async context => {
       })
       .finally(() => {
         running = undefined
-        if (pendingRefresh) {
-          const nextForce = pendingForce
-          pendingRefresh = false
-          pendingForce = false
-          void refresh(nextForce)
-        }
       })
     return running
   }

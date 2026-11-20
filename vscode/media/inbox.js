@@ -135,7 +135,6 @@ const submitFolderRename = (c, newName, isHistory = false) => {
   const trimmed = newName.trim()
   if (trimmed && trimmed !== c.key) {
     const oldKey = c.key
-    c.key = trimmed
     if (data.model) {
       for (const list of [data.model.tickets, data.model.history]) {
         const f = list?.find(x => x.key === oldKey)
@@ -147,6 +146,7 @@ const submitFolderRename = (c, newName, isHistory = false) => {
         }
       }
     }
+    c.key = trimmed
     let stateChanged = false
     for (const prefix of ['', 'history:']) {
       if (ui.open[prefix + oldKey] !== undefined) {
@@ -622,9 +622,10 @@ const renderList = () => {
   const tools = document.getElementById('filter-tools')
   const model = data.model
   const domFocusedCard = document.activeElement?.closest('.session-card')
-  const kbFocusedCard = domFocusedCard || list.querySelector('.session-card.kb-focus')
+  const kbFocusedCard = list.querySelector('.session-card.kb-focus') || domFocusedCard
   const prevFocusedId = kbFocusedCard?.id || null
-  const hadDomFocus = Boolean(domFocusedCard)
+  const hadKbFocus = Boolean(kbFocusedCard?.classList.contains('kb-focus'))
+  const hadDomFocus = Boolean(domFocusedCard && document.hasFocus())
   list.replaceChildren()
   if (stats) stats.replaceChildren()
   if (tools) tools.replaceChildren()
@@ -742,10 +743,10 @@ const renderList = () => {
       )
     ))
   }
-  if (prevFocusedId && !editing) {
+  if (prevFocusedId && !editing && (hadKbFocus || hadDomFocus)) {
     const restored = document.getElementById(prevFocusedId)
     if (restored && restored.classList.contains('session-card')) {
-      restored.classList.add('kb-focus')
+      if (hadKbFocus) restored.classList.add('kb-focus')
       if (hadDomFocus) restored.focus({ preventScroll: true })
     }
   }
