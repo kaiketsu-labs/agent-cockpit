@@ -1038,3 +1038,33 @@ test('folderTitle returns tracker summary for ticket folders and empty string ot
   assert.equal(folderTitle('Auth Refactor', opts), '')
   assert.equal(folderTitle(null, opts), '')
 })
+
+test('firstTicket extracts GitHub issue URLs only when pattern is unrestricted', () => {
+  assert.equal(
+    firstTicket(['see https://github.com/kaiketsu-labs/agent-cockpit/issues/68'], anyKey),
+    'kaiketsu-labs/agent-cockpit#68',
+  )
+  assert.equal(
+    firstTicket(['see https://github.com/kaiketsu-labs/agent-cockpit/issues/68'], proj),
+    undefined,
+  )
+  assert.equal(
+    firstTicket(['see https://github.com/kaiketsu-labs/agent-cockpit/issues/68 and proj-9'], proj),
+    'PROJ-9',
+  )
+})
+
+test('0.9.1 regression guards: SVG icon, PR tooltip newline, folder rename history scope, autoRenameDone, CSS content type', () => {
+  const js = fs.readFileSync(path.resolve(__dirname, 'media/inbox.js'), 'utf8')
+  const pkgPy = fs.readFileSync(path.resolve(__dirname, 'package.py'), 'utf8')
+  const ext = fs.readFileSync(path.resolve(__dirname, 'extension.js'), 'utf8')
+
+  assert.ok(js.includes('M3.5 9.5l4.5 3.5 4.5-3.5'), 'expandAll SVG path must use relative lineto l')
+  assert.ok(!js.includes("pr.title + '\\\\n' + pr.url"), 'prRow tooltip must use real newline, not literal \\n')
+  assert.ok(js.includes("pr.title + '\\n' + pr.url"), 'prRow tooltip must join title and url with newline')
+  assert.ok(js.includes('Boolean(editing.isHistory) === Boolean(isHistory)'), 'folder inline rename must scope to active vs history card')
+  assert.ok(js.includes("event.data?.type === 'autoRenameDone'"), 'inbox.js must clear renaming spinner on autoRenameDone')
+  assert.ok(js.includes('prevFocusedId'), 'renderList must preserve keyboard focus across refreshes')
+  assert.ok(pkgPy.includes('Extension=".css" ContentType="text/css"'), 'package.py must declare .css content type')
+  assert.ok(ext.includes('escapeRegExp(extracted)'), 'extension.js rename() must escape regex special characters')
+})

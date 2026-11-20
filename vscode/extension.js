@@ -34,6 +34,7 @@ const {
   inboxModel,
   folderTitle,
   prefillForFolder,
+  escapeRegExp,
 } = require('./group')
 const { InboxView } = require('./inbox')
 
@@ -48,6 +49,7 @@ const REFRESH_MS = 5_000
 const TRACKER_MS = 5 * 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
 const PRS_MS = 120_000
+const REMOTE_TIMEOUT_MS = 15_000
 const DEFAULT_KEEP_WARM_WINDOW_MS = 30 * 60_000
 
 // The extension host's PATH often lacks ~/.local/bin or Homebrew paths on macOS/Linux.
@@ -146,7 +148,7 @@ const getCockpitConfig = env => {
 }
 
 const listAgents = async () => {
-  const agents = JSON.parse(await run(CLAUDE, ['agents', '--json', '--all']))
+  const agents = JSON.parse(await run(CLAUDE, ['agents', '--json', '--all'], undefined, { timeout: REMOTE_TIMEOUT_MS }))
   return ephemeralPids.size > 0 ? agents.filter(agent => !ephemeralPids.has(agent.pid)) : agents
 }
 
@@ -217,7 +219,7 @@ const updateSessionRecord = async (session, change) => {
 
 const rename = async (session, rawName, pattern) => {
   const extracted = ticketOf(rawName, pattern) ?? folderTicket(rawName, pattern)
-  const strippedPrefix = extracted ? rawName.replace(new RegExp(`^${extracted}\\s*[:·\\-–—]?\\s*`, 'i'), '').trim() : rawName
+  const strippedPrefix = extracted ? rawName.replace(new RegExp(`^${escapeRegExp(extracted)}\\s*[:·\\-–—]?\\s*`, 'i'), '').trim() : rawName
   const name = withoutTicketSuffix(strippedPrefix || rawName, pattern) || strippedPrefix || rawName
   const change = { name }
   if (extracted) {
@@ -229,7 +231,7 @@ const rename = async (session, rawName, pattern) => {
 
 const renamingSessions = new Set()
 
-const autoRenameSession = async (session, provider, refresh) => {
+const autoRenameSession = async (session, provider, refresh, inbox) => {
   const renameKey = session?.sessionId ?? session?.id
   if (!renameKey || renamingSessions.has(renameKey)) return
   renamingSessions.add(renameKey)
@@ -255,12 +257,6 @@ const autoRenameSession = async (session, provider, refresh) => {
           ...provider.folders,
           ...provider.sessions.map(s => s.folder ?? s.ticket).filter(Boolean),
         ])]
-        const presetFolder = session.folder ?? session.ticket
-        const systemPrompt = buildClassificationInstruction(knownFolders, {
-          presetFolder,
-          currentName: session.name,
-          isRetitle: true,
-        })
         const readCurrentRecord = async () => {
           if (!session.sessionId) return undefined
           return (
@@ -268,7 +264,15 @@ const autoRenameSession = async (session, provider, refresh) => {
             (await readJson(path.join(DECK_DIR, 'sessions', `${session.sessionId}.json`)))
           )
         }
-        const initialRecordName = (await readCurrentRecord())?.name
+        const initialRecord = await readCurrentRecord()
+        const initialRecordName = initialRecord?.name
+        const isLocked = Boolean(initialRecord?.folderLocked)
+        const presetFolder = session.folder ?? session.ticket
+        const systemPrompt = buildClassificationInstruction(knownFolders, {
+          presetFolder: isLocked ? (presetFolder ?? undefined) : presetFolder,
+          currentName: session.name,
+          isRetitle: true,
+        })
         const cwd = session.cwd && fs.existsSync(session.cwd) ? session.cwd : os.homedir()
         const stdout = await run(
           CLAUDE,
@@ -287,19 +291,20 @@ const autoRenameSession = async (session, provider, refresh) => {
           return
         }
         const suggestedFolder = parsed.folder ? normalizeFolder(parsed.folder, provider.pattern) : undefined
-        const resolvedFolder =
-          presetFolder && !(suggestedFolder && isTicketKey(suggestedFolder, provider.pattern) && suggestedFolder !== presetFolder)
+        const resolvedFolder = isLocked
+          ? presetFolder
+          : presetFolder && !(suggestedFolder && isTicketKey(suggestedFolder, provider.pattern) && suggestedFolder !== presetFolder)
             ? normalizeFolder(presetFolder, provider.pattern)
             : (suggestedFolder ?? folderTicket(parsed.summary, provider.pattern))
         const name = withoutTicketSuffix(parsed.summary, provider.pattern) || parsed.summary
-        const change = { name }
-        if (resolvedFolder && resolvedFolder !== presetFolder) {
-          change.folder = resolvedFolder
-          change.ticket = resolvedFolder
-        }
         const currentRecord = await readCurrentRecord()
         if (currentRecord?.name !== initialRecordName) {
           return
+        }
+        const change = { name }
+        if (!isLocked && !currentRecord?.folderLocked && resolvedFolder && resolvedFolder !== presetFolder) {
+          change.folder = resolvedFolder
+          change.ticket = resolvedFolder
         }
         await updateSessionRecord(session, change)
         await refresh(true)
@@ -313,6 +318,10 @@ const autoRenameSession = async (session, provider, refresh) => {
     vscode.window.showWarningMessage(`Auto-rename failed: ${reason}`)
   } finally {
     renamingSessions.delete(renameKey)
+    inbox?.notifyAutoRenameDone(session.id)
+    if (session.sessionId && session.sessionId !== session.id) {
+      inbox?.notifyAutoRenameDone(session.sessionId)
+    }
   }
 }
 
@@ -350,7 +359,7 @@ const loadJiraViaAcli = async (keys, baseUrl, cwd, env) => {
   await Promise.all(
     keys.map(async key => {
       try {
-        const out = await run(ACLI, ['jira', 'workitem', 'view', key, '--json'], undefined, { cwd, env })
+        const out = await run(ACLI, ['jira', 'workitem', 'view', key, '--json'], undefined, { cwd, env, timeout: REMOTE_TIMEOUT_MS })
         const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
         if (parsed) issues[parsed.key] = parsed.value
       } catch {}
@@ -362,7 +371,7 @@ const loadJiraViaAcli = async (keys, baseUrl, cwd, env) => {
 const loadJiraViaJiraCli = async (keys, baseUrl, cwd, env) => {
   try {
     const jql = `key in (${keys.join(',')})`
-    const out = await run(JIRA_CLI, ['issue', 'list', '--jql', jql, '--raw'], undefined, { cwd, env })
+    const out = await run(JIRA_CLI, ['issue', 'list', '--jql', jql, '--raw'], undefined, { cwd, env, timeout: REMOTE_TIMEOUT_MS })
     const data = JSON.parse(out)
     const list = Array.isArray(data) ? data : (data.issues ?? [])
     const issues = {}
@@ -376,7 +385,7 @@ const loadJiraViaJiraCli = async (keys, baseUrl, cwd, env) => {
   await Promise.all(
     keys.map(async key => {
       try {
-        const out = await run(JIRA_CLI, ['issue', 'view', key, '--raw'], undefined, { cwd, env })
+        const out = await run(JIRA_CLI, ['issue', 'view', key, '--raw'], undefined, { cwd, env, timeout: REMOTE_TIMEOUT_MS })
         const parsed = parseJiraIssuePayload(JSON.parse(out), baseUrl)
         if (parsed) issues[parsed.key] = parsed.value
       } catch {}
@@ -402,7 +411,7 @@ const loadJiraViaRest = async (env, keys) => {
         try {
           // The token goes in on stdin, so it never shows in the process list.
           const url = `${baseUrl}/rest/api/${version}/issue/${encoded}?fields=status,summary`
-          const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader)
+          const body = await run('curl', ['-s', '--fail', '-H', '@-', url], authHeader, { timeout: REMOTE_TIMEOUT_MS })
           const parsed = parseJiraIssuePayload(JSON.parse(body), baseUrl)
           if (parsed) issues[parsed.key] = parsed.value
           return
@@ -471,7 +480,7 @@ const loadGithubIssues = async (keys, cwd, options = {}) => {
           options.defaultHost
         const env = ghEnv(host)
         const args = ['issue', 'view', num, '--json', 'title,state,url', '-R', repo]
-        const data = JSON.parse(await run(GH, args, undefined, { cwd, env }))
+        const data = JSON.parse(await run(GH, args, undefined, { cwd, env, timeout: REMOTE_TIMEOUT_MS }))
         // GitHub API returns PRs as issues under /issues/:num; ignore if it is actually a PR
         if (data.url && data.url.includes('/pull/')) return
         const isDone = String(data.state).toUpperCase() === 'CLOSED'
@@ -491,7 +500,7 @@ const loadIssues = async (env, keys, cfg, cwd, options = {}) => {
   if (keys.length === 0 || cfg.tracker === 'none') return {}
   if (cfg.tracker === 'command') {
     if (!cfg.trackerCommand) return {}
-    const out = await run('/bin/sh', ['-c', cfg.trackerCommand], JSON.stringify(keys), { cwd, env })
+    const out = await run('/bin/sh', ['-c', cfg.trackerCommand], JSON.stringify(keys), { cwd, env, timeout: REMOTE_TIMEOUT_MS })
     return JSON.parse(out)
   }
   const ghKeys = keys.filter(k => k.includes('#'))
@@ -533,7 +542,7 @@ const loadPrs = async (keys, cfg, options = {}) => {
         try {
           const pages = await Promise.all(
             hostQueries.map(q =>
-              run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'], undefined, { env }),
+              run(GH, ['api', '-X', 'GET', 'search/issues', '-f', `q=${q}`, '-f', 'per_page=100'], undefined, { env, timeout: REMOTE_TIMEOUT_MS }),
             ),
           )
           return pages.flatMap(page => JSON.parse(page).items ?? [])
@@ -610,12 +619,16 @@ class SessionsProvider {
       folders.push(newFolder)
     }
     folders = [...new Set(folders)]
-    const order = this.order.map(item => (item === oldFolder || normalizeFolder(item, this.pattern) === normOld ? newFolder : item))
+    const order = [...new Set(this.order.map(item => (item === oldFolder || normalizeFolder(item, this.pattern) === normOld ? newFolder : item)))]
     const matching = this.sessions.filter(s => {
       const f = s.folder ?? s.ticket
       return f === oldFolder || (f && normalizeFolder(f, this.pattern) === normOld)
     })
-    await Promise.all(matching.map(s => updateSessionRecord(s, { folder: newFolder, ticket: newFolder })))
+    await Promise.all(matching.map(s => updateSessionRecord(s, { folder: newFolder, ticket: newFolder, folderLocked: true })))
+    for (const s of matching) {
+      s.folder = newFolder
+      s.ticket = newFolder
+    }
     await this.saveView({ folders, order })
   }
 
@@ -1517,13 +1530,6 @@ const activate = async context => {
       refresh(true)
     },
   }, context.extensionUri)
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('agentCockpit.inbox', inbox),
-    provider.onDidChange(() => inbox.post()),
-  )
-  try {
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider('claudeDeck.inbox', inbox))
-  } catch {}
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10)
   statusBar.command = 'agentCockpit.focus'
   context.subscriptions.push(statusBar)
@@ -1552,6 +1558,17 @@ const activate = async context => {
     }
   }
 
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider('agentCockpit.inbox', inbox),
+    provider.onDidChange(() => {
+      inbox.post()
+      updateStatusBar()
+    }),
+  )
+  try {
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider('claudeDeck.inbox', inbox))
+  } catch {}
+
   const notify = session => {
     const notifyMode = provider.config?.notifyOnWaiting ?? 'smart'
     if (notifyMode === 'off') return
@@ -1577,15 +1594,32 @@ const activate = async context => {
       .then(choice => choice === 'Jump to Terminal' && attach(session, provider))
   }
   let running
-  const refresh = (force = false) =>
-    (running ??= provider
+  let pendingForce = null
+  let pendingPromise = null
+  const refresh = (force = false) => {
+    if (running) {
+      pendingForce = pendingForce === true || force
+      return (pendingPromise ??= running
+        .catch(() => {})
+        .then(() => {
+          const nextForce = Boolean(pendingForce)
+          pendingForce = null
+          pendingPromise = null
+          return refresh(nextForce)
+        }))
+    }
+    running = provider
       .refresh({ force, withRemote: inbox.visible })
       .then(async waitingSessions => {
         await syncTerminalTitles(provider, inbox)
         waitingSessions.forEach(notify)
         updateStatusBar()
       })
-      .finally(() => (running = undefined)))
+      .finally(() => {
+        running = undefined
+      })
+    return running
+  }
   // Sessions refresh while the view is hidden too, so a session needing input still notifies.
   const timer = setInterval(() => refresh(), REFRESH_MS)
   fs.mkdirSync(SESSIONS_DIR, { recursive: true })
@@ -1657,7 +1691,7 @@ const activate = async context => {
       await rename(session, newName, provider.pattern)
       refresh()
     }),
-    ...registerCmd('autoRename', ({ session } = {}) => session && autoRenameSession(session, provider, refresh)),
+    ...registerCmd('autoRename', ({ session } = {}) => session && autoRenameSession(session, provider, refresh, inbox)),
     ...registerCmd('newFolder', async () => {
       const input = (
         await vscode.window.showInputBox({
@@ -1712,7 +1746,10 @@ const activate = async context => {
       const session = element?.session ?? (element?.id || element?.sessionId ? sessionById(element.id ?? element.sessionId) : element)
       if (session) await hideSession(session, provider)
     }),
-    ...registerCmd('show', element => provider.setHidden(element.session, false)),
+    ...registerCmd('show', async element => {
+      const session = element?.session ?? (element?.id || element?.sessionId ? sessionById(element.id ?? element.sessionId) : element)
+      if (session) await provider.setHidden(session, false)
+    }),
     ...registerCmd('toggleKeepWarm', async element => {
       const session = element?.session ?? (element?.id ? sessionById(element.id) : undefined)
       if (!session) return

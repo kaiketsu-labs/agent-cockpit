@@ -36,7 +36,7 @@ const SHAPES = {
   gear: '<path d="M9.1 1.5H6.9l-.3 1.5a5 5 0 0 0-1.2.7L4 3 2.5 4.5l.7 1.4a5 5 0 0 0-.7 1.2l-1.5.3v2.2l1.5.3a5 5 0 0 0 .7 1.2L2.5 12 4 13.5l1.4-.7a5 5 0 0 0 1.2.7l.3 1.5h2.2l.3-1.5a5 5 0 0 0 1.2-.7l1.4.7 1.5-1.5-.7-1.4a5 5 0 0 0 .7-1.2l1.5-.3V6.9l-1.5-.3a5 5 0 0 0-.7-1.2l.7-1.4L13.5 3 12 2.5l-1.4.7a5 5 0 0 0-1.2-.7l-.3-1.5zM8 10.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>',
   terminal: '<path d="m3 4.5 4 3.5-4 3.5M8.5 11.5H13"/>',
   collapseAll: '<path d="m3.5 4 4.5 3.5 4.5-3.5M3.5 12l4.5-3.5 4.5 3.5"/>',
-  expandAll: '<path d="m3.5 6.5 4.5-3.5 4.5 3.5M3.5 9.5 4.5 3.5 4.5-3.5"/>',
+  expandAll: '<path d="m3.5 6.5 4.5-3.5 4.5 3.5M3.5 9.5l4.5 3.5 4.5-3.5"/>',
 }
 const icon = (kind, extra = '') => {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -106,6 +106,10 @@ const submitSessionRename = (row, newName) => {
   if (!editing || editing.kind !== 'session' || editing.id !== row.id) return
   const trimmed = newName.trim()
   if (trimmed && trimmed !== row.name) {
+    if (pendingData) {
+      data = pendingData
+      pendingData = null
+    }
     row.name = trimmed
     if (data.model) {
       for (const t of data.model.tickets) {
@@ -124,32 +128,43 @@ const submitSessionRename = (row, newName) => {
   finishEditing()
 }
 
-const startFolderRename = c => {
+const startFolderRename = (c, isHistory = false) => {
   if (!c.key) return
-  editing = { kind: 'folder', key: c.key, value: c.key }
+  editing = { kind: 'folder', key: c.key, isHistory: Boolean(isHistory), value: c.key }
   renderList()
 }
 
-const submitFolderRename = (c, newName) => {
-  if (!editing || editing.kind !== 'folder' || editing.key !== c.key) return
+const submitFolderRename = (c, newName, isHistory = false) => {
+  if (!editing || editing.kind !== 'folder' || editing.key !== c.key || Boolean(editing.isHistory) !== Boolean(isHistory)) return
   const trimmed = newName.trim()
   if (trimmed && trimmed !== c.key) {
     const oldKey = c.key
-    c.key = trimmed
+    if (pendingData) {
+      data = pendingData
+      pendingData = null
+    }
     if (data.model) {
-      const f = data.model.tickets.find(x => x.key === oldKey)
-      if (f) {
-        f.key = trimmed
-        for (const s of f.sessions) {
-          s.folder = trimmed
+      for (const list of [data.model.tickets, data.model.history]) {
+        const f = list?.find(x => x.key === oldKey)
+        if (f) {
+          f.key = trimmed
+          for (const s of f.sessions) {
+            s.folder = trimmed
+            s.ticket = trimmed
+          }
         }
       }
     }
-    if (ui.open[oldKey] !== undefined) {
-      ui.open[trimmed] = ui.open[oldKey]
-      delete ui.open[oldKey]
-      save()
+    c.key = trimmed
+    let stateChanged = false
+    for (const prefix of ['', 'history:']) {
+      if (ui.open[prefix + oldKey] !== undefined) {
+        ui.open[prefix + trimmed] = ui.open[prefix + oldKey]
+        delete ui.open[prefix + oldKey]
+        stateChanged = true
+      }
     }
+    if (stateChanged) save()
     send('renameFolder', { folder: oldKey, key: oldKey, name: trimmed })
   }
   finishEditing()
@@ -199,7 +214,7 @@ const sessionRow = row => {
   const isWarm = !row.isHidden && Boolean(timeStr || row.keepWarm)
 
   if (renaming.has(row.id)) {
-    if (renaming.get(row.id) && renaming.get(row.id) !== row.name) {
+    if (renaming.get(row.id) !== row.name) {
       renaming.delete(row.id)
     }
   }
@@ -368,7 +383,7 @@ const sessionRow = row => {
 }
 
 const prRow = pr =>
-  el('div', { class: 'pr-row' + (pr.isDraft ? ' draft' : ''), title: pr.title + '\\n' + pr.url, onclick: () => send('openUrl', { url: pr.url }) },
+  el('div', { class: 'pr-row' + (pr.isDraft ? ' draft' : ''), title: pr.title + '\n' + pr.url, onclick: () => send('openUrl', { url: pr.url }) },
     icon('pr', pr.isDraft ? 'draft' : ''),
     el('span', { class: 'grow' }, el('span', { class: 'ref' }, pr.repo + '#' + pr.number), ' ' + pr.title),
     pr.isDraft && el('span', { class: 'badge' }, 'draft'))
@@ -452,7 +467,7 @@ const card = (c, isLoose, isHistory = false) => {
   const sessions = c.sessions.filter(row => sessionMatches(row, ui.q) || (c.key && matches(c.key + c.title, ui.q)))
   const folderIcon = c.key ? (c.isTicket ? icon('ticket', 't-' + (c.category ?? 'none')) : icon('folder')) : false
   const keyClass = 'key' + (c.isTicket ? ' ticket-pill t-' + (c.category ?? 'none') : '')
-  const isEditingFolder = Boolean(c.key && editing?.kind === 'folder' && editing.key === c.key)
+  const isEditingFolder = Boolean(c.key && editing?.kind === 'folder' && editing.key === c.key && Boolean(editing.isHistory) === Boolean(isHistory))
 
   const headChildren = [
     icon('chev', isOpen ? 'open' : ''),
@@ -473,7 +488,7 @@ const card = (c, isLoose, isHistory = false) => {
           event.preventDefault()
           if (committed) return
           committed = true
-          submitFolderRename(c, folderInput.value)
+          submitFolderRename(c, folderInput.value, isHistory)
         } else if (event.key === 'Escape') {
           event.preventDefault()
           if (committed) return
@@ -484,7 +499,7 @@ const card = (c, isLoose, isHistory = false) => {
       onblur: () => {
         if (!committed) {
           committed = true
-          submitFolderRename(c, folderInput.value)
+          submitFolderRename(c, folderInput.value, isHistory)
         }
       },
     })
@@ -497,11 +512,11 @@ const card = (c, isLoose, isHistory = false) => {
     headChildren.push(
       el('span', {
         class: keyClass,
-        ondblclick: stop(() => c.key && startFolderRename(c)),
+        ondblclick: stop(() => c.key && startFolderRename(c, isHistory)),
       }, c.key ?? 'Ungrouped'),
       el('span', {
         class: 'grow title',
-        ondblclick: stop(() => c.key && startFolderRename(c)),
+        ondblclick: stop(() => c.key && startFolderRename(c, isHistory)),
       }, c.title),
     )
   }
@@ -518,7 +533,7 @@ const card = (c, isLoose, isHistory = false) => {
       el('span', { class: 'actions' },
         iconBtn('plus', 'New session in ' + c.key, () => send('newSession', { folder: c.key })),
         c.isTicket && iconBtn('external', 'Open ticket in browser', () => send('openTicket', { ticket: c.ticketKey || c.key })),
-        iconBtn('edit', 'Rename folder', () => startFolderRename(c)),
+        iconBtn('edit', 'Rename folder', () => startFolderRename(c, isHistory)),
         !isHistory && nonWorkingSessions.length > 0 && iconBtn('archive', archiveTooltip, () => send('archiveFolder', { folder: c.key })),
         c.sessions.length === 0 && iconBtn('close', 'Remove empty folder', () => send('removeFolder', { folder: c.key })),
       )
@@ -615,6 +630,11 @@ const renderList = () => {
   const stats = document.getElementById('stats')
   const tools = document.getElementById('filter-tools')
   const model = data.model
+  const domFocusedCard = document.activeElement?.closest('.session-card')
+  const kbFocusedCard = list.querySelector('.session-card.kb-focus') || domFocusedCard
+  const prevFocusedId = kbFocusedCard?.id || null
+  const hadKbFocus = Boolean(kbFocusedCard?.classList.contains('kb-focus'))
+  const hadDomFocus = Boolean(domFocusedCard && document.hasFocus())
   list.replaceChildren()
   if (stats) stats.replaceChildren()
   if (tools) tools.replaceChildren()
@@ -732,6 +752,13 @@ const renderList = () => {
       )
     ))
   }
+  if (prevFocusedId && !editing && (hadKbFocus || hadDomFocus)) {
+    const restored = document.getElementById(prevFocusedId)
+    if (restored && restored.classList.contains('session-card')) {
+      if (hadKbFocus) restored.classList.add('kb-focus')
+      if (hadDomFocus) restored.focus({ preventScroll: true })
+    }
+  }
 }
 
 const tickCache = () => {
@@ -772,6 +799,15 @@ const tickCache = () => {
 
 let lastPayload = ''
 window.addEventListener('message', event => {
+  if (event.data?.type === 'autoRenameDone') {
+    const id = event.data.id
+    if (id) {
+      renaming.delete(id)
+      const c = document.getElementById('session-' + id)
+      if (c) c.classList.remove('renaming')
+    }
+    return
+  }
   const nextPayload = JSON.stringify(event.data)
   if (nextPayload === lastPayload) return
   lastPayload = nextPayload
