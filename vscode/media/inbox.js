@@ -106,6 +106,10 @@ const submitSessionRename = (row, newName) => {
   if (!editing || editing.kind !== 'session' || editing.id !== row.id) return
   const trimmed = newName.trim()
   if (trimmed && trimmed !== row.name) {
+    if (pendingData) {
+      data = pendingData
+      pendingData = null
+    }
     row.name = trimmed
     if (data.model) {
       for (const t of data.model.tickets) {
@@ -135,6 +139,10 @@ const submitFolderRename = (c, newName, isHistory = false) => {
   const trimmed = newName.trim()
   if (trimmed && trimmed !== c.key) {
     const oldKey = c.key
+    if (pendingData) {
+      data = pendingData
+      pendingData = null
+    }
     if (data.model) {
       for (const list of [data.model.tickets, data.model.history]) {
         const f = list?.find(x => x.key === oldKey)
@@ -142,6 +150,7 @@ const submitFolderRename = (c, newName, isHistory = false) => {
           f.key = trimmed
           for (const s of f.sessions) {
             s.folder = trimmed
+            s.ticket = trimmed
           }
         }
       }

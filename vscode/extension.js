@@ -297,14 +297,14 @@ const autoRenameSession = async (session, provider, refresh, inbox) => {
             ? normalizeFolder(presetFolder, provider.pattern)
             : (suggestedFolder ?? folderTicket(parsed.summary, provider.pattern))
         const name = withoutTicketSuffix(parsed.summary, provider.pattern) || parsed.summary
-        const change = { name }
-        if (!isLocked && resolvedFolder && resolvedFolder !== presetFolder) {
-          change.folder = resolvedFolder
-          change.ticket = resolvedFolder
-        }
         const currentRecord = await readCurrentRecord()
         if (currentRecord?.name !== initialRecordName) {
           return
+        }
+        const change = { name }
+        if (!isLocked && !currentRecord?.folderLocked && resolvedFolder && resolvedFolder !== presetFolder) {
+          change.folder = resolvedFolder
+          change.ticket = resolvedFolder
         }
         await updateSessionRecord(session, change)
         await refresh(true)
