@@ -313,6 +313,15 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
     try {
       const record = await storedRecord($)
       if (!record?.keepWarm || !record.lastTurnEndAt) return
+      const sessionId = await $.session.id()
+      const view = JSON.parse(await $.fs.read(await viewFile($)).catch(() => '{}')) as {
+        hidden?: Record<string, boolean | number>
+      }
+      const hiddenFlag = view.hidden?.[sessionId]
+      if (hiddenFlag === true || (typeof hiddenFlag === 'number' && hiddenFlag > 0)) {
+        await save($, { keepWarm: false, keepWarmUntil: null })
+        return
+      }
       if (record.keepWarmUntil && Date.now() > record.keepWarmUntil) {
         await save($, { keepWarm: false, keepWarmUntil: null })
         return

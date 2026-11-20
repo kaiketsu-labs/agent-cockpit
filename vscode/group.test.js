@@ -586,6 +586,26 @@ test('inboxRow preserves keepWarm flag and calculates cache expiration', () => {
   assert.equal(warmRow.cache, '4:00')
   assert.equal(regularRow.cache, '4:00')
   assert.equal(warmRow.cacheExpiresAt, now - 60_000 + cacheTtl)
+
+  const hiddenWarmRow = inboxRow(warmSession, { pattern: anyKey, now, cacheTtl, isHidden: true })
+  assert.equal(hiddenWarmRow.keepWarm, false)
+})
+
+test('archiving a session disables keepWarm in extension.js and plugin/hooks/register.tsx', () => {
+  const extCode = fs.readFileSync(path.resolve(__dirname, 'extension.js'), 'utf8')
+  const hideMatch = extCode.match(/const hideSession = async \(session, provider\) => \{[\s\S]*?\n\}/)
+  assert.ok(hideMatch, 'hideSession must be defined in extension.js')
+  assert.ok(hideMatch[0].includes('session.keepWarm = false'), 'hideSession must clear session.keepWarm in memory')
+  assert.ok(
+    hideMatch[0].includes('updateSessionRecord(session, { keepWarm: false, keepWarmUntil: null })'),
+    'hideSession must persist keepWarm: false and keepWarmUntil: null',
+  )
+
+  const registerCode = fs.readFileSync(path.resolve(__dirname, '../plugin/hooks/register.tsx'), 'utf8')
+  assert.ok(
+    registerCode.includes('view.hidden?.[sessionId]'),
+    'register.tsx keepalive loop must check view.hidden and disable keepWarm for archived sessions',
+  )
 })
 
 test('plugin/hooks/register.tsx parses cleanly without TypeScript or async/await syntax errors', () => {

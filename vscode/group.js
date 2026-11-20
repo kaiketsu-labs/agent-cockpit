@@ -679,7 +679,7 @@ const inboxRow = (session, { pattern, now, cacheTtl, isHidden, activeSessionId }
     activity: ageStr,
     cache: left > 0 ? clock(left) : null,
     cacheExpiresAt: left > 0 ? session.lastWriteAt + cacheTtl : 0,
-    keepWarm: Boolean(session.keepWarm),
+    keepWarm: Boolean(!isHidden && session.keepWarm),
     contextTokens: session.contextTokens,
     model: session.model,
     cwd: session.cwd,

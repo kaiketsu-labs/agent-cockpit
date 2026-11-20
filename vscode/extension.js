@@ -1073,6 +1073,10 @@ const closeTerminalForSession = async session => {
 
 const hideSession = async (session, provider) => {
   if (!session) return
+  if (session.keepWarm) {
+    session.keepWarm = false
+    await updateSessionRecord(session, { keepWarm: false, keepWarmUntil: null })
+  }
   await provider.setHidden(session, true)
   if (provider?.config?.closeTerminalOnArchive !== false) {
     await closeTerminalForSession(session)
