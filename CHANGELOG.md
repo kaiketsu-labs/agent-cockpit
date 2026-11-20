@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.1](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.9.0...v0.9.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* disable prompt cache warming when archiving a session ([#70](https://github.com/kaiketsu-labs/agent-cockpit/issues/70)) ([34ef82a](https://github.com/kaiketsu-labs/agent-cockpit/commit/34ef82a65b2627cd9914a50ca948ef895b50f229))
+* **plugin:** extract GitHub issue URLs and upgrade unlocked folders to tickets ([#68](https://github.com/kaiketsu-labs/agent-cockpit/issues/68)) ([46a1250](https://github.com/kaiketsu-labs/agent-cockpit/commit/46a1250997f4fe88f95287a2ad09ed9df68abc04))
+* resolve sidebar UX, auto-rename, folder rename, and refresh stability bugs ([#71](https://github.com/kaiketsu-labs/agent-cockpit/issues/71)) ([8900e66](https://github.com/kaiketsu-labs/agent-cockpit/commit/8900e66e0956118cb4150b9257ada8dcce2ddaea))
+
 ## [0.9.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.8.0...v0.9.0) (2026-11-17)
 
 
