@@ -81,6 +81,12 @@
           "default": "",
           "description": "Shell command used when agentCockpit.tracker is 'command'. Receives JSON array of ticket keys on stdin and must print a JSON object mapping keys to { status, category ('new'|'indeterminate'|'done'), summary, url }."
         },
+        "agentCockpit.trackerRefreshInterval": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "How often (in seconds) to poll the issue tracker (Jira, GitHub Issues, or custom tracker command) in the background. Default is 300 (5 minutes). Positive values below 15 are clamped to 15 seconds. Set to 0 to disable automatic background polling (refresh manually instead)."
+        },
         "agentCockpit.pullRequests": {
           "type": "string",
           "enum": [

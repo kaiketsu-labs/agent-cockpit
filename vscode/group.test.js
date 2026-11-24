@@ -33,6 +33,7 @@ const {
   interactiveState,
   ancestorPids,
   cacheTtlMs,
+  trackerRefreshMs,
   cacheLeft,
   clock,
   shortCwd,
@@ -1067,4 +1068,31 @@ test('0.9.1 regression guards: SVG icon, PR tooltip newline, folder rename histo
   assert.ok(js.includes('prevFocusedId'), 'renderList must preserve keyboard focus across refreshes')
   assert.ok(pkgPy.includes('Extension=".css" ContentType="text/css"'), 'package.py must declare .css content type')
   assert.ok(ext.includes('escapeRegExp(extracted)'), 'extension.js rename() must escape regex special characters')
+})
+
+test('trackerRefreshMs converts configured seconds to ms, clamps small positives, and treats 0 as manual only', () => {
+  assert.equal(trackerRefreshMs(undefined), 300_000)
+  assert.equal(trackerRefreshMs(null), 300_000)
+  assert.equal(trackerRefreshMs(''), 300_000)
+  assert.equal(trackerRefreshMs(Number.NaN), 300_000)
+  assert.equal(trackerRefreshMs(-5), 300_000)
+  assert.equal(trackerRefreshMs(0), Infinity)
+  assert.equal(trackerRefreshMs('0'), Infinity)
+  assert.equal(trackerRefreshMs(1), 15_000)
+  assert.equal(trackerRefreshMs(5), 15_000)
+  assert.equal(trackerRefreshMs(14), 15_000)
+  assert.equal(trackerRefreshMs(15), 15_000)
+  assert.equal(trackerRefreshMs(60), 60_000)
+  assert.equal(trackerRefreshMs(300), 300_000)
+  assert.equal(trackerRefreshMs(900), 900_000)
+  assert.equal(trackerRefreshMs('120'), 120_000)
+})
+
+test('trackerRefreshInterval configuration setting is declared as number with default 300 and minimum 0', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
+  const prop = pkg.contributes.configuration.properties['agentCockpit.trackerRefreshInterval']
+  assert.ok(prop, 'trackerRefreshInterval property must be declared')
+  assert.equal(prop.type, 'number')
+  assert.equal(prop.default, 300)
+  assert.equal(prop.minimum, 0)
 })
