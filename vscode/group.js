@@ -14,10 +14,57 @@ const interactiveState = status => ({ waiting: 'blocked', busy: 'working' })[sta
 // From /proc/<pid>/stat: the parent pid is the second field after the parenthesised command.
 const parentPid = stat => Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1])
 
+const procState = stat => (typeof stat === 'string' && stat.includes(')') ? stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0] : '')
+
 const ancestorPids = (pid, readStat) => {
   const pids = []
   for (let current = pid; current > 1 && pids.length < 32; current = parentPid(readStat(current))) pids.push(current)
   return pids
+}
+
+const isPtyHostCmd = cmd => typeof cmd === 'string' && /\bptyHost(?:Main)?\b/i.test(cmd)
+
+const isClaudeCmd = cmd => typeof cmd === 'string' && /(?:^|[\s/\\_-])claude(?:$|[\s/\\._-])/i.test(cmd)
+
+const isClaimedByWindow = (ancestors, entries, selfPid, now = Date.now(), isAlive = () => true) => {
+  const set = new Set((ancestors ?? []).map(Number).filter(p => p > 1))
+  return (entries ?? []).some(
+    e =>
+      e &&
+      Number(e.pid) !== Number(selfPid) &&
+      now - e.updatedAt <= 60_000 &&
+      isAlive(Number(e.pid)) &&
+      Array.isArray(e.terminalPids) &&
+      e.terminalPids.some(p => set.has(Number(p))),
+  )
+}
+
+const shouldAutoResume = (session, { isPtyHost = false, claimedByOtherWindow = false } = {}) =>
+  Boolean(isPtyHost && !claimedByOtherWindow && session?.state !== 'working' && (session?.sessionId || session?.id))
+
+const stopProcess = async (pid, { kill = process.kill, isAlive, readCommand, sleep = ms => new Promise(r => setTimeout(r, ms)), timeoutMs = 2_000 } = {}) => {
+  const n = Number(pid)
+  if (!Number.isInteger(n) || n <= 1) return { stopped: true }
+  const alive = () => {
+    if (isAlive) return Boolean(isAlive(n))
+    try { kill(n, 0); return true } catch (err) { return err?.code === 'EPERM' }
+  }
+  if (!alive()) return { stopped: true }
+  const cmd = readCommand?.(n)
+  if (cmd && !isClaudeCmd(cmd)) return { stopped: false, reason: `pid ${n} is no longer Claude` }
+
+  const signalAndWait = async (sig, waitMs) => {
+    try { kill(n, sig) } catch (err) {
+      return err?.code === 'ESRCH' ? { stopped: true } : { stopped: false, reason: err?.message || `failed to send ${sig}` }
+    }
+    for (let elapsed = 0; alive() && elapsed < waitMs; elapsed += 100) await sleep(100)
+    return { stopped: !alive() }
+  }
+
+  const term = await signalAndWait('SIGTERM', timeoutMs)
+  if (term.stopped || term.reason) return term
+  const hard = await signalAndWait('SIGKILL', 500)
+  return hard.stopped || hard.reason ? hard : { stopped: false, reason: `pid ${n} did not exit` }
 }
 
 const normalizeTicket = ticket => {
@@ -791,7 +838,13 @@ module.exports = {
   mergeSessions,
   interactiveState,
   parentPid,
+  procState,
   ancestorPids,
+  isPtyHostCmd,
+  isClaudeCmd,
+  isClaimedByWindow,
+  shouldAutoResume,
+  stopProcess,
   cacheTtlMs,
   trackerRefreshMs,
   cacheLeft,

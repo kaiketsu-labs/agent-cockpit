@@ -32,6 +32,12 @@ const {
   mergeSessions,
   interactiveState,
   ancestorPids,
+  procState,
+  isPtyHostCmd,
+  isClaudeCmd,
+  isClaimedByWindow,
+  shouldAutoResume,
+  stopProcess,
   cacheTtlMs,
   trackerRefreshMs,
   cacheLeft,
@@ -1098,4 +1104,66 @@ test('trackerRefreshInterval configuration setting is declared as number with de
   assert.equal(prop.type, 'number')
   assert.equal(prop.default, 300)
   assert.equal(prop.minimum, 0)
+})
+
+test('procState, isPtyHostCmd, and isClaudeCmd identify zombie states, ptyHost, and Claude commands', () => {
+  assert.equal(procState('30 (claude (v2)) Z 20 1'), 'Z')
+  assert.equal(procState('30 (claude) S 20 1'), 'S')
+  assert.equal(isPtyHostCmd('node /vscode/out/ptyHostMain.js'), true)
+  assert.equal(isPtyHostCmd('Code Helper --type=ptyHost'), true)
+  assert.equal(isPtyHostCmd('/bin/zsh'), false)
+  assert.equal(isClaudeCmd('/Users/david/.local/share/claude/versions/2.1.5'), true)
+  assert.equal(isClaudeCmd('node /lib/@anthropic-ai/claude-code/cli.js'), true)
+  assert.equal(isClaudeCmd('/bin/zsh'), false)
+})
+
+test('isClaimedByWindow and shouldAutoResume protect other windows and working sessions', () => {
+  const now = 100_000
+  assert.equal(isClaimedByWindow([57173, 4000], [{ pid: 2, updatedAt: now - 5_000, terminalPids: [4000] }], 1, now, () => true), true)
+  assert.equal(isClaimedByWindow([57173], [{ pid: 1, updatedAt: now, terminalPids: [57173] }], 1, now, () => true), false)
+  assert.equal(isClaimedByWindow([57173], [{ pid: 2, updatedAt: now - 90_000, terminalPids: [57173] }], 1, now, () => true), false)
+  assert.equal(isClaimedByWindow([57173], [{ pid: 2, updatedAt: now, terminalPids: [57173] }], 1, now, () => false), false)
+
+  assert.equal(shouldAutoResume({ id: 's1', state: 'idle' }, { isPtyHost: true, claimedByOtherWindow: false }), true)
+  assert.equal(shouldAutoResume({ id: 's1', state: 'working' }, { isPtyHost: true, claimedByOtherWindow: false }), false)
+  assert.equal(shouldAutoResume({ id: 's1', state: 'idle' }, { isPtyHost: true, claimedByOtherWindow: true }), false)
+  assert.equal(shouldAutoResume({ id: 's1', state: 'idle' }, { isPtyHost: false, claimedByOtherWindow: false }), false)
+})
+
+test('stopProcess stops Claude processes, escalates to SIGKILL, and guards against PID reuse', async () => {
+  const noSleep = async () => {}
+  assert.deepEqual(await stopProcess(57173, { isAlive: () => false, sleep: noSleep }), { stopped: true })
+
+  // Graceful SIGTERM
+  let alive = true
+  const signals = []
+  assert.deepEqual(
+    await stopProcess(100, {
+      isAlive: () => alive,
+      readCommand: () => 'claude',
+      kill: (_p, s) => { signals.push(s); if (s === 'SIGTERM') alive = false },
+      sleep: noSleep,
+    }),
+    { stopped: true },
+  )
+  assert.deepEqual(signals, ['SIGTERM'])
+
+  // Escalates to SIGKILL when SIGTERM is ignored
+  alive = true
+  const esc = []
+  assert.deepEqual(
+    await stopProcess(200, {
+      timeoutMs: 100,
+      isAlive: () => alive,
+      readCommand: () => 'claude',
+      kill: (_p, s) => { esc.push(s); if (s === 'SIGKILL') alive = false },
+      sleep: noSleep,
+    }),
+    { stopped: true },
+  )
+  assert.deepEqual(esc, ['SIGTERM', 'SIGKILL'])
+
+  // Refuses to kill unrelated binary on PID reuse
+  const reused = await stopProcess(300, { isAlive: () => true, readCommand: () => '/bin/zsh', kill: () => assert.fail(), sleep: noSleep })
+  assert.equal(reused.stopped, false)
 })
