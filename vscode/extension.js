@@ -31,9 +31,8 @@ const {
   mergeSessions,
   procState,
   isPtyHostCmd,
-  isSessionClaimedByOtherWindow,
-  shouldAutoResumeDetached,
-  detachedSessionNotice,
+  isClaimedByWindow,
+  shouldAutoResume,
   stopProcess,
   cacheTtlMs,
   trackerRefreshMs,
@@ -974,123 +973,70 @@ const findAncestors = pid => {
 }
 
 const isProcessAlive = pid => {
-  const numericPid = Number(pid)
-  if (!Number.isInteger(numericPid) || numericPid <= 1) return false
-  try {
-    process.kill(numericPid, 0)
-  } catch (err) {
-    if (err?.code !== 'EPERM') return false
-  }
+  const n = Number(pid)
+  if (!Number.isInteger(n) || n <= 1) return false
+  try { process.kill(n, 0) } catch (err) { if (err?.code !== 'EPERM') return false }
   if (process.platform === 'linux') {
-    try {
-      const stat = fs.readFileSync(`/proc/${numericPid}/stat`, 'utf8')
-      if (procState(stat) === 'Z') return false
-    } catch {}
+    try { if (procState(fs.readFileSync(`/proc/${n}/stat`, 'utf8')) === 'Z') return false } catch {}
   }
   return true
 }
 
 const readProcessCommand = pid => {
-  const numericPid = Number(pid)
-  if (!Number.isInteger(numericPid) || numericPid <= 1) return undefined
+  const n = Number(pid)
+  if (!Number.isInteger(n) || n <= 1) return undefined
   if (process.platform === 'linux') {
-    const parts = []
-    try {
-      const cmdline = fs.readFileSync(`/proc/${numericPid}/cmdline`, 'utf8').replace(/\0+/g, ' ').trim()
-      if (cmdline) parts.push(cmdline)
-    } catch {}
-    try {
-      const comm = fs.readFileSync(`/proc/${numericPid}/comm`, 'utf8').trim()
-      if (comm) parts.push(comm)
-    } catch {}
-    try {
-      const exe = fs.readlinkSync(`/proc/${numericPid}/exe`)
-      if (exe) parts.push(exe)
-    } catch {}
-    return parts.length > 0 ? parts.join(' ') : undefined
+    const read = p => { try { return fs.readFileSync(p, 'utf8').replace(/\0+/g, ' ').trim() } catch { return '' } }
+    return [read(`/proc/${n}/cmdline`), read(`/proc/${n}/comm`)].filter(Boolean).join(' ') || undefined
   }
   if (process.platform === 'darwin') {
-    try {
-      const out = execFileSync('ps', ['-p', String(numericPid), '-o', 'comm=,command='], { encoding: 'utf8' }).trim()
-      return out || undefined
-    } catch {
-      return undefined
-    }
+    try { return execFileSync('ps', ['-p', String(n), '-o', 'command='], { encoding: 'utf8' }).trim() || undefined } catch {}
   }
   return undefined
 }
 
-const isUnderPtyHost = (pid, precomputedAncestors) => {
-  const ancestors = precomputedAncestors ?? findAncestors(pid)
-  const parentPids = ancestors.slice(1)
-  if (parentPids.length === 0) return false
-  if (process.platform === 'linux') {
-    return parentPids.some(anc => isPtyHostCmd(readProcessCommand(anc)))
-  }
+const isUnderPtyHost = ancestors => {
+  const parents = ancestors.slice(1)
+  if (parents.length === 0) return false
+  if (process.platform === 'linux') return parents.some(anc => isPtyHostCmd(readProcessCommand(anc)))
   if (process.platform === 'darwin') {
-    try {
-      const out = execFileSync('ps', ['-p', parentPids.join(','), '-o', 'command='], { encoding: 'utf8' })
-      return out.split('\n').some(line => isPtyHostCmd(line))
-    } catch {
-      return false
-    }
+    try { return execFileSync('ps', ['-p', parents.join(','), '-o', 'command='], { encoding: 'utf8' }).split('\n').some(isPtyHostCmd) } catch {}
   }
   return false
 }
 
-let lastWindowPublishKey = ''
-let lastWindowPublishAt = 0
+let lastWindowKey = ''
+let lastWindowAt = 0
 
 const publishWindowTerminals = async (force = false) => {
   try {
-    const rawPids = await Promise.all(
-      vscode.window.terminals
-        .filter(t => t.exitStatus === undefined)
-        .map(t => Promise.resolve(t.processId).catch(() => undefined)),
+    const pids = await Promise.all(
+      vscode.window.terminals.filter(t => t.exitStatus === undefined).map(t => Promise.resolve(t.processId).catch(() => undefined)),
     )
-    const terminalPids = [...new Set(rawPids.map(Number).filter(pid => Number.isInteger(pid) && pid > 1))].sort((a, b) => a - b)
+    const terminalPids = [...new Set(pids.map(Number).filter(p => Number.isInteger(p) && p > 1))].sort((a, b) => a - b)
     const key = terminalPids.join(',')
     const now = Date.now()
-    if (!force && key === lastWindowPublishKey && now - lastWindowPublishAt < WINDOW_HEARTBEAT_WRITE_MS) {
-      return
-    }
-    lastWindowPublishKey = key
-    lastWindowPublishAt = now
+    if (!force && key === lastWindowKey && now - lastWindowAt < WINDOW_HEARTBEAT_WRITE_MS) return
+    lastWindowKey = key
+    lastWindowAt = now
     await fs.promises.mkdir(WINDOWS_DIR, { recursive: true })
     await fs.promises.writeFile(WINDOW_FILE, JSON.stringify({ pid: process.pid, updatedAt: now, terminalPids }))
   } catch {}
 }
 
-const cleanupWindowFile = () => {
-  try {
-    fs.unlinkSync(WINDOW_FILE)
-  } catch {}
-}
+const cleanupWindowFile = () => { try { fs.unlinkSync(WINDOW_FILE) } catch {} }
 
 const isClaimedByOtherWindow = async ancestors => {
-  if (!Array.isArray(ancestors) || ancestors.length === 0) return false
   const names = await fs.promises.readdir(WINDOWS_DIR).catch(() => [])
-  const selfName = `${process.pid}.json`
-  const entries = []
-  await Promise.all(
-    names
-      .filter(name => name.endsWith('.json') && name !== selfName)
-      .map(async name => {
-        const file = path.join(WINDOWS_DIR, name)
-        const entry = await readJson(file)
-        if (!entry) return
-        if (!isProcessAlive(entry.pid)) {
-          fs.promises.unlink(file).catch(() => {})
-          return
-        }
-        entries.push(entry)
-      }),
-  )
-  return isSessionClaimedByOtherWindow(ancestors, entries, {
-    selfPid: process.pid,
-    now: Date.now(),
-    isAlive: isProcessAlive,
-  })
+  const entries = (await Promise.all(
+    names.filter(n => n.endsWith('.json') && n !== `${process.pid}.json`).map(async n => {
+      const file = path.join(WINDOWS_DIR, n)
+      const entry = await readJson(file)
+      if (entry && !isProcessAlive(entry.pid)) { fs.promises.unlink(file).catch(() => {}); return null }
+      return entry
+    }),
+  )).filter(Boolean)
+  return isClaimedByWindow(ancestors, entries, process.pid, Date.now(), isProcessAlive)
 }
 
 const terminalForPid = new Map()
@@ -1232,26 +1178,17 @@ const stopAndResumeSession = async (session, provider, refresh) => {
   const resumeId = session?.sessionId || session?.id
   if (!resumeId || resumingSessions.has(resumeId)) return
   resumingSessions.add(resumeId)
-  const pattern = provider?.pattern ?? ticketPattern()
-  const displayName = withoutTicketSuffix(session.name, pattern) || session.name || 'Session'
+  const label = withoutTicketSuffix(session.name, provider?.pattern ?? ticketPattern()) || session.name || 'Session'
   try {
     await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `Resuming "${displayName}"…` },
+      { location: vscode.ProgressLocation.Window, title: `Resuming "${label}"…` },
       async () => {
         const existing = await findTerminalForSession(session)
-        if (existing) {
-          existing.show()
-          const desired = provider && terminalTitleFor(session, pattern)
-          if (desired) setTimeout(() => applyTerminalTitleIfActive(existing, desired), 50)
-          return
-        }
+        if (existing) { existing.show(); return }
         if (session.pid) {
-          const result = await stopProcess(session.pid, {
-            isAlive: isProcessAlive,
-            readCommand: readProcessCommand,
-          })
+          const result = await stopProcess(session.pid, { isAlive: isProcessAlive, readCommand: readProcessCommand })
           if (!result.stopped) {
-            vscode.window.showWarningMessage(`Could not stop "${displayName}" (pid ${session.pid}): ${result.reason}`)
+            vscode.window.showWarningMessage(`Could not stop "${label}" (pid ${session.pid}): ${result.reason}`)
             return
           }
           terminalForPid.delete(session.pid)
@@ -1266,15 +1203,13 @@ const stopAndResumeSession = async (session, provider, refresh) => {
   }
 }
 
-// claude attach takes background sessions only; an interactive one is focused if in this window, or offered Stop & Resume.
+// claude attach takes background sessions only; an interactive one is focused, auto-resumed if orphaned, or offered Stop & Resume.
 const focusInteractive = async (session, provider, refresh) => {
   const terminal = await findTerminalForSession(session)
   if (terminal) {
     terminal.show()
     const desired = provider && terminalTitleFor(session, provider.pattern)
-    if (desired) {
-      setTimeout(() => applyTerminalTitleIfActive(terminal, desired), 50)
-    }
+    if (desired) setTimeout(() => applyTerminalTitleIfActive(terminal, desired), 50)
     return
   }
   const resumeId = session.sessionId || session.id
@@ -1286,31 +1221,28 @@ const focusInteractive = async (session, provider, refresh) => {
     return
   }
   const ancestors = session.pid ? findAncestors(session.pid) : []
-  const isPtyHost = Boolean(session.pid && isUnderPtyHost(session.pid, ancestors))
+  const isPtyHost = Boolean(session.pid && isUnderPtyHost(ancestors))
   const claimedByOtherWindow = isPtyHost ? await isClaimedByOtherWindow(ancestors) : false
-  if (shouldAutoResumeDetached(session, { isPtyHost, claimedByOtherWindow })) {
+  if (shouldAutoResume(session, { isPtyHost, claimedByOtherWindow })) {
     return stopAndResumeSession(session, provider, refresh)
   }
-  const pattern = provider?.pattern ?? ticketPattern()
-  const label = withoutTicketSuffix(session.name, pattern) || session.name
-  const notice = detachedSessionNotice(session, { isPtyHost, claimedByOtherWindow, label })
-  const showFn = notice.severity === 'warning'
-    ? vscode.window.showWarningMessage
-    : vscode.window.showInformationMessage
-  const choice = notice.action
-    ? await showFn(notice.message, notice.action)
-    : await showFn(notice.message)
-  if (choice && choice === notice.action) {
-    if (notice.confirmModal) {
-      const confirmed = await vscode.window.showWarningMessage(
-        notice.confirmModal,
-        { modal: true },
-        notice.confirmAction,
-      )
-      if (confirmed !== notice.confirmAction) return
-    }
-    await stopAndResumeSession(session, provider, refresh)
+  const label = withoutTicketSuffix(session.name, provider?.pattern ?? ticketPattern()) || session.name
+  const pidSuffix = session.pid ? ` (pid ${session.pid})` : ''
+  const where = claimedByOtherWindow ? 'in another VS Code window' : isPtyHost ? 'in a detached VS Code terminal' : "outside this VS Code window's terminals"
+  const isWorking = session.state === 'working'
+  const msg = isWorking ? `"${label}" is working ${where}${pidSuffix}.` : `"${label}" is running ${where}${pidSuffix}.`
+  const showFn = isWorking ? vscode.window.showWarningMessage : vscode.window.showInformationMessage
+  const choice = resumeId ? await showFn(msg, 'Stop & Resume in Terminal') : await showFn(msg)
+  if (choice !== 'Stop & Resume in Terminal') return
+  if (isWorking) {
+    const ok = await vscode.window.showWarningMessage(
+      `Stop working session "${label}"${pidSuffix} and resume it in a new terminal?`,
+      { modal: true },
+      'Stop & Resume',
+    )
+    if (ok !== 'Stop & Resume') return
   }
+  await stopAndResumeSession(session, provider, refresh)
 }
 
 const closeTerminalForSession = async session => {
