@@ -29,6 +29,12 @@ const {
   isHidden,
   ticketOf,
   mergeSessions,
+  procState,
+  isPtyHostCmd,
+  isSessionClaimedByOtherWindow,
+  shouldAutoResumeDetached,
+  detachedSessionNotice,
+  stopProcess,
   cacheTtlMs,
   trackerRefreshMs,
   age,
@@ -44,9 +50,12 @@ const CLAUDE_DIR = path.join(os.homedir(), '.claude')
 const COCKPIT_DIR = path.join(CLAUDE_DIR, 'cockpit')
 const DECK_DIR = path.join(CLAUDE_DIR, 'deck')
 const SESSIONS_DIR = path.join(COCKPIT_DIR, 'sessions')
+const WINDOWS_DIR = path.join(COCKPIT_DIR, 'windows')
+const WINDOW_FILE = path.join(WINDOWS_DIR, `${process.pid}.json`)
 const VIEW_FILE = path.join(COCKPIT_DIR, 'view.json')
 const BRIEFING_FILE = path.join(COCKPIT_DIR, 'briefing.md')
 const REFRESH_MS = 5_000
+const WINDOW_HEARTBEAT_WRITE_MS = 15_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
 const PRS_MS = 120_000
 const REMOTE_TIMEOUT_MS = 15_000
@@ -929,6 +938,8 @@ const isAttachTerminal = (terminal, session) => {
 
 // Cross-platform parent PID lookup: single ps snapshot on macOS/BSD, /proc on Linux.
 const findAncestors = pid => {
+  const startPid = Number(pid)
+  if (!Number.isInteger(startPid) || startPid <= 1) return []
   if (process.platform === 'darwin') {
     try {
       const out = execFileSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' })
@@ -938,7 +949,7 @@ const findAncestors = pid => {
         if (p && pp) parentOf.set(p, pp)
       }
       const pids = []
-      for (let current = pid; current > 1 && pids.length < 32; current = parentOf.get(current) ?? 0) {
+      for (let current = startPid; current > 1 && pids.length < 32; current = parentOf.get(current) ?? 0) {
         pids.push(current)
       }
       return pids
@@ -948,7 +959,7 @@ const findAncestors = pid => {
   }
   if (process.platform === 'linux') {
     const pids = []
-    for (let current = pid; current > 1 && pids.length < 32; ) {
+    for (let current = startPid; current > 1 && pids.length < 32; ) {
       pids.push(current)
       try {
         const stat = fs.readFileSync(`/proc/${current}/stat`, 'utf8')
@@ -962,9 +973,130 @@ const findAncestors = pid => {
   return []
 }
 
+const isProcessAlive = pid => {
+  const numericPid = Number(pid)
+  if (!Number.isInteger(numericPid) || numericPid <= 1) return false
+  try {
+    process.kill(numericPid, 0)
+  } catch (err) {
+    if (err?.code !== 'EPERM') return false
+  }
+  if (process.platform === 'linux') {
+    try {
+      const stat = fs.readFileSync(`/proc/${numericPid}/stat`, 'utf8')
+      if (procState(stat) === 'Z') return false
+    } catch {}
+  }
+  return true
+}
+
+const readProcessCommand = pid => {
+  const numericPid = Number(pid)
+  if (!Number.isInteger(numericPid) || numericPid <= 1) return undefined
+  if (process.platform === 'linux') {
+    const parts = []
+    try {
+      const cmdline = fs.readFileSync(`/proc/${numericPid}/cmdline`, 'utf8').replace(/\0+/g, ' ').trim()
+      if (cmdline) parts.push(cmdline)
+    } catch {}
+    try {
+      const comm = fs.readFileSync(`/proc/${numericPid}/comm`, 'utf8').trim()
+      if (comm) parts.push(comm)
+    } catch {}
+    try {
+      const exe = fs.readlinkSync(`/proc/${numericPid}/exe`)
+      if (exe) parts.push(exe)
+    } catch {}
+    return parts.length > 0 ? parts.join(' ') : undefined
+  }
+  if (process.platform === 'darwin') {
+    try {
+      const out = execFileSync('ps', ['-p', String(numericPid), '-o', 'comm=,command='], { encoding: 'utf8' }).trim()
+      return out || undefined
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
+const isUnderPtyHost = (pid, precomputedAncestors) => {
+  const ancestors = precomputedAncestors ?? findAncestors(pid)
+  const parentPids = ancestors.slice(1)
+  if (parentPids.length === 0) return false
+  if (process.platform === 'linux') {
+    return parentPids.some(anc => isPtyHostCmd(readProcessCommand(anc)))
+  }
+  if (process.platform === 'darwin') {
+    try {
+      const out = execFileSync('ps', ['-p', parentPids.join(','), '-o', 'command='], { encoding: 'utf8' })
+      return out.split('\n').some(line => isPtyHostCmd(line))
+    } catch {
+      return false
+    }
+  }
+  return false
+}
+
+let lastWindowPublishKey = ''
+let lastWindowPublishAt = 0
+
+const publishWindowTerminals = async (force = false) => {
+  try {
+    const rawPids = await Promise.all(
+      vscode.window.terminals
+        .filter(t => t.exitStatus === undefined)
+        .map(t => Promise.resolve(t.processId).catch(() => undefined)),
+    )
+    const terminalPids = [...new Set(rawPids.map(Number).filter(pid => Number.isInteger(pid) && pid > 1))].sort((a, b) => a - b)
+    const key = terminalPids.join(',')
+    const now = Date.now()
+    if (!force && key === lastWindowPublishKey && now - lastWindowPublishAt < WINDOW_HEARTBEAT_WRITE_MS) {
+      return
+    }
+    lastWindowPublishKey = key
+    lastWindowPublishAt = now
+    await fs.promises.mkdir(WINDOWS_DIR, { recursive: true })
+    await fs.promises.writeFile(WINDOW_FILE, JSON.stringify({ pid: process.pid, updatedAt: now, terminalPids }))
+  } catch {}
+}
+
+const cleanupWindowFile = () => {
+  try {
+    fs.unlinkSync(WINDOW_FILE)
+  } catch {}
+}
+
+const isClaimedByOtherWindow = async ancestors => {
+  if (!Array.isArray(ancestors) || ancestors.length === 0) return false
+  const names = await fs.promises.readdir(WINDOWS_DIR).catch(() => [])
+  const selfName = `${process.pid}.json`
+  const entries = []
+  await Promise.all(
+    names
+      .filter(name => name.endsWith('.json') && name !== selfName)
+      .map(async name => {
+        const file = path.join(WINDOWS_DIR, name)
+        const entry = await readJson(file)
+        if (!entry) return
+        if (!isProcessAlive(entry.pid)) {
+          fs.promises.unlink(file).catch(() => {})
+          return
+        }
+        entries.push(entry)
+      }),
+  )
+  return isSessionClaimedByOtherWindow(ancestors, entries, {
+    selfPid: process.pid,
+    now: Date.now(),
+    isAlive: isProcessAlive,
+  })
+}
+
 const terminalForPid = new Map()
 const appliedTerminalTitles = new WeakMap()
 const terminalSessionMap = new WeakMap()
+const resumingSessions = new Set()
 
 const findSessionForTerminal = async (terminal, provider) => {
   if (!terminal || !provider?.sessions) return undefined
@@ -1004,7 +1136,11 @@ const findTerminalForSession = async session => {
       terminal => terminal.exitStatus === undefined && isAttachTerminal(terminal, session),
     )
   }
-  if (!session.pid) return undefined
+  if (!session.pid) {
+    return vscode.window.terminals.find(
+      terminal => terminal.exitStatus === undefined && isAttachTerminal(terminal, session),
+    )
+  }
   const cached = terminalForPid.get(session.pid)
   if (cached && cached.exitStatus === undefined && vscode.window.terminals.includes(cached)) {
     return cached
@@ -1014,12 +1150,17 @@ const findTerminalForSession = async session => {
     ancestors = findAncestors(session.pid)
   } catch {}
   for (const terminal of vscode.window.terminals) {
-    if (terminal.exitStatus === undefined && ancestors.includes(await terminal.processId)) {
-      terminalForPid.set(session.pid, terminal)
-      return terminal
-    }
+    if (terminal.exitStatus !== undefined) continue
+    try {
+      if (ancestors.includes(await terminal.processId)) {
+        terminalForPid.set(session.pid, terminal)
+        return terminal
+      }
+    } catch {}
   }
-  return undefined
+  return vscode.window.terminals.find(
+    terminal => terminal.exitStatus === undefined && isAttachTerminal(terminal, session),
+  )
 }
 
 const applyTerminalTitleIfActive = async (terminal, desired) => {
@@ -1033,6 +1174,7 @@ const applyTerminalTitleIfActive = async (terminal, desired) => {
 }
 
 const syncTerminalTitles = async (provider, inbox) => {
+  void publishWindowTerminals()
   const active = vscode.window.activeTerminal
   if (!active || active.exitStatus !== undefined) {
     if (provider.activeSessionId) {
@@ -1055,8 +1197,77 @@ const syncTerminalTitles = async (provider, inbox) => {
   }
 }
 
-// claude attach takes background sessions only; an interactive one can just be shown where it runs.
-const focusInteractive = async (session, provider) => {
+const openSessionTerminal = (session, provider, args) => {
+  const pattern = provider?.pattern ?? ticketPattern()
+  const short = withoutTicketSuffix(session.name, pattern) || session.name
+  const cwd =
+    (session.cwd && fs.existsSync(session.cwd) && session.cwd) ||
+    (session.initialCwd && fs.existsSync(session.initialCwd) && session.initialCwd) ||
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ||
+    os.homedir()
+  const hasFolder = Boolean(session.folder || session.ticket)
+  const env = hasFolder
+    ? { AGENT_COCKPIT_FOLDER: session.folder || session.ticket, CLAUDE_DECK_FOLDER: session.folder || session.ticket }
+    : { AGENT_COCKPIT_FOLDER: '', CLAUDE_DECK_FOLDER: '' }
+  const terminal = vscode.window.createTerminal({
+    name: short,
+    shellPath: CLAUDE,
+    shellArgs: args,
+    cwd,
+    env,
+    iconPath: new vscode.ThemeIcon('hubot'),
+    location: vscode.TerminalLocation.Editor,
+  })
+  terminalSessionMap.set(terminal, session.id || session.sessionId)
+  Promise.resolve(terminal.processId)
+    .then(pid => {
+      if (pid) terminalForPid.set(pid, terminal)
+    })
+    .catch(() => {})
+  terminal.show()
+  return terminal
+}
+
+const stopAndResumeSession = async (session, provider, refresh) => {
+  const resumeId = session?.sessionId || session?.id
+  if (!resumeId || resumingSessions.has(resumeId)) return
+  resumingSessions.add(resumeId)
+  const pattern = provider?.pattern ?? ticketPattern()
+  const displayName = withoutTicketSuffix(session.name, pattern) || session.name || 'Session'
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: `Resuming "${displayName}"…` },
+      async () => {
+        const existing = await findTerminalForSession(session)
+        if (existing) {
+          existing.show()
+          const desired = provider && terminalTitleFor(session, pattern)
+          if (desired) setTimeout(() => applyTerminalTitleIfActive(existing, desired), 50)
+          return
+        }
+        if (session.pid) {
+          const result = await stopProcess(session.pid, {
+            isAlive: isProcessAlive,
+            readCommand: readProcessCommand,
+          })
+          if (!result.stopped) {
+            vscode.window.showWarningMessage(`Could not stop "${displayName}" (pid ${session.pid}): ${result.reason}`)
+            return
+          }
+          terminalForPid.delete(session.pid)
+        }
+        openSessionTerminal(session, provider, ['--resume', resumeId])
+        refresh?.()
+        setTimeout(() => refresh?.(), 2_500)
+      },
+    )
+  } finally {
+    resumingSessions.delete(resumeId)
+  }
+}
+
+// claude attach takes background sessions only; an interactive one is focused if in this window, or offered Stop & Resume.
+const focusInteractive = async (session, provider, refresh) => {
   const terminal = await findTerminalForSession(session)
   if (terminal) {
     terminal.show()
@@ -1066,7 +1277,40 @@ const focusInteractive = async (session, provider) => {
     }
     return
   }
-  vscode.window.showInformationMessage(`${session.name} runs outside VS Code's terminals (pid ${session.pid}).`)
+  const resumeId = session.sessionId || session.id
+  if (session.pid && !isProcessAlive(session.pid) && resumeId) {
+    terminalForPid.delete(session.pid)
+    openSessionTerminal(session, provider, ['--resume', resumeId])
+    refresh?.()
+    setTimeout(() => refresh?.(), 2_500)
+    return
+  }
+  const ancestors = session.pid ? findAncestors(session.pid) : []
+  const isPtyHost = Boolean(session.pid && isUnderPtyHost(session.pid, ancestors))
+  const claimedByOtherWindow = isPtyHost ? await isClaimedByOtherWindow(ancestors) : false
+  if (shouldAutoResumeDetached(session, { isPtyHost, claimedByOtherWindow })) {
+    return stopAndResumeSession(session, provider, refresh)
+  }
+  const pattern = provider?.pattern ?? ticketPattern()
+  const label = withoutTicketSuffix(session.name, pattern) || session.name
+  const notice = detachedSessionNotice(session, { isPtyHost, claimedByOtherWindow, label })
+  const showFn = notice.severity === 'warning'
+    ? vscode.window.showWarningMessage
+    : vscode.window.showInformationMessage
+  const choice = notice.action
+    ? await showFn(notice.message, notice.action)
+    : await showFn(notice.message)
+  if (choice && choice === notice.action) {
+    if (notice.confirmModal) {
+      const confirmed = await vscode.window.showWarningMessage(
+        notice.confirmModal,
+        { modal: true },
+        notice.confirmAction,
+      )
+      if (confirmed !== notice.confirmAction) return
+    }
+    await stopAndResumeSession(session, provider, refresh)
+  }
 }
 
 const closeTerminalForSession = async session => {
@@ -1328,11 +1572,11 @@ const openBriefing = async (provider, refresh) => {
   }
 }
 
-const attach = async (session, provider) => {
+const attach = async (session, provider, refresh) => {
   if (provider?.isHidden(session)) {
     await provider.setHidden(session, false)
   }
-  if (session.interactive) return focusInteractive(session, provider)
+  if (session.interactive) return focusInteractive(session, provider, refresh)
   const pattern = provider.pattern
   const open = await findTerminalForSession(session)
   if (open) {
@@ -1341,25 +1585,7 @@ const attach = async (session, provider) => {
     if (desired) setTimeout(() => applyTerminalTitleIfActive(open, desired), 50)
     return
   }
-  const short = withoutTicketSuffix(session.name, pattern) || session.name
-  const cwd = session.cwd && fs.existsSync(session.cwd)
-    ? session.cwd
-    : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir())
-  const hasFolder = Boolean(session.folder || session.ticket)
-  const env = hasFolder
-    ? { AGENT_COCKPIT_FOLDER: session.folder || session.ticket, CLAUDE_DECK_FOLDER: session.folder || session.ticket }
-    : { AGENT_COCKPIT_FOLDER: '', CLAUDE_DECK_FOLDER: '' }
-  const terminal = vscode.window.createTerminal({
-    name: short,
-    shellPath: CLAUDE,
-    shellArgs: attachArgs(session),
-    cwd,
-    env,
-    iconPath: new vscode.ThemeIcon('hubot'),
-    location: vscode.TerminalLocation.Editor,
-  })
-  terminalSessionMap.set(terminal, session.id || session.sessionId)
-  terminal.show()
+  openSessionTerminal(session, provider, attachArgs(session))
 }
 
 // Migrate from legacy claude-tickets and claude-deck
@@ -1381,7 +1607,7 @@ const migrateLegacyData = async () => {
   }
 }
 
-const search = async provider => {
+const search = async (provider, refresh) => {
   const now = Date.now()
   const items = [...provider.sessions]
     .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -1403,7 +1629,7 @@ const search = async provider => {
     matchOnDescription: true,
     matchOnDetail: true,
   })
-  if (picked) attach(picked.session, provider)
+  if (picked) attach(picked.session, provider, refresh)
 }
 
 const moveToFolder = async (session, provider, refresh) => {
@@ -1452,7 +1678,7 @@ const activate = async context => {
   await migrateLegacyData()
   const sessionById = id => provider.sessions.find(session => session.id === id || session.sessionId === id)
   const inbox = new InboxView(provider, {
-    attach: ({ id }) => sessionById(id) && attach(sessionById(id), provider),
+    attach: ({ id }) => sessionById(id) && attach(sessionById(id), provider, refresh),
     openUrl: ({ url }) => vscode.env.openExternal(vscode.Uri.parse(url)),
     openTicket: ({ ticket }) => openJira({ group: { ticket } }),
     briefing: () => openBriefing(provider, refresh),
@@ -1592,7 +1818,7 @@ const activate = async context => {
       ? vscode.window.showWarningMessage
       : vscode.window.showInformationMessage
     showFn(msg, 'Jump to Terminal')
-      .then(choice => choice === 'Jump to Terminal' && attach(session, provider))
+      .then(choice => choice === 'Jump to Terminal' && attach(session, provider, refresh))
   }
   let running
   let pendingForce = null
@@ -1659,7 +1885,9 @@ const activate = async context => {
 
   context.subscriptions.push(
     { dispose: () => clearInterval(timer) },
+    { dispose: cleanupWindowFile },
     ...watchers.map(w => ({ dispose: () => w.close() })),
+    vscode.window.onDidOpenTerminal(() => void publishWindowTerminals(true)),
     vscode.window.onDidChangeActiveTerminal(() => void syncTerminalTitles(provider, inbox)),
     vscode.window.onDidCloseTerminal(t => {
       if (t === briefingTerminal) briefingTerminal = null
@@ -1668,6 +1896,7 @@ const activate = async context => {
         provider.activeSessionId = null
         inbox?.refresh()
       }
+      void publishWindowTerminals(true)
     }),
     vscode.workspace.onDidChangeConfiguration(
       e => (e.affectsConfiguration('agentCockpit') || e.affectsConfiguration('claudeDeck')) && refresh(true),
@@ -1675,16 +1904,16 @@ const activate = async context => {
     ...registerCmd('briefing', () => openBriefing(provider, refresh)),
     ...registerCmd('focus', () => {
       const blocked = provider.sessions.find(s => (s.state === 'blocked' || s.state === 'failed') && !provider.isHidden(s))
-      if (blocked) return attach(blocked, provider)
+      if (blocked) return attach(blocked, provider, refresh)
       vscode.commands.executeCommand('agentCockpit.inbox.focus').then(
         () => {},
         () => vscode.commands.executeCommand('claudeDeck.inbox.focus'),
       )
     }),
     ...registerCmd('refresh', () => refresh(true)),
-    ...registerCmd('attach', session => attach(session, provider)),
+    ...registerCmd('attach', session => attach(session, provider, refresh)),
     ...registerCmd('openJira', openJira),
-    ...registerCmd('search', () => search(provider)),
+    ...registerCmd('search', () => search(provider, refresh)),
     ...registerCmd('rename', async ({ session, name } = {}) => {
       if (!session) return
       const newName = name !== undefined ? name.trim() : (await vscode.window.showInputBox({ title: 'Rename session', value: session.name }))?.trim()
@@ -1849,7 +2078,8 @@ const activate = async context => {
       refresh(true)
     }),
   )
+  void publishWindowTerminals(true)
   refresh(true)
 }
 
-module.exports = { activate, deactivate: () => {} }
+module.exports = { activate, deactivate: cleanupWindowFile }

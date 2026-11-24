@@ -14,10 +14,159 @@ const interactiveState = status => ({ waiting: 'blocked', busy: 'working' })[sta
 // From /proc/<pid>/stat: the parent pid is the second field after the parenthesised command.
 const parentPid = stat => Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1])
 
+const procState = stat => (typeof stat === 'string' && stat.includes(')') ? stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0] : '')
+
 const ancestorPids = (pid, readStat) => {
   const pids = []
   for (let current = pid; current > 1 && pids.length < 32; current = parentPid(readStat(current))) pids.push(current)
   return pids
+}
+
+const isPtyHostCmd = cmd => typeof cmd === 'string' && /\bptyHost(?:Main)?\b/i.test(cmd)
+
+const isClaudeCmd = cmd => typeof cmd === 'string' && /(?:^|[\s/\\_-])claude(?:$|[\s/\\._-])/i.test(cmd)
+
+const WINDOW_HEARTBEAT_TTL_MS = 60_000
+
+const isSessionClaimedByOtherWindow = (ancestors, windowEntries, options = {}) => {
+  const { selfPid, now = Date.now(), ttlMs = WINDOW_HEARTBEAT_TTL_MS, isAlive = () => true } = options
+  if (!Array.isArray(ancestors) || ancestors.length === 0 || !Array.isArray(windowEntries)) return false
+  const ancestorSet = new Set(ancestors.map(Number).filter(pid => Number.isInteger(pid) && pid > 1))
+  if (ancestorSet.size === 0) return false
+  for (const entry of windowEntries) {
+    if (!entry || typeof entry !== 'object') continue
+    const winPid = Number(entry.pid)
+    if (!Number.isInteger(winPid) || winPid <= 1 || winPid === Number(selfPid)) continue
+    if (typeof entry.updatedAt === 'number' && now - entry.updatedAt > ttlMs) continue
+    if (!isAlive(winPid)) continue
+    if (Array.isArray(entry.terminalPids) && entry.terminalPids.some(pid => ancestorSet.has(Number(pid)))) {
+      return true
+    }
+  }
+  return false
+}
+
+const shouldAutoResumeDetached = (session, { isPtyHost = false, claimedByOtherWindow = false } = {}) =>
+  Boolean(
+    isPtyHost &&
+    !claimedByOtherWindow &&
+    session?.state !== 'working' &&
+    (session?.sessionId || session?.id),
+  )
+
+const detachedSessionNotice = (session, { isPtyHost = false, claimedByOtherWindow = false, label } = {}) => {
+  const displayName = label || session?.name || 'Session'
+  const pidSuffix = session?.pid ? ` (pid ${session.pid})` : ''
+  const isWorking = session?.state === 'working'
+  const action = session?.sessionId || session?.id ? 'Stop & Resume in Terminal' : undefined
+  const severity = isWorking ? 'warning' : 'info'
+  const confirmModal = isWorking
+    ? `Stop working session "${displayName}"${pidSuffix} and resume it in a new terminal? The in-progress turn will be interrupted.`
+    : null
+  const confirmAction = isWorking ? 'Stop & Resume' : null
+  const message = claimedByOtherWindow
+    ? (isWorking
+        ? `"${displayName}" is currently working in another VS Code window${pidSuffix}. Stopping it will interrupt the active turn.`
+        : `"${displayName}" is open in another VS Code window${pidSuffix}.`)
+    : isPtyHost
+      ? (isWorking
+          ? `"${displayName}" is currently working in a detached VS Code terminal${pidSuffix}. Stopping it will interrupt the active turn.`
+          : `"${displayName}" is detached from this window's terminals${pidSuffix} (e.g. after a reconnect or in another window).`)
+      : (isWorking
+          ? `"${displayName}" is currently working outside this VS Code window's terminals${pidSuffix}.`
+          : `"${displayName}" runs outside this VS Code window's terminals${pidSuffix}.`)
+  return { severity, message, action, confirmModal, confirmAction }
+}
+
+const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// Gracefully stops a detached Claude Code process (SIGTERM -> SIGHUP -> SIGKILL) with PID-reuse guards.
+const stopProcess = async (pid, options = {}) => {
+  const {
+    timeoutMs = 3_000,
+    hupTimeoutMs = 1_000,
+    killTimeoutMs = 1_000,
+    pollMs = 100,
+    kill = process.kill,
+    isAlive,
+    readCommand = () => undefined,
+    sleep = defaultSleep,
+    platform = process.platform,
+  } = options
+  const numericPid = Number(pid)
+  if (!Number.isInteger(numericPid) || numericPid <= 1) {
+    return { stopped: true, alreadyExited: true }
+  }
+  const checkAlive = () => {
+    if (typeof isAlive === 'function') return Boolean(isAlive(numericPid))
+    try {
+      kill(numericPid, 0)
+      return true
+    } catch (err) {
+      return err?.code === 'EPERM'
+    }
+  }
+  if (!checkAlive()) {
+    return { stopped: true, alreadyExited: true }
+  }
+  const initialCmd = readCommand(numericPid)
+  if (initialCmd && !isClaudeCmd(initialCmd)) {
+    return { stopped: false, reason: `Process ${numericPid} is no longer a Claude session.` }
+  }
+  const sendSignal = sig => {
+    try {
+      kill(numericPid, sig)
+      return { ok: true }
+    } catch (err) {
+      if (err?.code === 'ESRCH') return { ok: true, exited: true }
+      return { ok: false, reason: err?.message || `Failed to send ${sig} to process ${numericPid}.` }
+    }
+  }
+  const waitForExit = async waitMs => {
+    const maxWait = Math.max(0, waitMs)
+    const step = Math.max(1, pollMs)
+    const start = Date.now()
+    let elapsed = 0
+    while (checkAlive()) {
+      const used = Math.max(elapsed, Date.now() - start)
+      const remaining = maxWait - used
+      if (remaining <= 0) return false
+      const nextSleep = Math.min(step, remaining)
+      await sleep(nextSleep)
+      elapsed += nextSleep
+    }
+    return true
+  }
+
+  const termRes = sendSignal('SIGTERM')
+  if (!termRes.ok) return { stopped: false, reason: termRes.reason }
+  if (termRes.exited || !checkAlive() || (await waitForExit(timeoutMs))) {
+    return { stopped: true, alreadyExited: false }
+  }
+
+  if (platform !== 'win32') {
+    const cmdBeforeHup = readCommand(numericPid)
+    if (cmdBeforeHup && !isClaudeCmd(cmdBeforeHup)) {
+      return { stopped: true, alreadyExited: false }
+    }
+    const hupRes = sendSignal('SIGHUP')
+    if (!hupRes.ok) return { stopped: false, reason: hupRes.reason }
+    if (hupRes.exited || !checkAlive() || (await waitForExit(hupTimeoutMs))) {
+      return { stopped: true, alreadyExited: false }
+    }
+  }
+
+  const cmdBeforeKill = readCommand(numericPid)
+  if (cmdBeforeKill && !isClaudeCmd(cmdBeforeKill)) {
+    return { stopped: true, alreadyExited: false }
+  }
+  const killRes = sendSignal('SIGKILL')
+  if (!killRes.ok) return { stopped: false, reason: killRes.reason }
+  if (killRes.exited || !checkAlive() || (await waitForExit(killTimeoutMs))) {
+    return { stopped: true, alreadyExited: false }
+  }
+
+  return { stopped: false, reason: `Process ${numericPid} did not exit.` }
 }
 
 const normalizeTicket = ticket => {
@@ -791,7 +940,14 @@ module.exports = {
   mergeSessions,
   interactiveState,
   parentPid,
+  procState,
   ancestorPids,
+  isPtyHostCmd,
+  isClaudeCmd,
+  isSessionClaimedByOtherWindow,
+  shouldAutoResumeDetached,
+  detachedSessionNotice,
+  stopProcess,
   cacheTtlMs,
   trackerRefreshMs,
   cacheLeft,

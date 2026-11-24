@@ -32,6 +32,13 @@ const {
   mergeSessions,
   interactiveState,
   ancestorPids,
+  procState,
+  isPtyHostCmd,
+  isClaudeCmd,
+  isSessionClaimedByOtherWindow,
+  shouldAutoResumeDetached,
+  detachedSessionNotice,
+  stopProcess,
   cacheTtlMs,
   trackerRefreshMs,
   cacheLeft,
@@ -1098,4 +1105,304 @@ test('trackerRefreshInterval configuration setting is declared as number with de
   assert.equal(prop.type, 'number')
   assert.equal(prop.default, 300)
   assert.equal(prop.minimum, 0)
+})
+
+test('procState extracts Linux /proc stat state including names with spaces and parentheses', () => {
+  assert.equal(procState('30 (claude) S 20 1'), 'S')
+  assert.equal(procState('30 (claude) R 20 1'), 'R')
+  assert.equal(procState('30 (claude (v2) helper) Z 20 1'), 'Z')
+  assert.equal(procState('invalid'), '')
+  assert.equal(procState(undefined), '')
+})
+
+test('isPtyHostCmd detects VS Code ptyHost processes across platforms', () => {
+  assert.equal(isPtyHostCmd('node /vscode/out/vs/platform/terminal/node/ptyHostMain.js'), true)
+  assert.equal(isPtyHostCmd('/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin) --type=ptyHost'), true)
+  assert.equal(isPtyHostCmd('/vscode-server/node --type=ptyHost --logsPath=/tmp'), true)
+  assert.equal(isPtyHostCmd('/bin/zsh -l'), false)
+  assert.equal(isPtyHostCmd('node server.js'), false)
+  assert.equal(isPtyHostCmd(undefined), false)
+})
+
+test('isClaudeCmd identifies Claude Code commands and rejects unrelated binaries', () => {
+  assert.equal(isClaudeCmd('claude'), true)
+  assert.equal(isClaudeCmd('/Users/david/.local/bin/claude --resume abc'), true)
+  assert.equal(isClaudeCmd('/Users/david/.local/share/claude/versions/2.1.5'), true)
+  assert.equal(isClaudeCmd('node /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'), true)
+  assert.equal(isClaudeCmd('C:\\Users\\david\\.local\\bin\\claude.exe'), true)
+  assert.equal(isClaudeCmd('/bin/zsh'), false)
+  assert.equal(isClaudeCmd('vim notes.md'), false)
+  assert.equal(isClaudeCmd('python3 app.py'), false)
+  assert.equal(isClaudeCmd(undefined), false)
+})
+
+test('detachedSessionNotice formats ptyHost vs external and working vs idle notices', () => {
+  const ptyIdle = detachedSessionNotice(
+    { id: 's1', sessionId: 's1', pid: 57173, name: 'Doc-Type-Routing', state: 'idle' },
+    { isPtyHost: true },
+  )
+  assert.equal(ptyIdle.severity, 'info')
+  assert.equal(ptyIdle.action, 'Stop & Resume in Terminal')
+  assert.equal(ptyIdle.confirmModal, null)
+  assert.equal(ptyIdle.confirmAction, null)
+  assert.ok(ptyIdle.message.includes('detached from this window\'s terminals (pid 57173)'))
+
+  const ptyWorking = detachedSessionNotice(
+    { id: 's1', sessionId: 's1', pid: 57173, name: 'Doc-Type-Routing (PROJ-1)', state: 'working' },
+    { isPtyHost: true, label: 'Doc-Type-Routing' },
+  )
+  assert.equal(ptyWorking.severity, 'warning')
+  assert.equal(ptyWorking.action, 'Stop & Resume in Terminal')
+  assert.equal(ptyWorking.confirmAction, 'Stop & Resume')
+  assert.ok(ptyWorking.message.includes('working in a detached VS Code terminal (pid 57173)'))
+  assert.ok(ptyWorking.confirmModal.includes('Stop working session "Doc-Type-Routing" (pid 57173)'))
+
+  const extIdle = detachedSessionNotice(
+    { id: 's2', sessionId: 's2', pid: 900, name: 'External CLI', state: 'blocked' },
+    { isPtyHost: false },
+  )
+  assert.equal(extIdle.severity, 'info')
+  assert.equal(extIdle.confirmModal, null)
+  assert.ok(extIdle.message.includes('runs outside this VS Code window\'s terminals (pid 900)'))
+
+  const extWorking = detachedSessionNotice(
+    { id: 's2', sessionId: 's2', name: 'External Working', state: 'working' },
+    { isPtyHost: false },
+  )
+  assert.equal(extWorking.severity, 'warning')
+  assert.ok(!extWorking.message.includes('(pid'))
+  assert.ok(extWorking.message.includes('working outside this VS Code window\'s terminals'))
+  assert.ok(extWorking.confirmModal.includes('Stop working session "External Working"'))
+
+  const otherWindowIdle = detachedSessionNotice(
+    { id: 's3', sessionId: 's3', pid: 57173, name: 'Other Window', state: 'idle' },
+    { isPtyHost: true, claimedByOtherWindow: true },
+  )
+  assert.equal(otherWindowIdle.severity, 'info')
+  assert.equal(otherWindowIdle.confirmModal, null)
+  assert.ok(otherWindowIdle.message.includes('open in another VS Code window (pid 57173)'))
+
+  const otherWindowWorking = detachedSessionNotice(
+    { id: 's3', sessionId: 's3', pid: 57173, name: 'Other Window', state: 'working' },
+    { isPtyHost: true, claimedByOtherWindow: true },
+  )
+  assert.equal(otherWindowWorking.severity, 'warning')
+  assert.ok(otherWindowWorking.message.includes('working in another VS Code window (pid 57173)'))
+  assert.equal(otherWindowWorking.confirmAction, 'Stop & Resume')
+
+  const noId = detachedSessionNotice({ name: 'Orphan', state: 'idle' }, { isPtyHost: false })
+  assert.equal(noId.action, undefined)
+})
+
+test('isSessionClaimedByOtherWindow detects live claims and ignores self, stale, or dead windows', () => {
+  const now = 100_000
+  const ancestors = [57173, 4000, 347]
+
+  // Live other window claims direct pid or ancestor shell pid
+  assert.equal(
+    isSessionClaimedByOtherWindow(
+      ancestors,
+      [{ pid: 2222, updatedAt: now - 5_000, terminalPids: [4000] }],
+      { selfPid: 1111, now, isAlive: pid => pid === 2222 },
+    ),
+    true,
+  )
+
+  // Ignores own window entry
+  assert.equal(
+    isSessionClaimedByOtherWindow(
+      ancestors,
+      [{ pid: 1111, updatedAt: now - 1_000, terminalPids: [57173] }],
+      { selfPid: 1111, now, isAlive: () => true },
+    ),
+    false,
+  )
+
+  // Ignores stale heartbeat (> ttlMs)
+  assert.equal(
+    isSessionClaimedByOtherWindow(
+      ancestors,
+      [{ pid: 2222, updatedAt: now - 90_000, terminalPids: [57173] }],
+      { selfPid: 1111, now, ttlMs: 60_000, isAlive: () => true },
+    ),
+    false,
+  )
+
+  // Ignores dead extension host window even with recent timestamp
+  assert.equal(
+    isSessionClaimedByOtherWindow(
+      ancestors,
+      [{ pid: 2222, updatedAt: now - 1_000, terminalPids: [57173] }],
+      { selfPid: 1111, now, isAlive: () => false },
+    ),
+    false,
+  )
+
+  // Ignores unrelated terminal PIDs
+  assert.equal(
+    isSessionClaimedByOtherWindow(
+      ancestors,
+      [{ pid: 2222, updatedAt: now - 1_000, terminalPids: [99999] }],
+      { selfPid: 1111, now, isAlive: () => true },
+    ),
+    false,
+  )
+})
+
+test('shouldAutoResumeDetached auto-resumes only unclaimed non-working ptyHost sessions', () => {
+  const idle = { id: 's1', sessionId: 's1', state: 'idle' }
+  const blocked = { id: 's2', sessionId: 's2', state: 'blocked' }
+  const working = { id: 's3', sessionId: 's3', state: 'working' }
+
+  assert.equal(shouldAutoResumeDetached(idle, { isPtyHost: true, claimedByOtherWindow: false }), true)
+  assert.equal(shouldAutoResumeDetached(blocked, { isPtyHost: true, claimedByOtherWindow: false }), true)
+  assert.equal(shouldAutoResumeDetached(working, { isPtyHost: true, claimedByOtherWindow: false }), false)
+  assert.equal(shouldAutoResumeDetached(idle, { isPtyHost: true, claimedByOtherWindow: true }), false)
+  assert.equal(shouldAutoResumeDetached(idle, { isPtyHost: false, claimedByOtherWindow: false }), false)
+  assert.equal(shouldAutoResumeDetached({ state: 'idle' }, { isPtyHost: true, claimedByOtherWindow: false }), false)
+})
+
+test('stopProcess handles exit, escalation, PID reuse, errors, and Windows signal behavior', async () => {
+  const noSleep = async () => {}
+
+  // 1. Already exited (or invalid PID) sends no signals
+  const sentExited = []
+  assert.deepEqual(
+    await stopProcess(57173, {
+      isAlive: () => false,
+      kill: (p, s) => sentExited.push([p, s]),
+      sleep: noSleep,
+    }),
+    { stopped: true, alreadyExited: true },
+  )
+  assert.deepEqual(sentExited, [])
+  assert.deepEqual(await stopProcess(1, { kill: (p, s) => sentExited.push([p, s]) }), { stopped: true, alreadyExited: true })
+
+  // 2. Exits cleanly on SIGTERM
+  let alive = true
+  const sentTerm = []
+  const resTerm = await stopProcess(1234, {
+    isAlive: () => alive,
+    readCommand: () => '/Users/david/.local/bin/claude',
+    kill: (p, s) => {
+      sentTerm.push([p, s])
+      if (s === 'SIGTERM') alive = false
+    },
+    sleep: noSleep,
+  })
+  assert.deepEqual(resTerm, { stopped: true, alreadyExited: false })
+  assert.deepEqual(sentTerm, [[1234, 'SIGTERM']])
+
+  // 3. Ignores SIGTERM, exits on SIGHUP
+  alive = true
+  const sentHup = []
+  const resHup = await stopProcess(2345, {
+    timeoutMs: 200,
+    hupTimeoutMs: 200,
+    pollMs: 100,
+    platform: 'darwin',
+    isAlive: () => alive,
+    readCommand: () => 'claude',
+    kill: (p, s) => {
+      sentHup.push([p, s])
+      if (s === 'SIGHUP') alive = false
+    },
+    sleep: noSleep,
+  })
+  assert.deepEqual(resHup, { stopped: true, alreadyExited: false })
+  assert.deepEqual(sentHup, [[2345, 'SIGTERM'], [2345, 'SIGHUP']])
+
+  // 4. Ignores SIGTERM & SIGHUP, exits on SIGKILL
+  alive = true
+  const sentKill = []
+  const resKill = await stopProcess(3456, {
+    timeoutMs: 200,
+    hupTimeoutMs: 200,
+    killTimeoutMs: 200,
+    pollMs: 100,
+    platform: 'linux',
+    isAlive: () => alive,
+    readCommand: () => 'node /opt/@anthropic-ai/claude-code/cli.js',
+    kill: (p, s) => {
+      sentKill.push([p, s])
+      if (s === 'SIGKILL') alive = false
+    },
+    sleep: noSleep,
+  })
+  assert.deepEqual(resKill, { stopped: true, alreadyExited: false })
+  assert.deepEqual(sentKill, [[3456, 'SIGTERM'], [3456, 'SIGHUP'], [3456, 'SIGKILL']])
+
+  // 5. PID reused initially by non-Claude process -> refuses to signal
+  const sentReuse = []
+  const resReuse = await stopProcess(4567, {
+    isAlive: () => true,
+    readCommand: () => '/bin/zsh',
+    kill: (p, s) => sentReuse.push([p, s]),
+    sleep: noSleep,
+  })
+  assert.equal(resReuse.stopped, false)
+  assert.ok(resReuse.reason.includes('no longer a Claude session'))
+  assert.deepEqual(sentReuse, [])
+
+  // 6. PID reused during escalation -> stops without sending SIGHUP
+  let cmdDuring = 'claude'
+  const sentMidReuse = []
+  const resMidReuse = await stopProcess(4568, {
+    timeoutMs: 100,
+    pollMs: 100,
+    platform: 'linux',
+    isAlive: () => true,
+    readCommand: () => cmdDuring,
+    kill: (p, s) => {
+      sentMidReuse.push([p, s])
+      cmdDuring = 'python3'
+    },
+    sleep: noSleep,
+  })
+  assert.deepEqual(resMidReuse, { stopped: true, alreadyExited: false })
+  assert.deepEqual(sentMidReuse, [[4568, 'SIGTERM']])
+
+  // 7. EPERM error on kill returns stopped: false
+  const resEperm = await stopProcess(5678, {
+    isAlive: () => true,
+    readCommand: () => 'claude',
+    kill: () => {
+      const err = new Error('Operation not permitted')
+      err.code = 'EPERM'
+      throw err
+    },
+    sleep: noSleep,
+  })
+  assert.equal(resEperm.stopped, false)
+  assert.ok(resEperm.reason.includes('Operation not permitted'))
+
+  // 8. Windows skips SIGHUP and escalates SIGTERM -> SIGKILL
+  alive = true
+  const sentWin = []
+  const resWin = await stopProcess(6789, {
+    timeoutMs: 100,
+    killTimeoutMs: 100,
+    pollMs: 100,
+    platform: 'win32',
+    isAlive: () => alive,
+    readCommand: () => 'C:\\bin\\claude.exe',
+    kill: (p, s) => {
+      sentWin.push([p, s])
+      if (s === 'SIGKILL') alive = false
+    },
+    sleep: noSleep,
+  })
+  assert.deepEqual(resWin, { stopped: true, alreadyExited: false })
+  assert.deepEqual(sentWin, [[6789, 'SIGTERM'], [6789, 'SIGKILL']])
+})
+
+test('extension.js wires detached session detection and 1-click Stop & Resume recovery', () => {
+  const ext = fs.readFileSync(path.resolve(__dirname, 'extension.js'), 'utf8')
+  assert.ok(ext.includes('detachedSessionNotice'), 'extension.js must use detachedSessionNotice')
+  assert.ok(ext.includes('stopAndResumeSession'), 'extension.js must define stopAndResumeSession')
+  assert.ok(ext.includes('isUnderPtyHost'), 'extension.js must check isUnderPtyHost')
+  assert.ok(ext.includes('openSessionTerminal'), 'extension.js must share openSessionTerminal')
+  assert.ok(ext.includes('publishWindowTerminals'), 'extension.js must publish window terminal heartbeats')
+  assert.ok(ext.includes('isClaimedByOtherWindow'), 'extension.js must check other VS Code windows before auto-resuming')
+  assert.ok(ext.includes('shouldAutoResumeDetached'), 'extension.js must auto-resume orphaned ptyHost sessions')
 })
