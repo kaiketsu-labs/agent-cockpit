@@ -30,6 +30,7 @@ const {
   ticketOf,
   mergeSessions,
   cacheTtlMs,
+  trackerRefreshMs,
   age,
   inboxModel,
   folderTitle,
@@ -46,7 +47,6 @@ const SESSIONS_DIR = path.join(COCKPIT_DIR, 'sessions')
 const VIEW_FILE = path.join(COCKPIT_DIR, 'view.json')
 const BRIEFING_FILE = path.join(COCKPIT_DIR, 'briefing.md')
 const REFRESH_MS = 5_000
-const TRACKER_MS = 5 * 60_000
 // GitHub allows 30 searches a minute; each refresh spends one per six tickets.
 const PRS_MS = 120_000
 const REMOTE_TIMEOUT_MS = 15_000
@@ -137,6 +137,7 @@ const getCockpitConfig = env => {
   return {
     tracker: get('tracker', 'auto'),
     trackerCommand: get('trackerCommand', '') || env.COCKPIT_TRACKER_COMMAND || env.DECK_TRACKER_COMMAND || '',
+    trackerRefreshInterval: get('trackerRefreshInterval', 300),
     pullRequests: get('pullRequests', 'auto'),
     ticketProjects: get('ticketProjects', '') || env.TICKET_PROJECTS || '',
     ticketPattern: get('ticketPattern', ''),
@@ -794,7 +795,7 @@ class SessionsProvider {
     }
 
     // PRs only for live ticket folders: each six keys cost one of GitHub's 30 searches a minute.
-    const issuesDue = isDue('issues', TRACKER_MS)
+    const issuesDue = isDue('issues', trackerRefreshMs(this.config.trackerRefreshInterval))
     const activeSet = new Set(activeTicketKeys)
     const issueKeysToFetch = force ? allTicketKeys : allTicketKeys.filter(k => activeSet.has(k) || !(k in this.issues))
     const repoOptions = issuesDue || isDue('prs', PRS_MS) ? await resolveRepoOptions() : {}

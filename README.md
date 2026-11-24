@@ -202,6 +202,7 @@ Configure Agent Cockpit via **VS Code Settings** (`agentCockpit.*`) or via the `
 |---|---|---|---|
 | `agentCockpit.tracker` | — | `"auto"` | `"auto"` (Jira for `PROJ-123` via REST API → `acli` → `jira-cli`, GitHub Issues for `#42` / `owner/repo#42` via `gh`, silent when unconfigured), `"jira"`, `"github"`, `"command"`, or `"none"`. |
 | `agentCockpit.trackerCommand` | `COCKPIT_TRACKER_COMMAND` (or `DECK_TRACKER_COMMAND`) | `""` | Shell command for `"command"` mode. Receives a JSON array of keys on `stdin` and outputs `{ "KEY": { "status", "category", "summary", "url" } }`. |
+| `agentCockpit.trackerRefreshInterval` | — | `300` | How often (in seconds) to poll the issue tracker (Jira, GitHub Issues, or custom command) in the background. Minimum positive value is `15`; set to `0` for manual refresh only. |
 | `agentCockpit.pullRequests` | — | `"auto"` | `"auto"` (queries GitHub via `gh` when available, silent when unconfigured), `"github"`, or `"none"`. |
 | `agentCockpit.githubOrg` | — | `""` | GitHub organization (e.g. `"kaiketsu-labs"`) to scope pull request searches to enterprise-wide in a single API call. |
 | `agentCockpit.githubRepositories` | — | `[]` | Specific GitHub repositories (array of `"owner/repo"` strings) to search for pull requests when scoping searches without an organization. |

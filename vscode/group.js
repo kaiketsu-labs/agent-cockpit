@@ -650,6 +650,20 @@ const cacheTtlMs = env => {
   return ttl === '1h' ? 60 * 60_000 : 5 * 60_000
 }
 
+const DEFAULT_TRACKER_REFRESH_SECONDS = 300
+const MIN_TRACKER_REFRESH_SECONDS = 15
+
+// Converts configured tracker polling interval (in seconds) to milliseconds.
+// Returns Infinity when set to 0 (manual refresh only); clamps small positive values to 15s; falls back to 300s (5m) on invalid input.
+const trackerRefreshMs = seconds => {
+  if (seconds === undefined || seconds === null || typeof seconds === 'boolean') return DEFAULT_TRACKER_REFRESH_SECONDS * 1000
+  if (typeof seconds === 'string' && seconds.trim() === '') return DEFAULT_TRACKER_REFRESH_SECONDS * 1000
+  const n = Number(seconds)
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_TRACKER_REFRESH_SECONDS * 1000
+  if (n === 0) return Infinity
+  return Math.max(MIN_TRACKER_REFRESH_SECONDS, n) * 1000
+}
+
 const cacheLeft = (lastWriteMs, ttlMs, now) => Math.max(0, lastWriteMs + ttlMs - now)
 
 const clock = ms => {
@@ -779,6 +793,7 @@ module.exports = {
   parentPid,
   ancestorPids,
   cacheTtlMs,
+  trackerRefreshMs,
   cacheLeft,
   clock,
   age,
