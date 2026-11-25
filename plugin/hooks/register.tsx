@@ -89,7 +89,9 @@ const listKnownFolders = async ($: EngineInterface): Promise<string[]> => {
       for (const entry of entries) {
         if (entry.kind === 'file' && entry.name.endsWith('.json')) {
           try {
-            const rec = JSON.parse(await $.fs.read(`${d}/${entry.name}`).catch(() => '{}')) as SessionFile
+            const text = await $.fs.read(`${d}/${entry.name}`).catch(() => undefined)
+            if (!text) continue
+            const rec = JSON.parse(text) as SessionFile
             const id = rec.sessionId || entry.name.replace(/\.json$/, '')
             byId.set(id, { ...rec, sessionId: id })
           } catch {}

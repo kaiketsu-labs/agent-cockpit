@@ -932,6 +932,14 @@ test('buildClassificationInstruction and parseClassificationReply handle retitle
     parseClassificationReply('{"summary": "Quick question", "folder": "none"}'),
     { summary: 'Quick question', folder: undefined, title: undefined },
   )
+  assert.deepEqual(
+    parseClassificationReply('{"summary": "Quick check", "folder": "N/A"}'),
+    { summary: 'Quick check', folder: undefined, title: undefined },
+  )
+  assert.deepEqual(
+    parseClassificationReply('{"summary": "Standalone task", "folder": "ungrouped"}'),
+    { summary: 'Standalone task', folder: undefined, title: undefined },
+  )
   assert.equal(parseClassificationReply('{"skip": true, "summary": "Ignored"}'), undefined)
   assert.equal(parseClassificationReply('{"summary": "   "}'), undefined)
   assert.equal(parseClassificationReply('not json'), undefined)
@@ -946,6 +954,7 @@ test('collectActiveFolders ignores hidden and stale sessions', () => {
   }
   const sessions = [
     { sessionId: 's-active', folder: 'Active Topic', lastTurnEndAt: now - 60_000 },
+    { sessionId: 's-ungrouped', folder: null, ticket: 'Stale Ticket', lastTurnEndAt: now - 60_000 },
     { sessionId: 's-hidden', folder: 'Old Migration', lastTurnEndAt: now - 60_000 },
     { sessionId: 's-archived', folder: 'Another Old Folder', lastTurnEndAt: now - 60_000 },
     { sessionId: 's-stale', folder: 'Stale Folder', lastTurnEndAt: now - 8 * 24 * 60 * 60 * 1000 },

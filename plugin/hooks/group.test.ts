@@ -146,6 +146,16 @@ test('buildClassificationInstruction and parseClassificationReply handle retitle
     folder: undefined,
     title: undefined,
   })
+  expect(parseClassificationReply('{"summary": "Quick check", "folder": "N/A"}')).toEqual({
+    summary: 'Quick check',
+    folder: undefined,
+    title: undefined,
+  })
+  expect(parseClassificationReply('{"summary": "Standalone task", "folder": "ungrouped"}')).toEqual({
+    summary: 'Standalone task',
+    folder: undefined,
+    title: undefined,
+  })
 })
 
 test('collectActiveFolders excludes archived and stale sessions while keeping view.json and recent active folders', () => {
@@ -159,6 +169,7 @@ test('collectActiveFolders excludes archived and stale sessions while keeping vi
   }
   const sessions = [
     { sessionId: 'active-recent', folder: 'Active Topic', lastTurnEndAt: now - 60_000 },
+    { sessionId: 'explicitly-ungrouped', folder: null, ticket: 'Stale Ticket', lastTurnEndAt: now - 60_000 },
     { sessionId: 'archived-bool', folder: 'Zombie Folder', lastTurnEndAt: now - 60_000 },
     { sessionId: 'archived-ts', folder: 'Agent Cockpit Migration', lastTurnEndAt: now - 60_000 },
     { sessionId: 'stale-old', folder: 'Old Migration', lastTurnEndAt: now - HIDE_AFTER_MS - 1_000 },

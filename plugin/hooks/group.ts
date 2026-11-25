@@ -265,7 +265,7 @@ export const parseClassificationReply = (text: string): ClassificationReply | un
     const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; folder?: string | null; title?: string; skip?: boolean }
     if (parsed.skip || !parsed.summary?.trim()) return undefined
     const rawFolder = typeof parsed.folder === 'string' ? parsed.folder.trim() : ''
-    const folder = rawFolder && !/^(null|none)$/i.test(rawFolder) ? rawFolder : undefined
+    const folder = rawFolder && !/^(null|none|n\/a|ungrouped)$/i.test(rawFolder) ? rawFolder : undefined
     return {
       summary: parsed.summary.trim(),
       folder,
@@ -343,7 +343,7 @@ export const collectActiveFolders = (
     if (isHiddenInView(view, [rec.sessionId])) continue
     const updatedAt = rec.lastTurnEndAt ?? rec.startedAt ?? 0
     if (updatedAt <= 0 || now - updatedAt > HIDE_AFTER_MS) continue
-    const raw = rec.folder ?? rec.ticket
+    const raw = rec.folder === null ? undefined : (rec.folder ?? rec.ticket)
     if (typeof raw === 'string' && raw.trim()) folders.add(raw.trim())
   }
   return [...folders]
