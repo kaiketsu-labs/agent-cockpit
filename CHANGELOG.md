@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.0](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.9.1...v0.10.0) (2026-11-25)
+
+
+### Features
+
+* make background issue tracker refresh interval configurable ([#72](https://github.com/kaiketsu-labs/agent-cockpit/issues/72)) ([868b8e2](https://github.com/kaiketsu-labs/agent-cockpit/commit/868b8e2b8a493a9afe411f50fdab42637f2cfc9b))
+
+
+### Bug Fixes
+
+* filter stale/hidden folders and prevent forced folder classification ([#75](https://github.com/kaiketsu-labs/agent-cockpit/issues/75)) ([6b05e67](https://github.com/kaiketsu-labs/agent-cockpit/commit/6b05e67ac0e62ba0c9ddbbb55f9f388bd5954c90))
+* **vscode:** auto-resume orphaned ptyHost sessions and recover detached terminals ([#74](https://github.com/kaiketsu-labs/agent-cockpit/issues/74)) ([45d9fa4](https://github.com/kaiketsu-labs/agent-cockpit/commit/45d9fa49b2a2423c0cd86bf95c3d55a52e034bd8))
+* **vscode:** make session hover action overlay opaque with smooth fade ([#76](https://github.com/kaiketsu-labs/agent-cockpit/issues/76)) ([dd84783](https://github.com/kaiketsu-labs/agent-cockpit/commit/dd8478311336eae8e7fa0d38a7488b60f0d0791b))
+
 ## [0.9.1](https://github.com/kaiketsu-labs/agent-cockpit/compare/v0.9.0...v0.9.1) (2026-11-20)
 
 
