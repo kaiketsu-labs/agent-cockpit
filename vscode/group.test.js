@@ -1011,6 +1011,8 @@ test('vscode/media/inbox.js and inbox.css implement enhanced sidebar UX features
   assert.ok(js.includes('has-cache'), 'inbox.js must mark sessions that have warm cache')
   assert.ok(css.includes('.session-right'), 'inbox.css must style .session-right')
   assert.ok(css.includes('.session-card .actions'), 'inbox.css must position .session-card .actions as an overlay')
+  assert.ok(css.includes('.session-card .actions::before'), 'inbox.css must include gradient fade edge before .session-card .actions')
+  assert.ok(css.includes('var(--vscode-sideBar-background);'), 'inbox.css must back .session-card .actions with opaque sidebar background')
   assert.ok(css.includes('has-cache'), 'inbox.css must adjust action overlay for warm cache-pill')
   assert.ok(css.includes('.session-card:hover .meta.hide-on-hover { visibility: hidden'), 'inbox.css must keep meta in layout with visibility: hidden on session hover')
 
