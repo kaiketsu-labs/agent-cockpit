@@ -659,14 +659,55 @@ h2.toggle:hover {
   z-index: 2;
   align-items: center;
   gap: 2px;
-  background: color-mix(in srgb, var(--vscode-list-hoverBackground) 92%, var(--card-bg));
-  box-shadow: -8px 0 8px color-mix(in srgb, var(--vscode-list-hoverBackground) 90%, transparent);
-  border-radius: var(--radius-sm);
-  padding-left: 2px;
+  background:
+    linear-gradient(var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)),
+    linear-gradient(var(--card-bg), var(--card-bg)),
+    var(--vscode-sideBar-background);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding-left: 4px;
+}
+.session-card .actions::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 20px;
+  pointer-events: none;
+  background: inherit;
+  mask-image: linear-gradient(to right, transparent, black);
+  -webkit-mask-image: linear-gradient(to right, transparent, black);
+}
+.session-card .actions .icon-btn {
+  color: var(--vscode-icon-foreground, var(--vscode-foreground));
+  opacity: 0.85;
+}
+.session-card .actions .icon-btn:hover {
+  color: var(--vscode-foreground);
+  opacity: 1;
+}
+.loose-list > .session-card .actions {
+  background:
+    linear-gradient(var(--vscode-list-hoverBackground), var(--vscode-list-hoverBackground)),
+    var(--vscode-sideBar-background);
+}
+.session-card.blocked .actions {
+  background:
+    linear-gradient(color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 8%, var(--row-bg)), color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 8%, var(--row-bg))),
+    linear-gradient(var(--card-bg), var(--card-bg)),
+    var(--vscode-sideBar-background);
+}
+.session-card.failed .actions {
+  background:
+    linear-gradient(color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 8%, var(--row-bg)), color-mix(in srgb, var(--vscode-charts-red, #f14c4c) 8%, var(--row-bg))),
+    linear-gradient(var(--card-bg), var(--card-bg)),
+    var(--vscode-sideBar-background);
 }
 .session-card.active-terminal .actions {
-  background: color-mix(in srgb, var(--vscode-focusBorder, #007acc) 16%, var(--card-bg));
-  box-shadow: -8px 0 8px color-mix(in srgb, var(--vscode-focusBorder, #007acc) 16%, var(--card-bg));
+  background:
+    linear-gradient(color-mix(in srgb, var(--vscode-focusBorder, #007acc) 16%, var(--card-bg)), color-mix(in srgb, var(--vscode-focusBorder, #007acc) 16%, var(--card-bg))),
+    linear-gradient(var(--card-bg), var(--card-bg)),
+    var(--vscode-sideBar-background);
 }
 .session-card.has-cache .session-right .actions,
 .session-right.has-cache .actions {
