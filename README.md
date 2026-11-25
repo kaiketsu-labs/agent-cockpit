@@ -133,10 +133,10 @@ curl -fsSL https://github.com/kaiketsu-labs/agent-cockpit/releases/latest/downlo
 ```
 
 <!-- x-release-please-start-version -->
-Download `agent-cockpit-0.9.1.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/agent-cockpit/releases/latest) and install it:
+Download `agent-cockpit-0.10.0.vsix` from the [latest GitHub Release](https://github.com/kaiketsu-labs/agent-cockpit/releases/latest) and install it:
 
 ```bash
-code --install-extension agent-cockpit-0.9.1.vsix --force
+code --install-extension agent-cockpit-0.10.0.vsix --force
 ```
 
 Or build and install from source (zero npm dependencies — `package.py` packages the `.vsix` directly):
@@ -144,7 +144,7 @@ Or build and install from source (zero npm dependencies — `package.py` package
 ```bash
 git clone https://github.com/kaiketsu-labs/agent-cockpit
 cd agent-cockpit/vscode
-python3 package.py && code --install-extension agent-cockpit-0.9.1.vsix --force
+python3 package.py && code --install-extension agent-cockpit-0.10.0.vsix --force
 ```
 <!-- x-release-please-end -->
 </details>
