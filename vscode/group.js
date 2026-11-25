@@ -298,8 +298,8 @@ const buildClassificationInstruction = (knownFolders, options = {}) => {
   const folderRule = presetFolder
     ? `The session is already in folder "${presetFolder}". Keep "folder": "${presetFolder}" unless the session clearly switched to a different ticket.`
     : knownFolders.length > 0
-      ? `Existing folders: ${JSON.stringify(knownFolders)}. Strongly prefer picking one of these existing folders if the session relates to it; otherwise create a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or use a ticket key if mentioned (e.g. "PROJ-123", "#42").`
-      : `Choose a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or a ticket key if mentioned (e.g. "PROJ-123", "#42").`
+      ? `Active folders: ${JSON.stringify(knownFolders)}. Pick an existing folder ONLY if this session clearly belongs to the exact same project, topic, or ticket — never force-fit based on a loose keyword overlap. If a ticket key is mentioned (e.g. "PROJ-123", "#42"), use it. If this is a multi-step project/topic that does not match any active folder, create a concise 2-4 word folder name (e.g. "Auth Refactor", "Repo Review"). If this is a brief, one-off, or standalone task (e.g. slash commands, quick questions, plugin/tool installs) with no clear project folder, set "folder": null.`
+      : `If a ticket key is mentioned (e.g. "PROJ-123", "#42"), use it as "folder". If this is a clear multi-step project/topic, create a concise 2-4 word folder name (e.g. "Auth Refactor", "Repo Review"). If this is a brief, one-off, or standalone task (e.g. slash commands, quick questions, plugin/tool installs), set "folder": null.`
   const retitleContext = [
     isRetitle ? 'Re-evaluate the session title across the ENTIRE conversation history from start to finish, including how the goal evolved.' : '',
     currentName ? `Current session name: "${currentName}".` : '',
@@ -313,7 +313,7 @@ const buildClassificationInstruction = (knownFolders, options = {}) => {
     `Do NOT name after temporary micro-steps, follow-ups, or routine actions (e.g. avoid naming after running tests, fixing a typo, inspecting files, or git commands). ` +
     (retitleContext ? `${retitleContext} ` : '') +
     `Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
-    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>"}. ` +
+    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name, ticket key, or null>"}. ` +
     folderRule
   )
 }
@@ -324,10 +324,12 @@ const parseClassificationReply = text => {
   try {
     const parsed = JSON.parse(jsonMatch[0])
     if (parsed.skip || !parsed.summary?.trim()) return undefined
+    const rawFolder = typeof parsed.folder === 'string' ? parsed.folder.trim() : ''
+    const folder = rawFolder && !/^(null|none|n\/a|ungrouped)$/i.test(rawFolder) ? rawFolder : undefined
     return {
       summary: parsed.summary.trim(),
-      folder: parsed.folder?.trim() || undefined,
-      title: parsed.title?.trim() || undefined,
+      folder,
+      title: typeof parsed.title === 'string' ? parsed.title.trim() || undefined : undefined,
     }
   } catch {
     return undefined
@@ -609,6 +611,22 @@ const isHiddenInView = (view, ids) => {
   })
 }
 
+const collectActiveFolders = (view, sessions, now = Date.now()) => {
+  const folders = new Set()
+  for (const f of view?.folders ?? []) {
+    if (typeof f === 'string' && f.trim()) folders.add(f.trim())
+  }
+  for (const rec of sessions) {
+    if (!rec) continue
+    if (isHiddenInView(view, [rec.sessionId])) continue
+    const updatedAt = rec.lastTurnEndAt ?? rec.startedAt ?? 0
+    if (updatedAt <= 0 || now - updatedAt > HIDE_AFTER_MS) continue
+    const raw = rec.folder === null ? undefined : (rec.folder ?? rec.ticket)
+    if (typeof raw === 'string' && raw.trim()) folders.add(raw.trim())
+  }
+  return [...folders]
+}
+
 const ticketOf = (name, pattern) => {
   const match = name?.match(pattern.suffix)?.[1]
   return match ? normalizeTicket(match) : undefined
@@ -834,6 +852,7 @@ module.exports = {
   isClosed,
   isHidden,
   isHiddenInView,
+  collectActiveFolders,
   ticketOf,
   mergeSessions,
   interactiveState,

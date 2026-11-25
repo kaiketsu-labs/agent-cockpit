@@ -232,8 +232,8 @@ export const buildClassificationInstruction = (knownFolders: string[], options: 
   const folderRule = presetFolder
     ? `The session is already in folder "${presetFolder}". Keep "folder": "${presetFolder}" unless the session clearly switched to a different ticket.`
     : knownFolders.length > 0
-      ? `Existing folders: ${JSON.stringify(knownFolders)}. Strongly prefer picking one of these existing folders if the session relates to it; otherwise create a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or use a ticket key if mentioned (e.g. "PROJ-123", "#42").`
-      : `Choose a concise 2-4 word topic/project folder name (e.g. "Auth Refactor", "Repo Review") or a ticket key if mentioned (e.g. "PROJ-123", "#42").`
+      ? `Active folders: ${JSON.stringify(knownFolders)}. Pick an existing folder ONLY if this session clearly belongs to the exact same project, topic, or ticket — never force-fit based on a loose keyword overlap. If a ticket key is mentioned (e.g. "PROJ-123", "#42"), use it. If this is a multi-step project/topic that does not match any active folder, create a concise 2-4 word folder name (e.g. "Auth Refactor", "Repo Review"). If this is a brief, one-off, or standalone task (e.g. slash commands, quick questions, plugin/tool installs) with no clear project folder, set "folder": null.`
+      : `If a ticket key is mentioned (e.g. "PROJ-123", "#42"), use it as "folder". If this is a clear multi-step project/topic, create a concise 2-4 word folder name (e.g. "Auth Refactor", "Repo Review"). If this is a brief, one-off, or standalone task (e.g. slash commands, quick questions, plugin/tool installs), set "folder": null.`
   const retitleContext = [
     isRetitle ? 'Re-evaluate the session title across the ENTIRE conversation history from start to finish, including how the goal evolved.' : '',
     currentName ? `Current session name: "${currentName}".` : '',
@@ -247,7 +247,7 @@ export const buildClassificationInstruction = (knownFolders: string[], options: 
     `Do NOT name after temporary micro-steps, follow-ups, or routine actions (e.g. avoid naming after running tests, fixing a typo, inspecting files, or git commands). ` +
     (retitleContext ? `${retitleContext} ` : '') +
     `Respond with ONLY a valid JSON object (no markdown fences, no prose): ` +
-    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name or ticket key>"}. ` +
+    `{"summary": "<concise 3-6 word summary of the overall session goal in the user's language, without repeating folder/ticket>", "folder": "<folder name, ticket key, or null>"}. ` +
     folderRule
   )
 }
@@ -262,12 +262,14 @@ export const parseClassificationReply = (text: string): ClassificationReply | un
   const jsonMatch = text.match(/\{[\s\S]*\}/)
   if (!jsonMatch) return undefined
   try {
-    const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; folder?: string; title?: string; skip?: boolean }
+    const parsed = JSON.parse(jsonMatch[0]) as { summary?: string; folder?: string | null; title?: string; skip?: boolean }
     if (parsed.skip || !parsed.summary?.trim()) return undefined
+    const rawFolder = typeof parsed.folder === 'string' ? parsed.folder.trim() : ''
+    const folder = rawFolder && !/^(null|none|n\/a|ungrouped)$/i.test(rawFolder) ? rawFolder : undefined
     return {
       summary: parsed.summary.trim(),
-      folder: parsed.folder?.trim() || undefined,
-      title: parsed.title?.trim() || undefined,
+      folder,
+      title: typeof parsed.title === 'string' ? parsed.title.trim() || undefined : undefined,
     }
   } catch {
     return undefined
@@ -276,8 +278,11 @@ export const parseClassificationReply = (text: string): ClassificationReply | un
 
 // The first non-empty, non-command prompt line names a session until it gets a name of its own.
 export const promptName = (text: string): string => {
+  const cleaned = text
+    .replace(/<(system-reminder|local-command-stdout|local-command-caveat|task-notification)>[\s\S]*?<\/\1>/g, '')
+    .replace(/<\/?pasted_content\b[^>]*>/gi, '')
   const line =
-    text
+    cleaned
       .split('\n')
       .map(l => l.trim())
       .find(Boolean) ?? ''
@@ -300,6 +305,8 @@ export const shortCwd = (cwd?: string): string | undefined => {
   return last || undefined
 }
 
+export const HIDE_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+
 export const isHiddenInView = (
   view: { hidden?: Record<string, boolean | number> } | undefined,
   ids: Array<string | undefined>,
@@ -311,4 +318,33 @@ export const isHiddenInView = (
     const flag = hidden[id]
     return flag === true || (typeof flag === 'number' && flag > 0)
   })
+}
+
+export type ActiveFolderSession = {
+  sessionId?: string
+  folder?: string | null
+  ticket?: string | null
+  lastTurnEndAt?: number
+  startedAt?: number
+}
+
+// Collects active folders from view.json plus non-hidden, non-stale sessions so archived/old folders never pollute classification.
+export const collectActiveFolders = (
+  view: { hidden?: Record<string, boolean | number>; folders?: string[] } | undefined,
+  sessions: ActiveFolderSession[],
+  now = Date.now(),
+): string[] => {
+  const folders = new Set<string>()
+  for (const f of view?.folders ?? []) {
+    if (typeof f === 'string' && f.trim()) folders.add(f.trim())
+  }
+  for (const rec of sessions) {
+    if (!rec) continue
+    if (isHiddenInView(view, [rec.sessionId])) continue
+    const updatedAt = rec.lastTurnEndAt ?? rec.startedAt ?? 0
+    if (updatedAt <= 0 || now - updatedAt > HIDE_AFTER_MS) continue
+    const raw = rec.folder === null ? undefined : (rec.folder ?? rec.ticket)
+    if (typeof raw === 'string' && raw.trim()) folders.add(raw.trim())
+  }
+  return [...folders]
 }

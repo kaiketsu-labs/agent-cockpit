@@ -903,7 +903,7 @@ test('extractTranscriptContext captures full conversation history, modified file
   assert.ok(tight.includes('Turn 20:'), 'Must keep latest prompt under tight budget')
 })
 
-test('buildClassificationInstruction and parseClassificationReply handle retitle context and JSON extraction', () => {
+test('buildClassificationInstruction and parseClassificationReply handle retitle context, null folders, and JSON extraction', () => {
   const instruction = buildClassificationInstruction(['Auth Refactor', 'PROJ-12'], {
     presetFolder: 'PROJ-12',
     currentName: 'Initial setup',
@@ -915,13 +915,52 @@ test('buildClassificationInstruction and parseClassificationReply handle retitle
   assert.ok(instruction.includes('User hint: "Focus on token refresh"'))
   assert.ok(instruction.includes('Keep "folder": "PROJ-12"'))
 
+  const fresh = buildClassificationInstruction(['Auth Refactor'])
+  assert.ok(fresh.includes('never force-fit'))
+  assert.ok(fresh.includes('set "folder": null'))
+  assert.ok(!fresh.includes('Strongly prefer'))
+
   assert.deepEqual(
     parseClassificationReply('Here is the result:\n{"summary": "Implement OAuth token refresh", "folder": "PROJ-12"}'),
     { summary: 'Implement OAuth token refresh', folder: 'PROJ-12', title: undefined },
   )
+  assert.deepEqual(
+    parseClassificationReply('{"summary": "Install plugin", "folder": null}'),
+    { summary: 'Install plugin', folder: undefined, title: undefined },
+  )
+  assert.deepEqual(
+    parseClassificationReply('{"summary": "Quick question", "folder": "none"}'),
+    { summary: 'Quick question', folder: undefined, title: undefined },
+  )
+  assert.deepEqual(
+    parseClassificationReply('{"summary": "Quick check", "folder": "N/A"}'),
+    { summary: 'Quick check', folder: undefined, title: undefined },
+  )
+  assert.deepEqual(
+    parseClassificationReply('{"summary": "Standalone task", "folder": "ungrouped"}'),
+    { summary: 'Standalone task', folder: undefined, title: undefined },
+  )
   assert.equal(parseClassificationReply('{"skip": true, "summary": "Ignored"}'), undefined)
   assert.equal(parseClassificationReply('{"summary": "   "}'), undefined)
   assert.equal(parseClassificationReply('not json'), undefined)
+})
+
+test('collectActiveFolders ignores hidden and stale sessions', () => {
+  const { collectActiveFolders } = require('./group')
+  const now = 1_700_000_000_000
+  const view = {
+    folders: ['Diagnosen'],
+    hidden: { 's-hidden': true, 's-archived': now - 500 },
+  }
+  const sessions = [
+    { sessionId: 's-active', folder: 'Active Topic', lastTurnEndAt: now - 60_000 },
+    { sessionId: 's-ungrouped', folder: null, ticket: 'Stale Ticket', lastTurnEndAt: now - 60_000 },
+    { sessionId: 's-hidden', folder: 'Old Migration', lastTurnEndAt: now - 60_000 },
+    { sessionId: 's-archived', folder: 'Another Old Folder', lastTurnEndAt: now - 60_000 },
+    { sessionId: 's-stale', folder: 'Stale Folder', lastTurnEndAt: now - 8 * 24 * 60 * 60 * 1000 },
+    { sessionId: 's-notime', folder: 'Missing Time' },
+  ]
+  assert.deepEqual(collectActiveFolders(view, sessions, now), ['Diagnosen', 'Active Topic'])
 })
 
 test('shortCwd extracts last directory segment or worktree name', () => {
