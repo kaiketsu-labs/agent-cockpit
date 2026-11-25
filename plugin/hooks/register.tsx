@@ -2,6 +2,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import {
   buildClassificationInstruction,
+  collectActiveFolders,
   customTitleLine,
   encodeProjectPath,
   extractTicket,
@@ -76,24 +77,26 @@ const readView = async ($: EngineInterface): Promise<{ hidden?: Record<string, b
   }
 }
 
-// Discover all existing folders from view.json and active/recent sessions so Claude can auto-group into them.
+// Discover active folders from view.json and visible, non-stale sessions so archived/old folders never pollute classification.
 const listKnownFolders = async ($: EngineInterface): Promise<string[]> => {
   try {
-    const view = JSON.parse(await $.fs.read(await viewFile($)).catch(() => '{}')) as { folders?: string[] }
-    const folders = new Set<string>(view.folders ?? [])
+    const view = await readView($)
     const dir = `${await claudeDir($)}/cockpit/sessions`
     const legacyDir = `${await claudeDir($)}/deck/sessions`
-    for (const d of [dir, legacyDir]) {
+    const byId = new Map<string, SessionFile>()
+    for (const d of [legacyDir, dir]) {
       const entries = await $.fs.list(d).catch(() => [])
       for (const entry of entries) {
         if (entry.kind === 'file' && entry.name.endsWith('.json')) {
-          const rec = JSON.parse(await $.fs.read(`${d}/${entry.name}`).catch(() => '{}')) as SessionFile
-          const f = rec.folder ?? rec.ticket
-          if (f) folders.add(f)
+          try {
+            const rec = JSON.parse(await $.fs.read(`${d}/${entry.name}`).catch(() => '{}')) as SessionFile
+            const id = rec.sessionId || entry.name.replace(/\.json$/, '')
+            byId.set(id, { ...rec, sessionId: id })
+          } catch {}
         }
       }
     }
-    return [...folders]
+    return collectActiveFolders(view, [...byId.values()])
   } catch {
     return []
   }
@@ -243,7 +246,7 @@ const handleSessionStart = async ($: EngineInterface, e: any, next: (e: any) => 
   const knownFolders = await listKnownFolders($)
   const foldersHint =
     knownFolders.length > 0
-      ? ` Existing folders: ${knownFolders.map(f => `"${f}"`).join(', ')} (always prefer assigning to an existing folder when the topic fits).`
+      ? ` Active folders: ${knownFolders.map(f => `"${f}"`).join(', ')} (only reuse an existing folder when the topic clearly matches).`
       : ''
 
   await $.tool.register({

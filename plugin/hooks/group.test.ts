@@ -3,10 +3,12 @@ import { expect, test } from 'bun:test'
 import {
   buildClassificationInstruction,
   cleanTranscriptPrompt,
+  collectActiveFolders,
   customTitleLine,
   encodeProjectPath,
   extractTicket,
   extractTranscriptContext,
+  HIDE_AFTER_MS,
   isHiddenInView,
   isTicketKey,
   normalizeFolder,
@@ -70,11 +72,13 @@ test('encodeProjectPath and customTitleLine match Claude Code transcript storage
   expect(customTitleLine('s-1', 'Auth Refactor')).toBe('{"type":"custom-title","customTitle":"Auth Refactor","sessionId":"s-1"}\n')
 })
 
-test('a prompt names a session by its first non-empty content line, stripping bare slash commands and cutting to 80 characters', () => {
+test('a prompt names a session by its first non-empty content line, stripping bare slash commands, pasted tags, and cutting to 80 characters', () => {
   expect(promptName('  fix the nulls\nand more')).toBe('fix the nulls')
   expect(promptName('\n\n  explore auth flow\nmore')).toBe('explore auth flow')
   expect(promptName('/start-task')).toBe('')
   expect(promptName('/start-task explore auth flow')).toBe('explore auth flow')
+  expect(promptName('<pasted_content id="ddae">\nDiagnose folder bug\n</pasted_content>')).toBe('Diagnose folder bug')
+  expect(promptName('<pasted_content id="ddae">')).toBe('')
   expect(promptName('x'.repeat(100))).toHaveLength(80)
 })
 
@@ -115,7 +119,7 @@ test('extractTranscriptContext extracts full session turns and modified files', 
   expect(tight).toContain('Turn 10:')
 })
 
-test('buildClassificationInstruction and parseClassificationReply handle retitle options', () => {
+test('buildClassificationInstruction and parseClassificationReply handle retitle options and null folders', () => {
   const instruction = buildClassificationInstruction(['UI Polish'], {
     presetFolder: 'UI Polish',
     currentName: 'Dark mode',
@@ -123,11 +127,44 @@ test('buildClassificationInstruction and parseClassificationReply handle retitle
   })
   expect(instruction).toContain('ENTIRE conversation history')
   expect(instruction).toContain('Current session name: "Dark mode"')
+  const freshInstruction = buildClassificationInstruction(['UI Polish'])
+  expect(freshInstruction).toContain('never force-fit')
+  expect(freshInstruction).toContain('set "folder": null')
+  expect(freshInstruction).not.toContain('Strongly prefer')
   expect(parseClassificationReply('{"summary": "Add persistent dark mode", "folder": "UI Polish"}')).toEqual({
     summary: 'Add persistent dark mode',
     folder: 'UI Polish',
     title: undefined,
   })
+  expect(parseClassificationReply('{"summary": "Install ponytail plugin", "folder": null}')).toEqual({
+    summary: 'Install ponytail plugin',
+    folder: undefined,
+    title: undefined,
+  })
+  expect(parseClassificationReply('{"summary": "Quick question", "folder": "null"}')).toEqual({
+    summary: 'Quick question',
+    folder: undefined,
+    title: undefined,
+  })
+})
+
+test('collectActiveFolders excludes archived and stale sessions while keeping view.json and recent active folders', () => {
+  const now = 1_700_000_000_000
+  const view = {
+    folders: ['Diagnosen', 'ABSKL-100'],
+    hidden: {
+      'archived-bool': true,
+      'archived-ts': now - 1000,
+    },
+  }
+  const sessions = [
+    { sessionId: 'active-recent', folder: 'Active Topic', lastTurnEndAt: now - 60_000 },
+    { sessionId: 'archived-bool', folder: 'Zombie Folder', lastTurnEndAt: now - 60_000 },
+    { sessionId: 'archived-ts', folder: 'Agent Cockpit Migration', lastTurnEndAt: now - 60_000 },
+    { sessionId: 'stale-old', folder: 'Old Migration', lastTurnEndAt: now - HIDE_AFTER_MS - 1_000 },
+    { sessionId: 'no-timestamp', folder: 'Corrupt Record' },
+  ]
+  expect(collectActiveFolders(view, sessions, now)).toEqual(['Diagnosen', 'ABSKL-100', 'Active Topic'])
 })
 
 test('shortCwd extracts last directory segment or worktree name', () => {

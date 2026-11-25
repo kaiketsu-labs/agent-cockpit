@@ -264,7 +264,7 @@ const autoRenameSession = async (session, provider, refresh, inbox) => {
         }
         const knownFolders = [...new Set([
           ...provider.folders,
-          ...provider.sessions.map(s => s.folder ?? s.ticket).filter(Boolean),
+          ...provider.sessions.filter(s => !provider.isHidden(s)).map(s => s.folder ?? s.ticket).filter(Boolean),
         ])]
         const readCurrentRecord = async () => {
           if (!session.sessionId) return undefined
